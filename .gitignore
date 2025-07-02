@@ -30,3 +30,12 @@ go.work.sum
 # Editor/IDE
 # .idea/
 # .vscode/
+
+# Environment files
+.env.local
+prod.env
+# Keep dev.env for easy local development
+# Keep *.env.example files for documentation
+
+# Binary
+senso-workflows

@@ -1,0 +1,184 @@
+name: Production Workflows Deployment
+
+on:
+  push:
+    branches: [ main ]
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: senso-production-workflows  # New ECR repository name
+  ECS_SERVICE: production-workflows-service  # New ECS service name  
+  ECS_CLUSTER: senso-production-workflows-cluster  # New ECS cluster name
+  ECS_TASK_DEFINITION: production-workflows-task  # New task definition name
+  CONTAINER_NAME: workflows-worker
+  AWS_SECRET_NAME: senso-workflows-prod-env  # New secret in AWS Secrets Manager
+
+jobs:
+  deploy:
+    name: Deploy Production Workflows Worker
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Retrieve and create .env from AWS Secrets Manager
+        run: |
+          # Get the secret value from AWS Secrets Manager
+          echo "🔍 Retrieving Inngest workflow secrets from AWS Secrets Manager..."
+          SECRET_VALUE=$(aws secretsmanager get-secret-value --secret-id ${{ env.AWS_SECRET_NAME }} --query SecretString --output text)
+          
+          # Dynamically parse ALL key-value pairs from the JSON secret and create .env
+          echo "$SECRET_VALUE" | jq -r 'to_entries[] | "\(.key)=\(.value)"' > .env
+          
+          # Verify .env was created and has content
+          if [ -f .env ] && [ -s .env ]; then
+            echo "✅ .env file created successfully"
+            echo "📄 Environment variables loaded: $(cat .env | wc -l) keys"
+            echo "🚀 Ready to build Inngest workflow worker Docker image"
+            
+            # Verify critical Inngest variables are present
+            if grep -q "INNGEST_EVENT_KEY" .env && grep -q "INNGEST_SIGNING_KEY" .env; then
+              echo "✅ Critical Inngest Cloud variables detected"
+            else
+              echo "❌ Missing critical Inngest Cloud variables"
+              exit 1
+            fi
+          else
+            echo "❌ Failed to create .env file or file is empty"
+            echo "Debug: Secret value:"
+            echo "$SECRET_VALUE" | jq '.' || echo "Not valid JSON or empty"
+            exit 1
+          fi
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build, tag, and push image to Amazon ECR
+        id: build-image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          echo "🔨 Building Inngest workflow worker Docker image..."
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG -f docker/worker.Dockerfile .
+          docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          
+          echo "🚀 Pushing images to ECR..."
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          
+          echo "✅ Workflow worker images pushed successfully"
+          echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+
+      - name: Download current task definition
+        run: |
+          echo "📥 Downloading current task definition..."
+          aws ecs describe-task-definition \
+            --task-definition ${{ env.ECS_TASK_DEFINITION }} \
+            --query taskDefinition > task-definition.json
+          
+          echo "✅ Task definition downloaded"
+
+      - name: Fill in the new image ID in the Amazon ECS task definition
+        id: task-def
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: task-definition.json
+          container-name: ${{ env.CONTAINER_NAME }}
+          image: ${{ steps.build-image.outputs.image }}
+
+      - name: Deploy Amazon ECS task definition
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: ${{ steps.task-def.outputs.task-definition }}
+          service: ${{ env.ECS_SERVICE }}
+          cluster: ${{ env.ECS_CLUSTER }}
+          wait-for-service-stability: true
+
+      - name: Validate Inngest webhook endpoint
+        run: |
+          echo "🔗 Validating Inngest webhook endpoint..."
+          # Wait for the service to stabilize
+          sleep 60
+          
+          # Test the health endpoint
+          HEALTH_CHECK=$(curl -s -o /dev/null -w "%{http_code}" https://workflows.senso.ai/health)
+          if [ "$HEALTH_CHECK" = "200" ]; then
+            echo "✅ Health check passed"
+          else
+            echo "❌ Health check failed. HTTP status: $HEALTH_CHECK"
+            exit 1
+          fi
+          
+          # Test Inngest endpoint accessibility (without actual Inngest call)
+          INNGEST_CHECK=$(curl -s -o /dev/null -w "%{http_code}" https://workflows.senso.ai/api/inngest)
+          if [ "$INNGEST_CHECK" = "200" ] || [ "$INNGEST_CHECK" = "405" ]; then
+            echo "✅ Inngest endpoint accessible"
+          else
+            echo "❌ Inngest endpoint not accessible. HTTP status: $INNGEST_CHECK"
+            exit 1
+          fi
+
+      - name: Service health and readiness check
+        run: |
+          echo "🏥 Performing comprehensive health check..."
+          # Wait a bit for the service to fully stabilize
+          sleep 30
+          
+          # Check ECS service status
+          SERVICE_STATUS=$(aws ecs describe-services \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --services ${{ env.ECS_SERVICE }} \
+            --query 'services[0].deployments[0].status' \
+            --output text)
+          
+          RUNNING_COUNT=$(aws ecs describe-services \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --services ${{ env.ECS_SERVICE }} \
+            --query 'services[0].runningCount' \
+            --output text)
+          
+          DESIRED_COUNT=$(aws ecs describe-services \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --services ${{ env.ECS_SERVICE }} \
+            --query 'services[0].desiredCount' \
+            --output text)
+          
+          if [ "$SERVICE_STATUS" = "PRIMARY" ] && [ "$RUNNING_COUNT" = "$DESIRED_COUNT" ]; then
+            echo "✅ Inngest workflow worker deployment successful and stable"
+            echo "📊 Running: $RUNNING_COUNT/$DESIRED_COUNT tasks"
+          else
+            echo "❌ Service deployment may have issues"
+            echo "   Status: $SERVICE_STATUS"
+            echo "   Running: $RUNNING_COUNT/$DESIRED_COUNT tasks"
+            exit 1
+          fi
+
+      - name: Deployment complete
+        run: |
+          echo "🎉 Inngest Workflow Worker deployment completed successfully!"
+          echo "📊 Deployment Summary:"
+          echo "  - Image: ${{ steps.build-image.outputs.image }}"
+          echo "  - Service: ${{ env.ECS_SERVICE }}"
+          echo "  - Cluster: ${{ env.ECS_CLUSTER }}"
+          echo "  - Domain: https://workflows.senso.ai"
+          echo "  - Inngest Endpoint: https://workflows.senso.ai/api/inngest"
+          echo "  - Health Check: https://workflows.senso.ai/health"
+          echo "  - Region: ${{ env.AWS_REGION }}"
+          echo "  - Commit: ${{ github.sha }}"
+          echo "  - Branch: ${{ github.ref_name }}"
+          echo ""
+          echo "🚀 Next Steps:"
+          echo "  1. Configure Inngest Cloud webhook URL: https://workflows.senso.ai/api/inngest"
+          echo "  2. Test workflow trigger: POST https://workflows.senso.ai/test/trigger-org"
+          echo "  3. Monitor workflow execution in Inngest dashboard" 
