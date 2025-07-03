@@ -106,7 +106,7 @@ func (s *questionRunnerService) ProcessSingleQuestion(ctx context.Context, quest
 	}
 
 	// 4. Extract claims
-	claims, err := s.dataExtractionService.ExtractClaims(ctx, run.QuestionRunID, aiResponse.Response)
+	claims, err := s.dataExtractionService.ExtractClaims(ctx, run.QuestionRunID, aiResponse.Response, targetCompany)
 	if err != nil {
 		fmt.Printf("[ProcessSingleQuestion] Warning: Failed to extract claims: %v\n", err)
 	} else if len(claims) > 0 {

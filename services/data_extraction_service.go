@@ -118,11 +118,11 @@ func (s *dataExtractionService) ExtractMentions(ctx context.Context, questionRun
 	return mentions, nil
 }
 
-// ExtractClaims parses AI response and extracts factual claims
-func (s *dataExtractionService) ExtractClaims(ctx context.Context, questionRunID uuid.UUID, response string) ([]*models.QuestionRunClaim, error) {
+// ExtractClaims parses AI response and extracts logical text segments as claims
+func (s *dataExtractionService) ExtractClaims(ctx context.Context, questionRunID uuid.UUID, response string, targetCompany string) ([]*models.QuestionRunClaim, error) {
 	fmt.Printf("[ExtractClaims] Processing claims for question run %s\n", questionRunID)
 
-	prompt := s.buildClaimsExtractionPrompt(response)
+	prompt := s.buildClaimsExtractionPrompt(response, targetCompany)
 
 	// Use a model that supports structured outputs
 	model := openai.ChatModelGPT4_1
@@ -137,7 +137,7 @@ func (s *dataExtractionService) ExtractClaims(ctx context.Context, questionRunID
 	// Create the extraction request
 	chatResponse, err := s.openAIClient.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
 		Messages: []openai.ChatCompletionMessageParamUnion{
-			openai.SystemMessage("You are an expert fact-checker. Break down the response into individual, verifiable factual claims."),
+			openai.SystemMessage("You are an expert text analyst specializing in logical text segmentation. Segment the AI response into meaningful, coherent text chunks with complete coverage."),
 			openai.UserMessage(prompt),
 		},
 		Model: model,
@@ -166,12 +166,15 @@ func (s *dataExtractionService) ExtractClaims(ctx context.Context, questionRunID
 	var claims []*models.QuestionRunClaim
 	now := time.Now()
 
-	for i, claimText := range extractedData.Claims {
+	for i, claim := range extractedData.Claims {
+		sentiment := s.normalizeSentiment(claim.Sentiment)
 		claims = append(claims, &models.QuestionRunClaim{
 			QuestionRunClaimID: uuid.New(),
 			QuestionRunID:      questionRunID,
-			ClaimText:          claimText,
+			ClaimText:          claim.ClaimText,
 			ClaimOrder:         i + 1,
+			Sentiment:          &sentiment,
+			TargetMentioned:    &claim.TargetMentioned,
 			CreatedAt:          now,
 			UpdatedAt:          now,
 		})
@@ -367,123 +370,123 @@ Before extracting each entity, verify:
 Focus on QUALITY over quantity. Better to extract 3 real companies than 10 categories.`, targetCompany, response)
 }
 
-func (s *dataExtractionService) buildClaimsExtractionPrompt(response string) string {
-	return fmt.Sprintf(`You are an expert fact-checker and information extraction specialist. Your task is to extract INDIVIDUAL factual claims from an AI response, breaking down complex statements into atomic, verifiable facts.
+func (s *dataExtractionService) buildClaimsExtractionPrompt(response string, targetCompany string) string {
+	return fmt.Sprintf(`You are an expert text segmentation specialist. Your task is to divide the AI response into comprehensive logical text segments that achieve COMPLETE COVERAGE of the entire response.
 
-## CRITICAL INSTRUCTIONS: GRANULAR & VERBATIM EXTRACTION
-⚠️ TWO KEY REQUIREMENTS:
+## ⚠️ CRITICAL MISSION: COMPLETE TEXT SEGMENTATION
 
-1. **EXTRACT INDIVIDUAL CLAIMS**: Break down sentences containing multiple facts into separate claims. Each claim should contain exactly ONE verifiable fact.
+**PRIMARY OBJECTIVE**: Every single word, sentence, and paragraph of the response MUST be included in exactly one claim segment. No text should be lost or duplicated.
 
-2. **VERBATIM COPYING**: Extract claims EXACTLY as written in the source text. Do not:
-   - Paraphrase or reword
-   - Fix grammar or spelling
-   - Add punctuation or capitalization
-   - Remove any characters
-   - Clean up formatting
-   
-Copy and paste the EXACT text fragments, but split them at natural fact boundaries.
+**SEGMENTATION PHILOSOPHY**: 
+- **From:** Atomic fact extraction  
+- **To:** Logical text chunking with complete response coverage
 
-## WHAT CONSTITUTES A CLAIM
+## SEGMENTATION BOUNDARIES
 
-**Factual Claim**: A statement that can be verified as true or false. Claims typically include:
-- Statistical statements ("X has 50%% market share")
-- Comparative statements ("A is better/larger/faster than B")
-- Feature descriptions ("Product X includes Y feature")
-- Historical facts ("Company was founded in 2010")
-- Current states ("Organization operates in 12 countries")
-- Capabilities ("System can process 1000 transactions per second")
-- Quantifiable attributes (prices, sizes, counts, percentages)
+**Split Points (in order of priority):**
 
-**NOT Claims** (Do not extract):
-- Opinions without factual basis ("seems good", "might be useful")
-- Vague generalizations ("many people think", "it's commonly believed")
-- Questions or hypotheticals
-- Pure subjective assessments ("beautiful design", "excellent choice")
-- Future predictions without specific commitments
+1. **Paragraph Breaks**: Natural logical divisions in the text
+2. **Organization Transitions**: When discussion shifts between different companies/brands
+3. **Topic Shifts**: When subject matter changes (e.g., products → pricing → market analysis)
+4. **Logical Groupings**: Keep related sentences together for coherent context
 
-## EXTRACTION RULES
+**Size Guidelines:**
+- **Minimum**: Complete sentences (never fragments)
+- **Typical**: 1-3 related sentences or 1 paragraph
+- **Maximum**: Multi-sentence groups that share logical context
+- **Key**: Meaningful chunks that preserve context and readability
 
-1. **Individual Claim Extraction**:
-   - Extract each factual assertion as a separate claim
-   - If a sentence contains multiple facts, extract each fact individually
-   - Claims can span multiple sentences, lines, or paragraphs if necessary
-   - Aim for meaningful granularity - atomic but not overly fragmented
+## COMPLETE COVERAGE REQUIREMENTS
 
-2. **Preserve Context & Completeness**:
-   - Include sufficient context to make each claim understandable and complete
-   - Keep subjects with their predicates
-   - Keep numbers with their units and context
-   - Include any URLs or citations that appear within the claim text
+1. **100% Text Inclusion**: Every character of the response must belong to exactly one segment
+2. **No Gaps**: No sentences or phrases should be skipped
+3. **No Overlaps**: No text should appear in multiple segments
+4. **Preserve Order**: Segments should follow the original text sequence
+5. **Maintain Integrity**: Don't break sentences or lose context
 
-3. **Splitting Guidelines**:
-   - Split at conjunctions (and, but, or) when they connect independent facts
-   - Split at semicolons and colons that separate distinct claims
-   - If splitting would create ambiguity or incomplete meaning, keep claims together
-   - Always preserve the complete factual assertion, even if it spans multiple sentences
+## ANALYSIS REQUIREMENTS PER SEGMENT
 
-4. **Exact Character Matching**:
-   - Preserve all punctuation marks (.,;:!?"'-—)
-   - Keep original capitalization
-   - Include any numbers, symbols, or special characters
-   - Maintain spacing exactly as in original
-   - Include URLs and citations exactly as they appear
-   - EXCLUDE formatting elements like bullet points, numbering, headers from claim text
+For each text segment, determine:
 
-5. **No Artificial Limits**:
-   - Extract ALL verifiable claims found in the response
-   - No minimum or maximum number - extract every individual fact
-   - Focus on meaningful, complete factual assertions
-   - Don't prioritize or filter - include all factual assertions
+### **SENTIMENT ANALYSIS**:
+- **"positive"**: Favorable language, benefits, praise, advantages, recommendations
+- **"negative"**: Criticism, problems, disadvantages, warnings, complaints, issues
+- **"neutral"**: Factual statements, neutral descriptions, balanced information
 
-## EXAMPLES
+### **TARGET COMPANY DETECTION**:
+**Target Organization**: %s
 
-Given this response:
-"TechFlow Solutions, founded in 2018, now serves over 10,000 enterprise clients. Their flagship product processes 2.5 million API calls per day with 99.9%% uptime. The company's revenue grew 145%% year-over-year to $50 million in 2023. According to their documentation (https://docs.techflow.com/metrics), TechFlow offers 24/7 phone support in 15 languages. Industry analysts rank them #3 in customer satisfaction."
+- **true**: Segment explicitly mentions the target company by name, brand, or clear reference
+- **false**: Segment discusses other companies, general topics, or industry without target mention
 
-Correct extraction (MEANINGFUL GRANULARITY):
-[
-  "TechFlow Solutions, founded in 2018",
-  "now serves over 10,000 enterprise clients",
-  "Their flagship product processes 2.5 million API calls per day with 99.9%% uptime",
-  "The company's revenue grew 145%% year-over-year to $50 million in 2023",
-  "According to their documentation (https://docs.techflow.com/metrics), TechFlow offers 24/7 phone support in 15 languages",
-  "Industry analysts rank them #3 in customer satisfaction"
-]
+**Target Detection Rules**:
+- Look for exact company name: "%s"
+- Include common variations, abbreviations, brand names
+- Include clear pronoun references ("we", "our company") if context clearly refers to target
+- Do NOT mark as target mention for: generic terms, industry references, competitor discussions
 
-Alternative acceptable extraction (MORE GRANULAR):
-[
-  "TechFlow Solutions, founded in 2018",
-  "now serves over 10,000 enterprise clients", 
-  "Their flagship product processes 2.5 million API calls per day",
-  "with 99.9%% uptime",
-  "The company's revenue grew 145%% year-over-year to $50 million in 2023",
-  "TechFlow offers 24/7 phone support in 15 languages",
-  "Industry analysts rank them #3 in customer satisfaction"
-]
+## SEGMENTATION EXAMPLES
 
-INCORRECT extraction (DO NOT DO THIS):
-[
-  "Founded in 2018",  ❌ (loses subject, incomplete)
-  "TechFlow serves more than 10000 clients",  ❌ (paraphrased, not verbatim)
-  "• TechFlow Solutions founded in 2018",  ❌ (includes formatting elements)
-  "Processes 2.5M API calls daily",  ❌ (abbreviated and loses subject)
-  "Revenue: $50M (2023)",  ❌ (reformatted the information)
-  "According to their documentation, TechFlow offers 24/7 phone support in 15 languages"  ❌ (removed the URL)
-]
+**Input Response:**
+TechFlow Solutions, founded in 2018, now serves over 10,000 enterprise clients. Their flagship product processes 2.5 million API calls per day with 99.9%% uptime.
 
-## RESPONSE TO ANALYZE
+The company's revenue grew 145%% year-over-year to $50 million in 2023. This positions them well against competitors like DataCorp and StreamlineAPI.
+
+Industry analysts rank TechFlow #3 in customer satisfaction, though some users report occasional latency issues during peak hours.
+
+**Expected Segmentation:**
+{
+  "claims": [
+    {
+      "claim_text": "TechFlow Solutions, founded in 2018, now serves over 10,000 enterprise clients. Their flagship product processes 2.5 million API calls per day with 99.9%% uptime.",
+      "sentiment": "positive",
+      "target_mentioned": true
+    },
+    {
+      "claim_text": "The company's revenue grew 145%% year-over-year to $50 million in 2023. This positions them well against competitors like DataCorp and StreamlineAPI.",
+      "sentiment": "positive", 
+      "target_mentioned": true
+    },
+    {
+      "claim_text": "Industry analysts rank TechFlow #3 in customer satisfaction, though some users report occasional latency issues during peak hours.",
+      "sentiment": "neutral",
+      "target_mentioned": true
+    }
+  ]
+}
+
+## VERBATIM TEXT PRESERVATION
+
+**CRITICAL**: Extract text segments EXACTLY as written:
+- ✅ Preserve all punctuation: . , ; : ! ? " ' - —
+- ✅ Maintain original capitalization
+- ✅ Keep all numbers, symbols, special characters
+- ✅ Include URLs and citations exactly as they appear
+- ✅ Preserve spacing and line breaks within segments
+- ❌ Do NOT include formatting elements (bullets, numbers, headers)
+- ❌ Do NOT paraphrase, edit, or "clean up" text
+
+## SEGMENTATION VALIDATION
+
+Before finalizing, verify:
+✓ **Complete Coverage**: Every word from original response is included in exactly one segment
+✓ **Logical Boundaries**: Segments break at natural transition points
+✓ **Meaningful Size**: Each segment is substantial enough for analysis
+✓ **Context Preservation**: Related concepts stay together
+✓ **Sentiment Accuracy**: Tone assessment reflects the text content
+✓ **Target Detection**: Company mentions are accurately identified
+
+## RESPONSE TO SEGMENT
 %s
 
-## FINAL CHECKLIST
-Before submitting each claim, verify:
-✓ Is this EXACTLY as written in the source? (character-for-character match)
-✓ Is this a complete, meaningful statement?
-✓ Can this be verified as true or false?
-✓ Have I preserved ALL punctuation and formatting?
-✓ Did I resist the urge to "clean up" or "improve" the text?
+## FINAL REMINDERS
+- **COMPREHENSIVE COVERAGE**: The sum of all segments must equal the complete original response
+- **LOGICAL GROUPINGS**: Prioritize natural text flow and topic coherence
+- **EXACT TEXT MATCHING**: Copy every character precisely, no modifications
+- **CONTEXTUAL ANALYSIS**: Assess sentiment and target mentions thoughtfully
+- **NO TEXT LEFT BEHIND**: Every sentence, phrase, and word must be captured
 
-Remember: Your role is extraction, not editing. The downstream system requires exact text matches.`, response)
+Focus on creating meaningful, complete text segments that together reconstruct the entire original response.`, targetCompany, targetCompany, response)
 }
 
 func (s *dataExtractionService) extractCitationsForClaim(ctx context.Context, claim *models.QuestionRunClaim, response string, orgWebsites []string) ([]*models.QuestionRunCitation, error) {

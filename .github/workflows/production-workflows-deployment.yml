@@ -132,8 +132,8 @@ jobs:
       - name: Service health and readiness check
         run: |
           echo "🏥 Performing comprehensive health check..."
-          # Wait a bit for the service to fully stabilize
-          sleep 30
+          # Wait for the service to fully stabilize
+          sleep 60
           
           # Check ECS service status
           SERVICE_STATUS=$(aws ecs describe-services \
@@ -155,7 +155,7 @@ jobs:
             --output text)
           
           if [ "$SERVICE_STATUS" = "PRIMARY" ] && [ "$RUNNING_COUNT" = "$DESIRED_COUNT" ]; then
-            echo "✅ Inngest workflow worker deployment successful and stable"
+            echo "✅ ECS service deployment successful and stable"
             echo "📊 Running: $RUNNING_COUNT/$DESIRED_COUNT tasks"
           else
             echo "❌ Service deployment may have issues"
