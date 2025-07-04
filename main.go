@@ -13,11 +13,14 @@ import (
 	"github.com/jmoiron/sqlx"
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 
 	"github.com/AI-Template-SDK/senso-api/pkg/database"
 	"github.com/AI-Template-SDK/senso-workflows/internal/config"
 	"github.com/AI-Template-SDK/senso-workflows/services"
 	"github.com/AI-Template-SDK/senso-workflows/workflows"
+	"github.com/qdrant/go-client/qdrant"
 )
 
 // createDatabaseClient creates a database client using our config structure
@@ -46,6 +49,58 @@ func createDatabaseClient(ctx context.Context, cfg config.DatabaseConfig) (*data
 }
 
 func main() {
+	// ---- START: LOCAL DOCKER-COMPOSE TEST BLOCK ----
+	// This block checks for a specific environment variable. If it's set,
+	// we run our local connection tests and prevent the rest of the app from starting.
+	if os.Getenv("LOCAL_TEST_MODE") == "true" {
+		log.Println("--- RUNNING IN LOCAL TEST MODE ---")
+
+		// Test Qdrant Connection
+		qdrantHost := os.Getenv("QDRANT_HOST")
+		qdrantPort := os.Getenv("QDRANT_PORT")
+		qdrantAddr := fmt.Sprintf("%s:%s", qdrantHost, qdrantPort)
+
+		qdrantConn, err := grpc.Dial(qdrantAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+		if err != nil {
+			log.Fatalf("Qdrant connection failed: %v", err)
+		}
+		defer qdrantConn.Close()
+
+		// For qdrant, we'll use the HealthClient to check the connection
+		healthClient := qdrant.NewHealthClient(qdrantConn)
+		_, err = healthClient.Check(context.Background(), &qdrant.HealthCheckRequest{})
+		if err != nil {
+			log.Printf("❌ Qdrant health check failed: %v\n", err)
+		} else {
+			log.Println("✅ Successfully connected to local Qdrant!")
+		}
+
+		// Test Typesense Connection
+		typesenseHost := os.Getenv("TYPESENSE_HOST")
+		typesensePort := os.Getenv("TYPESENSE_PORT")
+		typesenseAddr := fmt.Sprintf("http://%s:%s", typesenseHost, typesensePort)
+		typesenseAPIKey := os.Getenv("TYPESENSE_API_KEY")
+
+		req, _ := http.NewRequest("GET", typesenseAddr+"/health", nil)
+		req.Header.Set("X-TYPESENSE-API-KEY", typesenseAPIKey)
+
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			log.Printf("❌ Typesense health check failed: %v\n", err)
+		} else if resp.StatusCode != http.StatusOK {
+			log.Printf("❌ Typesense health check returned non-200 status: %s", resp.Status)
+		} else {
+			log.Println("✅ Successfully connected to local Typesense!")
+		}
+		defer resp.Body.Close()
+
+		log.Println("--- LOCAL TEST MODE FINISHED, IDLING ---")
+		// This select{} block makes the container hang indefinitely
+		// so you can check logs, instead of it exiting immediately.
+		select {}
+	}
+	// ---- END: LOCAL DOCKER-COMPOSE TEST BLOCK ----
+
 	// Load environment variables from .env file first (standard practice)
 	// If not found, try dev.env for local development
 	if err := godotenv.Load(); err != nil {

@@ -1,0 +1,37 @@
+version: "3.8"
+
+services:
+  typesense:
+    image: typesense/typesense:29.0
+    ports:
+      - "8108:8108"
+    volumes:
+      - typesense_data:/data
+    command: "--data-dir /data --api-key=xyz --enable-cors"
+
+  qdrant:
+    image: qdrant/qdrant
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+
+  api:
+    build: .
+    ports:
+      - "8000:8080"
+    depends_on:
+      - typesense
+      - qdrant
+    environment:
+      - LOCAL_TEST_MODE=true
+      - TYPESENSE_HOST=typesense
+      - TYPESENSE_PORT=8108
+      - TYPESENSE_API_KEY=xyz
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6334
+
+volumes:
+  typesense_data:
+  qdrant_data:

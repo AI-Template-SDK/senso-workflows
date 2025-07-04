@@ -1,10 +1,21 @@
 # Dockerfile
-FROM golang:1.21-alpine AS builder
+FROM golang:1.24-alpine AS builder
+
+# 1. Install git and the openssh client
+RUN apk add --no-cache git openssh-client
 
 WORKDIR /app
-COPY go.mod go.sum ./
-RUN go mod download
 
+# 2. Configure git to use SSH for GitHub URLs, just like in your setup guide
+RUN git config --global url."git@github.com:".insteadOf "https://github.com/"
+
+# 3. Copy go.mod and go.sum
+COPY go.mod go.sum ./
+
+# 4. Run go mod download, securely mounting your local SSH agent for this command only
+RUN --mount=type=ssh go mod download
+
+# --- The rest of the Dockerfile remains the same ---
 COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -o senso-workflows .
 
