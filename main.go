@@ -50,8 +50,6 @@ func createDatabaseClient(ctx context.Context, cfg config.DatabaseConfig) (*data
 
 func main() {
 	// ---- START: LOCAL DOCKER-COMPOSE TEST BLOCK ----
-	// This block checks for a specific environment variable. If it's set,
-	// we run our local connection tests and prevent the rest of the app from starting.
 	if os.Getenv("LOCAL_TEST_MODE") == "true" {
 		log.Println("--- RUNNING IN LOCAL TEST MODE ---")
 
@@ -66,11 +64,13 @@ func main() {
 		}
 		defer qdrantConn.Close()
 
-		// For qdrant, we'll use the HealthClient to check the connection
-		healthClient := qdrant.NewHealthClient(qdrantConn)
-		_, err = healthClient.Check(context.Background(), &qdrant.HealthCheckRequest{})
+		// Instead of a health client, we create a collections client to test the connection.
+		collectionsClient := qdrant.NewCollectionsClient(qdrantConn)
+
+		// We test the connection by trying to list the collections. An empty response is a success.
+		_, err = collectionsClient.List(context.Background(), &qdrant.ListCollectionsRequest{})
 		if err != nil {
-			log.Printf("❌ Qdrant health check failed: %v\n", err)
+			log.Printf("❌ Qdrant list collections check failed: %v\n", err)
 		} else {
 			log.Println("✅ Successfully connected to local Qdrant!")
 		}
@@ -95,14 +95,11 @@ func main() {
 		defer resp.Body.Close()
 
 		log.Println("--- LOCAL TEST MODE FINISHED, IDLING ---")
-		// This select{} block makes the container hang indefinitely
-		// so you can check logs, instead of it exiting immediately.
 		select {}
 	}
 	// ---- END: LOCAL DOCKER-COMPOSE TEST BLOCK ----
 
 	// Load environment variables from .env file first (standard practice)
-	// If not found, try dev.env for local development
 	if err := godotenv.Load(); err != nil {
 		// Try dev.env as fallback for local development
 		if err := godotenv.Load("dev.env"); err != nil {

@@ -1,29 +1,52 @@
-version: "3.8"
-
 services:
   typesense:
-    image: typesense/typesense:29.0
+    build:
+      context: .
+      dockerfile: typesense.Dockerfile
     ports:
       - "8108:8108"
     volumes:
       - typesense_data:/data
     command: "--data-dir /data --api-key=xyz --enable-cors"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "curl",
+          "-f",
+          "http://localhost:8108/health",
+          "-H",
+          "X-TYPESENSE-API-KEY: xyz",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 5
 
   qdrant:
-    image: qdrant/qdrant
+    build:
+      context: .
+      dockerfile: qdrant.Dockerfile
     ports:
       - "6333:6333"
       - "6334:6334"
     volumes:
       - qdrant_data:/qdrant/storage
+    healthcheck:
+      # Note: Qdrant uses /healthz for its health check endpoint
+      test: ["CMD", "curl", "-f", "http://localhost:6333/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
 
   api:
     build: .
     ports:
       - "8000:8080"
     depends_on:
-      - typesense
-      - qdrant
+      typesense:
+        condition: service_healthy # <-- Wait for the healthcheck to pass
+      qdrant:
+        condition: service_healthy # <-- Wait for the healthcheck to pass
     environment:
       - LOCAL_TEST_MODE=true
       - TYPESENSE_HOST=typesense
