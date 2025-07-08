@@ -42,12 +42,15 @@ func (p *ContentProcessor) ProcessWebsiteContent() inngestgo.ServableFunction {
 		// This function triggers whenever senso-api sends this event.
 		inngestgo.EventTrigger("api/content.web.created", nil),
 		func(ctx context.Context, input inngestgo.Input[ContentWebCreatedEvent]) (any, error) {
+			// Extract both IDs from the event data
 			contentID := input.Event.Data.ContentID
-			fmt.Printf("[ProcessWebsiteContent] Starting ingestion pipeline for content: %s\n", contentID)
-			
+			versionID := input.Event.Data.VersionID
+			fmt.Printf("[ProcessWebsiteContent] Starting ingestion pipeline for content: %s, version: %s\n", contentID, versionID)
+
 			// Use a single step to call your service. Inngest handles the retries.
 			output, err := step.Run(ctx, "chunk-and-index-content", func(ctx context.Context) (interface{}, error) {
-				err := p.ingestionService.ChunkAndIndexWebContent(ctx, contentID)
+				// Pass both IDs to the service function
+				err := p.ingestionService.ChunkAndIndexWebContent(ctx, contentID, versionID)
 				if err != nil {
 					return nil, err
 				}

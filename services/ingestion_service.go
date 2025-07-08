@@ -101,27 +101,28 @@ func (s *ingestionService) ChunkAndIndexWebContent(ctx context.Context, contentI
 	log.Printf("[IngestionService] Step 4: Indexing %d vectors to Qdrant...", len(vectors))
 	qdrantPoints := make([]*qdrant.PointStruct, len(chunks))
 	for i, chunk := range chunks {
+		// Create the payload using a simple map and the NewValueMap helper
+		payload := qdrant.NewValueMap(map[string]any{
+			"text":       chunk,
+			"content_id": contentID,
+			"version_id": versionID,
+			"source_url": contentData.WebVersion.SourceURL,
+			"page_title": contentData.CurrentVersion.Title,
+		})
+
 		qdrantPoints[i] = &qdrant.PointStruct{
-			Id: &qdrant.PointId{
-				Data: &qdrant.PointId_Uuid{Uuid: uuid.New().String()}, // Use the correct field
-			},
-			Vectors: &qdrant.Vectors{
-				Vectors: &qdrant.Vectors_Vector{Vector: &qdrant.Vector{Data: vectors[i]}}, // Use the correct field
-			},
-			Payload: map[string]*qdrant.Value{
-				"text":       {Data: &qdrant.Value_StringValue{StringValue: chunk}}, // Use the correct field
-				"content_id": {Data: &qdrant.Value_StringValue{StringValue: contentID}},
-				"version_id": {Data: &qdrant.Value_StringValue{StringValue: versionID}},
-				"source_url": {Data: &qdrant.Value_StringValue{StringValue: contentData.WebVersion.SourceURL}},
-				"page_title": {Data: &qdrant.Value_StringValue{StringValue: contentData.CurrentVersion.Title}},
-			},
+			// Use NewID for UUIDs and NewVectors with the '...' spread operator
+			Id:      qdrant.NewID(uuid.New().String()),
+			Vectors: qdrant.NewVectors(vectors[i]...),
+			Payload: payload,
 		}
 	}
-	// Note: In production, you would batch these upserts
+
+	waitUpsert := true
 	_, err = s.qdrantClient.Upsert(ctx, &qdrant.UpsertPoints{
 		CollectionName: "website_content",
 		Points:         qdrantPoints,
-		Wait:           qdrant.Bool(true),
+		Wait:           &waitUpsert,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to upsert points to Qdrant: %w", err)
@@ -132,15 +133,16 @@ func (s *ingestionService) ChunkAndIndexWebContent(ctx context.Context, contentI
 	typesenseDocs := make([]interface{}, len(chunks))
 	for i, chunk := range chunks {
 		typesenseDocs[i] = map[string]interface{}{
-			"id":                uuid.New().String(),
-			"content":           chunk,
-			"source_page_url":   contentData.WebVersion.SourceURL,
-			"page_title":        contentData.CurrentVersion.Title,
-			"created_at":        contentData.Content.CreatedAt.Unix(),
+			"id":              uuid.New().String(),
+			"content":         chunk,
+			"source_page_url": contentData.WebVersion.SourceURL,
+			"page_title":      contentData.CurrentVersion.Title,
+			"created_at":      contentData.Content.CreatedAt.Unix(),
 		}
 	}
-	// Note: In production, you would batch these imports
-	_, err = s.typesenseClient.Collection("markdown_chunks").Documents().Import(ctx, typesenseDocs, &api.ImportDocumentsParams{Action: "upsert"})
+
+	action := "upsert"
+	_, err = s.typesenseClient.Collection("markdown_chunks").Documents().Import(ctx, typesenseDocs, &api.ImportDocumentsParams{Action: &action})
 	if err != nil {
 		return fmt.Errorf("failed to import documents to Typesense: %w", err)
 	}
@@ -151,46 +153,33 @@ func (s *ingestionService) ChunkAndIndexWebContent(ctx context.Context, contentI
 
 // chunkMarkdownByHeadings splits markdown text into chunks based on heading levels.
 func (s *ingestionService) chunkMarkdownByHeadings(markdown string) []string {
-	// Regex to split by H1, H2, or H3 headings
 	re := regexp.MustCompile(`(?m)^(#{1,3}\s.*)$`)
-	
-	// Find all heading locations
 	indexes := re.FindAllStringIndex(markdown, -1)
-	
 	var chunks []string
 	start := 0
 
-	// Create a chunk for the content before the first heading
-    if len(indexes) > 0 && indexes[0][0] > 0 {
-        firstChunk := strings.TrimSpace(markdown[0:indexes[0][0]])
-        if firstChunk != "" {
-            chunks = append(chunks, firstChunk)
-        }
-    } else if len(indexes) == 0 && strings.TrimSpace(markdown) != "" {
-		// If no headings, the whole document is one chunk
+	if len(indexes) > 0 && indexes[0][0] > 0 {
+		firstChunk := strings.TrimSpace(markdown[0:indexes[0][0]])
+		if firstChunk != "" {
+			chunks = append(chunks, firstChunk)
+		}
+	} else if len(indexes) == 0 && strings.TrimSpace(markdown) != "" {
 		chunks = append(chunks, strings.TrimSpace(markdown))
 		return chunks
 	}
 
-	// Create chunks for each section
 	for i, index := range indexes {
-		// The start of the current chunk is the start of the heading
 		start = index[0]
-		
 		var end int
 		if i < len(indexes)-1 {
-			// The end of the current chunk is the start of the next heading
 			end = indexes[i+1][0]
 		} else {
-			// This is the last heading, so the chunk goes to the end of the document
 			end = len(markdown)
 		}
-		
 		chunk := strings.TrimSpace(markdown[start:end])
 		if chunk != "" {
 			chunks = append(chunks, chunk)
 		}
 	}
-	
 	return chunks
 }
