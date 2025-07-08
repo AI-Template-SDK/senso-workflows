@@ -4,13 +4,10 @@ FROM golang:1.24-alpine AS builder
 # 1. Install git and the openssh client
 RUN apk add --no-cache git openssh-client
 
-# 2. Add github.com's public key to known_hosts to allow non-interactive git commands
-RUN mkdir -p -m 0600 ~/.ssh && ssh-keyscan github.com >> ~/.ssh/known_hosts
-
 WORKDIR /app
 
 # 3. Configure git to use SSH for GitHub URLs, just like in your setup guide
-RUN git config --global url."git@github.com:".insteadOf "https://github.com/"
+RUN git config --global url."https://@github.com/".insteadOf "https://github.com/"
 
 # 4. Copy go.mod and go.sum
 COPY go.mod go.sum ./

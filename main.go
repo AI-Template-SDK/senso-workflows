@@ -21,6 +21,7 @@ import (
 	"github.com/AI-Template-SDK/senso-workflows/services"
 	"github.com/AI-Template-SDK/senso-workflows/workflows"
 	"github.com/qdrant/go-client/qdrant"
+	"github.com/typesense/typesense-go/v2/typesense"
 )
 
 // createDatabaseClient creates a database client using our config structure
@@ -50,60 +51,58 @@ func createDatabaseClient(ctx context.Context, cfg config.DatabaseConfig) (*data
 
 func main() {
 	// ---- START: LOCAL DOCKER-COMPOSE TEST BLOCK ----
-	if os.Getenv("LOCAL_TEST_MODE") == "true" {
-		log.Println("--- RUNNING IN LOCAL TEST MODE ---")
+	// if os.Getenv("LOCAL_TEST_MODE") == "true" {
+	// 	log.Println("--- RUNNING IN LOCAL TEST MODE ---")
 
-		// Test Qdrant Connection
-		qdrantHost := os.Getenv("QDRANT_HOST")
-		qdrantPort := os.Getenv("QDRANT_PORT")
-		qdrantAddr := fmt.Sprintf("%s:%s", qdrantHost, qdrantPort)
+	// 	// Test Qdrant Connection
+	// 	qdrantHost := os.Getenv("QDRANT_HOST")
+	// 	qdrantPort := os.Getenv("QDRANT_PORT")
+	// 	qdrantAddr := fmt.Sprintf("%s:%s", qdrantHost, qdrantPort)
 
-		qdrantConn, err := grpc.Dial(qdrantAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
-		if err != nil {
-			log.Fatalf("Qdrant connection failed: %v", err)
-		}
-		defer qdrantConn.Close()
+	// 	qdrantConn, err := grpc.Dial(qdrantAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	// 	if err != nil {
+	// 		log.Fatalf("Qdrant connection failed: %v", err)
+	// 	}
+	// 	defer qdrantConn.Close()
 
-		// Instead of a health client, we create a collections client to test the connection.
-		collectionsClient := qdrant.NewCollectionsClient(qdrantConn)
+	// 	// Instead of a health client, we create a collections client to test the connection.
+	// 	collectionsClient := qdrant.NewCollectionsClient(qdrantConn)
 
-		// We test the connection by trying to list the collections. An empty response is a success.
-		_, err = collectionsClient.List(context.Background(), &qdrant.ListCollectionsRequest{})
-		if err != nil {
-			log.Printf("❌ Qdrant list collections check failed: %v\n", err)
-		} else {
-			log.Println("✅ Successfully connected to local Qdrant!")
-		}
+	// 	// We test the connection by trying to list the collections. An empty response is a success.
+	// 	_, err = collectionsClient.List(context.Background(), &qdrant.ListCollectionsRequest{})
+	// 	if err != nil {
+	// 		log.Printf("❌ Qdrant list collections check failed: %v\n", err)
+	// 	} else {
+	// 		log.Println("✅ Successfully connected to local Qdrant!")
+	// 	}
 
-		// Test Typesense Connection
-		typesenseHost := os.Getenv("TYPESENSE_HOST")
-		typesensePort := os.Getenv("TYPESENSE_PORT")
-		typesenseAddr := fmt.Sprintf("http://%s:%s", typesenseHost, typesensePort)
-		typesenseAPIKey := os.Getenv("TYPESENSE_API_KEY")
+	// 	// Test Typesense Connection
+	// 	typesenseHost := os.Getenv("TYPESENSE_HOST")
+	// 	typesensePort := os.Getenv("TYPESENSE_PORT")
+	// 	typesenseAddr := fmt.Sprintf("http://%s:%s", typesenseHost, typesensePort)
+	// 	typesenseAPIKey := os.Getenv("TYPESENSE_API_KEY")
 
-		req, _ := http.NewRequest("GET", typesenseAddr+"/health", nil)
-		req.Header.Set("X-TYPESENSE-API-KEY", typesenseAPIKey)
+	// 	req, _ := http.NewRequest("GET", typesenseAddr+"/health", nil)
+	// 	req.Header.Set("X-TYPESENSE-API-KEY", typesenseAPIKey)
 
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			log.Printf("❌ Typesense health check failed: %v\n", err)
-		} else if resp.StatusCode != http.StatusOK {
-			log.Printf("❌ Typesense health check returned non-200 status: %s", resp.Status)
-		} else {
-			log.Println("✅ Successfully connected to local Typesense!")
-		}
-		defer resp.Body.Close()
+	// 	resp, err := http.DefaultClient.Do(req)
+	// 	if err != nil {
+	// 		log.Printf("❌ Typesense health check failed: %v\n", err)
+	// 	} else if resp.StatusCode != http.StatusOK {
+	// 		log.Printf("❌ Typesense health check returned non-200 status: %s", resp.Status)
+	// 	} else {
+	// 		log.Println("✅ Successfully connected to local Typesense!")
+	// 	}
+	// 	defer resp.Body.Close()
 
-		log.Println("--- LOCAL TEST MODE FINISHED, IDLING ---")
-		select {}
-	}
+	// 	log.Println("--- LOCAL TEST MODE FINISHED, IDLING ---")
+	// 	select {}
+	// }
 	// ---- END: LOCAL DOCKER-COMPOSE TEST BLOCK ----
 
 	// Load environment variables from .env file first (standard practice)
 	if err := godotenv.Load(); err != nil {
-		// Try dev.env as fallback for local development
 		if err := godotenv.Load("dev.env"); err != nil {
-			// It's OK if neither file exists, we'll use environment variables
 			log.Printf("Note: No .env or dev.env file loaded: %v", err)
 		} else {
 			log.Printf("Loaded dev.env file for local development")
@@ -153,11 +152,33 @@ func main() {
 		log.Printf("Running in development mode - signing key verification disabled")
 	}
 
+	// === NEW: INITIALIZE QDRANT AND TYPESENSE CLIENTS ===
+	qdrantAddr := fmt.Sprintf("%s:%d", cfg.Qdrant.Host, cfg.Qdrant.Port)
+	qdrantConn, err := grpc.Dial(qdrantAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		log.Fatalf("Failed to create Qdrant connection: %v", err)
+	}
+	qdrantClient := qdrant.NewClient(qdrantConn)
+	log.Printf("Qdrant client initialized for host: %s", qdrantAddr)
+
+	typesenseClient := typesense.NewClient(
+		typesense.WithServer(fmt.Sprintf("http://%s:%d", cfg.Typesense.Host, cfg.Typesense.Port)),
+		typesense.WithAPIKey(cfg.Typesense.APIKey),
+	)
+	log.Printf("Typesense client initialized for host: %s", cfg.Typesense.Host)
+	// === END NEW ===
+
 	// Initialize services with repository manager and proper dependencies
 	orgService := services.NewOrgService(cfg, repoManager)
 	dataExtractionService := services.NewDataExtractionService(cfg)
 	questionRunnerService := services.NewQuestionRunnerService(cfg, repoManager, dataExtractionService)
 	analyticsService := services.NewAnalyticsService(cfg, repoManager)
+
+	// === NEW: INITIALIZE INGESTION SERVICE ===
+	openAIService := services.NewOpenAIService(cfg)
+	ingestionService := services.NewIngestionService(qdrantClient, typesenseClient, openAIService, cfg)
+	log.Printf("Ingestion service initialized")
+	// === END NEW ===
 
 	// Create Inngest client
 	client, err := inngestgo.NewClient(
@@ -180,14 +201,25 @@ func main() {
 	)
 	scheduledProcessor := workflows.NewScheduledProcessor(orgService)
 
+	// === NEW: INITIALIZE CONTENT PROCESSOR ===
+	contentProcessor := workflows.NewContentProcessor(ingestionService)
+	log.Printf("Content processor initialized")
+	// === END NEW ===
+
 	// Set client on workflows
 	orgProcessor.SetClient(client)
 	scheduledProcessor.SetClient(client)
+	// === NEW: SET CLIENT ON CONTENT PROCESSOR ===
+	contentProcessor.SetClient(client)
+	// === END NEW ===
 
 	// Register functions (they auto-register with the client when created)
 	orgProcessor.ProcessOrg()
 	scheduledProcessor.DailyOrgProcessor()
 	scheduledProcessor.WeeklyLoadAnalyzer()
+	// === NEW: REGISTER CONTENT WORKFLOW FUNCTION ===
+	contentProcessor.ProcessWebsiteContent()
+	// === END NEW ===
 
 	// Create handler
 	h := client.Serve()
@@ -215,11 +247,7 @@ func main() {
 		testOrgID := "test-org-123"
 		evt := inngestgo.Event{
 			Name: "org.process",
-			Data: map[string]interface{}{
-				"org_id":       testOrgID,
-				"triggered_by": "manual_test",
-				"user_id":      "test-user",
-			},
+			Data: map[string]interface{}{"org_id": testOrgID, "triggered_by": "manual_test", "user_id": "test-user"},
 		}
 
 		// Send event

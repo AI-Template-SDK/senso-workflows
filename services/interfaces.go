@@ -73,6 +73,12 @@ type ExtractedData struct {
 // AIProvider interface for different AI models
 type AIProvider interface {
 	RunQuestion(ctx context.Context, question string, webSearch bool, location *workflowModels.Location) (*AIResponse, error)
+	CreateEmbedding(ctx context.Context, text []string, model string) ([][]float32, error) // <-- ADD THIS LINE
+}
+
+type OpenAIProvider interface {
+    CreateEmbedding(ctx context.Context, text []string, model string) ([][]float32, error)
+    // You can add other methods like RunQuestion here later if needed
 }
 
 type AIResponse struct {

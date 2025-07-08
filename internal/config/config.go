@@ -8,6 +8,25 @@ import (
 	"strconv"
 )
 
+// Added QdrantConfig struct
+type QdrantConfig struct {
+	Host string
+	Port int
+}
+
+// Added TypesenseConfig struct
+type TypesenseConfig struct {
+	Host   string
+	Port   int
+	APIKey string
+}
+
+// Added SensoAPIConfig struct
+type SensoAPIConfig struct {
+	BaseURL string
+	APIKey  string
+}
+
 type Config struct {
 	Port              string
 	Environment       string
@@ -19,6 +38,9 @@ type Config struct {
 	DatabaseURL       string
 	APIToken          string
 	Database          DatabaseConfig
+	Qdrant            QdrantConfig    // Added Qdrant config
+	Typesense         TypesenseConfig // Added Typesense config
+	SensoAPI          SensoAPIConfig  // Added SensoAPI config
 }
 
 // DatabaseConfig matches the senso-api database configuration structure exactly
@@ -63,8 +85,25 @@ func Load() *Config {
 			ConnMaxLifetime: getEnvInt("DB_CONN_MAX_LIFETIME", 300),
 		}
 	}
-
 	config.Database = dbConfig
+
+	// === ADDED THIS BLOCK TO LOAD NEW CONFIGS ===
+	config.Qdrant = QdrantConfig{
+		Host: getEnv("QDRANT_HOST", "qdrant"),
+		Port: getEnvInt("QDRANT_PORT", 6334),
+	}
+	config.Typesense = TypesenseConfig{
+		Host:   getEnv("TYPESENSE_HOST", "typesense"),
+		Port:   getEnvInt("TYPESENSE_PORT", 8108),
+		APIKey: getEnv("TYPESENSE_API_KEY", "xyz"),
+	}
+	config.SensoAPI = SensoAPIConfig{
+		// 'host.docker.internal' lets this container talk to a service exposed on your local machine (the Mac)
+		BaseURL: getEnv("SENSO_API_URL", "http://host.docker.internal:8000"),
+		APIKey:  getEnv("SENSO_API_KEY", "tgr_test_key_for_development_only"),
+	}
+	// === END ADDED BLOCK ===
+
 	return config
 }
 

@@ -170,3 +170,9 @@ func (p *anthropicProvider) extractResponseText(response anthropic.Message) stri
 
 	return strings.Join(textParts, "")
 }
+
+func (p *anthropicProvider) CreateEmbedding(ctx context.Context, texts []string, model string) ([][]float32, error) {
+    // Anthropic Claude models do not have a dedicated embedding endpoint like OpenAI.
+    // Return an error to indicate this is not supported.
+    return nil, fmt.Errorf("embedding is not supported by the anthropic provider")
+}
