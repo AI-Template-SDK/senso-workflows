@@ -125,7 +125,7 @@ func (s *dataExtractionService) ExtractClaims(ctx context.Context, questionRunID
 	prompt := s.buildClaimsExtractionPrompt(response, targetCompany)
 
 	// Use a model that supports structured outputs
-	model := openai.ChatModelGPT4_1
+	model := openai.ChatModelO4Mini
 
 	schemaParam := openai.ResponseFormatJSONSchemaJSONSchemaParam{
 		Name:        "claims_extraction",
@@ -144,7 +144,6 @@ func (s *dataExtractionService) ExtractClaims(ctx context.Context, questionRunID
 		ResponseFormat: openai.ChatCompletionNewParamsResponseFormatUnion{
 			OfJSONSchema: &openai.ResponseFormatJSONSchemaParam{JSONSchema: schemaParam},
 		},
-		Temperature: openai.Float(0),
 	})
 
 	if err != nil {
@@ -457,14 +456,38 @@ Industry analysts rank TechFlow #3 in customer satisfaction, though some users r
 
 ## VERBATIM TEXT PRESERVATION
 
-**CRITICAL**: Extract text segments EXACTLY as written:
-- ✅ Preserve all punctuation: . , ; : ! ? " ' - —
-- ✅ Maintain original capitalization
-- ✅ Keep all numbers, symbols, special characters
-- ✅ Include URLs and citations exactly as they appear
-- ✅ Preserve spacing and line breaks within segments
-- ❌ Do NOT include formatting elements (bullets, numbers, headers)
-- ❌ Do NOT paraphrase, edit, or "clean up" text
+**🚨 CRITICAL - EXACT CHARACTER-BY-CHARACTER COPYING 🚨**
+
+Extract text segments EXACTLY as they appear in the source, including ALL formatting:
+
+**MUST PRESERVE (Copy EVERYTHING):**
+- (Preserve ALL markdown formatting: bold, italic, inline code with single backticks, bold italic)
+- (Preserve ALL markdown links: [text](url), [reference][1])
+- (Preserve ALL markdown lists: -, *, 1., 2., etc.)
+- (Preserve ALL punctuation: . , ; : ! ? " ' - — ( ) [ ] { })
+- (Preserve ALL capitalization exactly as written)
+- (Preserve ALL numbers, symbols, special characters: @#$%^&*+=)
+- (Preserve ALL URLs and citations with their markdown: [link](https://example.com))
+- (Preserve ALL spacing, line breaks, indentation within segments)
+- (Preserve ALL inline code with single backticks and code blocks with triple backticks)
+- (Preserve ALL emoji, unicode characters if present)
+
+**NEVER DO:**
+- Do NOT strip markdown formatting (**, *, etc.)
+- Do NOT convert [links](url) to plain text
+- Do NOT "clean up" or normalize any text
+- Do NOT paraphrase or reword
+- Do NOT fix typos or grammar
+- Do NOT remove any characters whatsoever
+
+**EXTRACTION METHOD:**
+1. Locate the segment boundaries in the original text
+2. Copy EVERY SINGLE CHARACTER between those boundaries
+3. Paste into claim_text field WITHOUT ANY MODIFICATIONS
+4. The extracted text must be searchable in the original response using exact string matching
+
+**VERIFICATION TEST:**
+If you cannot find your extracted claim_text as an EXACT substring in the original response (including all markdown), you have made an error.
 
 ## SEGMENTATION VALIDATION
 
