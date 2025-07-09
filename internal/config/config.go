@@ -87,7 +87,7 @@ func Load() *Config {
 	}
 	config.Database = dbConfig
 
-	// === ADDED THIS BLOCK TO LOAD NEW CONFIGS ===
+	// === BLOCK TO LOAD NEW CONFIGS ===
 	config.Qdrant = QdrantConfig{
 		Host: getEnv("QDRANT_HOST", "qdrant"),
 		Port: getEnvInt("QDRANT_PORT", 6334),
@@ -102,7 +102,7 @@ func Load() *Config {
 		BaseURL: getEnv("SENSO_API_URL", "http://host.docker.internal:8000"),
 		APIKey:  getEnv("SENSO_API_KEY", "tgr_test_key_for_development_only"),
 	}
-	// === END ADDED BLOCK ===
+	// === END BLOCK ===
 
 	return config
 }

@@ -44,9 +44,9 @@ services:
       - "8000:8080"
     depends_on:
       typesense:
-        condition: service_healthy # <-- Wait for the healthcheck to pass
+        condition: service_healthy
       qdrant:
-        condition: service_healthy # <-- Wait for the healthcheck to pass
+        condition: service_healthy
     environment:
       - LOCAL_TEST_MODE=true
       - TYPESENSE_HOST=typesense

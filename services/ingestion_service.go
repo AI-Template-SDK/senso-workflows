@@ -1,4 +1,3 @@
-// services/ingestion_service.go
 package services
 
 import (
@@ -19,22 +18,20 @@ import (
 	"github.com/typesense/typesense-go/v2/typesense/api"
 )
 
-// IngestionService defines the interface for our new service.
 type IngestionService interface {
 	ChunkAndIndexWebContent(ctx context.Context, contentID, versionID string) error
 }
 
 type ingestionService struct {
-	qdrantClient    qdrant.PointsClient
+	qdrantClient    *qdrant.Client // Changed to the high-level client
 	typesenseClient *typesense.Client
 	openAIService   OpenAIProvider
 	apiClient       *http.Client
 	cfg             *config.Config
 }
 
-// NewIngestionService creates a new IngestionService instance.
 func NewIngestionService(
-	qdrantClient qdrant.PointsClient,
+	qdrantClient *qdrant.Client, // Changed to the high-level client
 	typesenseClient *typesense.Client,
 	openAIService OpenAIProvider,
 	cfg *config.Config,
