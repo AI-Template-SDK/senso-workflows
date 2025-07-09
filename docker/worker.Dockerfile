@@ -23,5 +23,8 @@ WORKDIR /root/
 
 COPY --from=builder /app/senso-workflows .
 
-EXPOSE 8080
+# Copy .env file if it exists (from GitHub Actions)
+COPY .env* ./
+
+EXPOSE 8000
 CMD ["./senso-workflows"] 

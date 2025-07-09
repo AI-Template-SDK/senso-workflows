@@ -8,7 +8,7 @@ services:
     env_file:
       - .env
     ports:
-      - "8080:8080"
+      - "8000:8000"
     depends_on:
       postgres:
         condition: service_healthy
@@ -20,7 +20,7 @@ services:
         condition: service_started
     environment:
       # Server configuration
-      - PORT=8080
+      - PORT=8000
       - ENVIRONMENT=development
       # Force Inngest SDK to Dev Mode (disables signature verification)
       - INNGEST_DEV=1
@@ -79,7 +79,7 @@ services:
 
   inngest:
     image: inngest/inngest:latest
-    command: 'inngest dev -u http://worker:8080/api/inngest'
+    command: 'inngest dev -u http://worker:8000/api/inngest'
     ports:
       - '8288:8288'
     networks:

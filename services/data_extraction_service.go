@@ -608,7 +608,7 @@ When you do find a relevant URL, extract it EXACTLY as it appears:
 - Subdomains: blog.example.com, api.subdomain.example.com
 - With parameters: site.com/page?id=123&type=data
 - With anchors: example.com/doc#section-5
-- With ports: server.com:8080/api
+- With ports: server.com:8000/api
 - IP addresses: 192.168.1.1/path, http://10.0.0.1:3000
 - Even malformed: example.com//double-slash/page
 
@@ -624,7 +624,7 @@ When you do find a relevant URL, extract it EXACTLY as it appears:
 1. **Extract base domain from URL**:
    - https://blog.example.com/post → blog.example.com
    - www.subdomain.site.org/page → subdomain.site.org
-   - http://server.com:8080/api → server.com
+   - http://server.com:8000/api → server.com
 
 2. **Compare against org domains**:
    - Remove protocols (http://, https://)

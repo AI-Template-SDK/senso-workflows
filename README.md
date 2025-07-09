@@ -44,7 +44,7 @@ API_TOKEN=your-api-authentication-token
 GITHUB_PAT=your-github-personal-access-token
 
 # Optional
-PORT=8080                    # Default: 8080
+PORT=8000                    # Default: 8000
 ENVIRONMENT=production       # Default: development
 ```
 
@@ -212,7 +212,7 @@ echo "ANTHROPIC_API_KEY=your_anthropic_key" >> .env
 # Start the services
 docker-compose up --build
 
-# The application will be available at http://localhost:8080
+# The application will be available at http://localhost:8000
 # Inngest dev server will be available at http://localhost:8288
 # PostgreSQL will be available at localhost:5432
 ```
@@ -229,7 +229,7 @@ The Docker Compose setup includes:
 
 ```bash
 docker build -f docker/worker.Dockerfile -t senso-workflows . --build-arg GITHUB_PAT=your_github_token
-docker run -p 8080:8080 \
+docker run -p 8000:8000 \
   -e INNGEST_EVENT_KEY=your-key \
   -e OPENAI_API_KEY=your-key \
   senso-workflows
@@ -343,9 +343,9 @@ When running with Docker Compose, the following services are available:
 
 | Service | URL | Description |
 |---------|-----|-------------|
-| **Application** | http://localhost:8080 | Main senso-workflows API |
+| **Application** | http://localhost:8000 | Main senso-workflows API |
 | **Inngest Dashboard** | http://localhost:8288 | Workflow monitoring and debugging |
-| **Health Check** | http://localhost:8080/health | Service health status |
+| **Health Check** | http://localhost:8000/health | Service health status |
 | **Database** | localhost:5432 | PostgreSQL database |
 
 The Inngest Dashboard provides real-time workflow monitoring, execution logs, and debugging capabilities.
