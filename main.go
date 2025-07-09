@@ -161,6 +161,14 @@ func main() {
 	// Setup routes
 	mux := http.NewServeMux()
 	mux.Handle("/api/inngest", h)
+
+	// Root endpoint for ALB health check
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"service":"senso-workflows","status":"running"}`))
+	})
+
+	// Health check
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(`{"status":"healthy"}`))

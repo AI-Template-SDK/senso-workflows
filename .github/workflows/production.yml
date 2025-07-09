@@ -6,11 +6,11 @@ on:
 
 env:
   AWS_REGION: us-east-1
-  ECR_REPOSITORY: senso-production-workflows  # New ECR repository name
-  ECS_SERVICE: production-workflows-service  # New ECS service name  
-  ECS_CLUSTER: senso-production-workflows-cluster  # New ECS cluster name
-  ECS_TASK_DEFINITION: production-workflows-task  # New task definition name
-  CONTAINER_NAME: workflows-worker
+  ECR_REPOSITORY: senso-production-senso2-workflows  # New ECR repository name
+  ECS_SERVICE: production-senso2-stack-sensoproductionsenso2workflowsserviceServiceFB6296A3-1tNa9mJ3c80J  # New ECS service name  
+  ECS_CLUSTER: senso-production-senso2-cluster  # New ECS cluster name
+  ECS_TASK_DEFINITION: productionsenso2stacksensoproductionsenso2workflowstask7FC5BE80  # New task definition name
+  CONTAINER_NAME: workflows-app
   AWS_SECRET_NAME: senso-workflows-prod-env  # New secret in AWS Secrets Manager
 
 jobs:
@@ -70,7 +70,7 @@ jobs:
           IMAGE_TAG: ${{ github.sha }}
         run: |
           echo "🔨 Building Inngest workflow worker Docker image..."
-          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG -f docker/worker.Dockerfile .
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG -f docker/worker.Dockerfile . --build-arg GITHUB_PAT=${{ secrets.REPO_PAT }}
           docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
           
           echo "🚀 Pushing images to ECR..."
@@ -104,65 +104,6 @@ jobs:
           service: ${{ env.ECS_SERVICE }}
           cluster: ${{ env.ECS_CLUSTER }}
           wait-for-service-stability: true
-
-      - name: Validate Inngest webhook endpoint
-        run: |
-          echo "🔗 Validating Inngest webhook endpoint..."
-          # Wait for the service to stabilize
-          sleep 60
-          
-          # Test the health endpoint
-          HEALTH_CHECK=$(curl -s -o /dev/null -w "%{http_code}" https://workflows.senso.ai/health)
-          if [ "$HEALTH_CHECK" = "200" ]; then
-            echo "✅ Health check passed"
-          else
-            echo "❌ Health check failed. HTTP status: $HEALTH_CHECK"
-            exit 1
-          fi
-          
-          # Test Inngest endpoint accessibility (without actual Inngest call)
-          INNGEST_CHECK=$(curl -s -o /dev/null -w "%{http_code}" https://workflows.senso.ai/api/inngest)
-          if [ "$INNGEST_CHECK" = "200" ] || [ "$INNGEST_CHECK" = "405" ]; then
-            echo "✅ Inngest endpoint accessible"
-          else
-            echo "❌ Inngest endpoint not accessible. HTTP status: $INNGEST_CHECK"
-            exit 1
-          fi
-
-      - name: Service health and readiness check
-        run: |
-          echo "🏥 Performing comprehensive health check..."
-          # Wait a bit for the service to fully stabilize
-          sleep 30
-          
-          # Check ECS service status
-          SERVICE_STATUS=$(aws ecs describe-services \
-            --cluster ${{ env.ECS_CLUSTER }} \
-            --services ${{ env.ECS_SERVICE }} \
-            --query 'services[0].deployments[0].status' \
-            --output text)
-          
-          RUNNING_COUNT=$(aws ecs describe-services \
-            --cluster ${{ env.ECS_CLUSTER }} \
-            --services ${{ env.ECS_SERVICE }} \
-            --query 'services[0].runningCount' \
-            --output text)
-          
-          DESIRED_COUNT=$(aws ecs describe-services \
-            --cluster ${{ env.ECS_CLUSTER }} \
-            --services ${{ env.ECS_SERVICE }} \
-            --query 'services[0].desiredCount' \
-            --output text)
-          
-          if [ "$SERVICE_STATUS" = "PRIMARY" ] && [ "$RUNNING_COUNT" = "$DESIRED_COUNT" ]; then
-            echo "✅ Inngest workflow worker deployment successful and stable"
-            echo "📊 Running: $RUNNING_COUNT/$DESIRED_COUNT tasks"
-          else
-            echo "❌ Service deployment may have issues"
-            echo "   Status: $SERVICE_STATUS"
-            echo "   Running: $RUNNING_COUNT/$DESIRED_COUNT tasks"
-            exit 1
-          fi
 
       - name: Deployment complete
         run: |

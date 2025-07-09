@@ -1,5 +1,14 @@
 # Senso Workflows
 
+![Version](https://img.shields.io/badge/version-0.1.0-blue)
+![Go](https://img.shields.io/badge/go-1.24-00ADD8?logo=go&logoColor=white)
+![Lint](https://github.com/AI-Template-SDK/senso/actions/workflows/golangci-lint.yml/badge.svg)
+![Build](https://github.com/AI-Template-SDK/senso/actions/workflows/build.yml/badge.svg)
+![Production](https://github.com/AI-Template-SDK/senso/actions/workflows/production.yml/badge.svg)
+![Coverage](https://img.shields.io/badge/coverage-0%25-red)
+![API Status](https://img.shields.io/badge/status-early%20access-purple)
+![Last Updated](https://img.shields.io/badge/updated-July%202025-lightgrey)
+
 A workflow orchestration service built with Go and Inngest that automates question/extract processing for organizations in the Senso platform. It supports both manual triggering and automated weekly scheduling.
 
 ## Overview
@@ -13,38 +22,31 @@ Senso Workflows is a microservice that:
 
 ## Environment Configuration
 
-This project uses environment variables for configuration. We support multiple ways to set them:
+This project uses environment variables for configuration. Create a `.env` file in the project root with your configuration values.
 
-### Local Development
+### Required Environment Variables
 
-For local development, the app looks for environment files in this order:
-1. `.env` (create your own from the examples below)
-2. `dev.env` (included with sensible defaults for local development)
-
-To get started quickly with local development:
 ```bash
-# The included dev.env file has everything configured for local development
-# Just make sure Inngest Dev Server is running:
-npx inngest-cli@latest dev
+# Inngest Configuration
+INNGEST_EVENT_KEY=your-inngest-event-key
+INNGEST_SIGNING_KEY=your-inngest-signing-key  # Production only
 
-# Then build and run the app:
-go build
-./senso-workflows
+# API Keys
+OPENAI_API_KEY=your-openai-api-key
+ANTHROPIC_API_KEY=your-anthropic-api-key
+
+# Application
+APPLICATION_API_URL=https://your-app-api.com
+DATABASE_URL=your-database-connection-string
+API_TOKEN=your-api-authentication-token
+
+# GitHub (for Docker builds)
+GITHUB_PAT=your-github-personal-access-token
+
+# Optional
+PORT=8000                    # Default: 8000
+ENVIRONMENT=production       # Default: development
 ```
-
-### Production
-
-For production, copy `prod.env.example` to `.env` and update with your real values:
-```bash
-cp prod.env.example .env
-# Edit .env with your production values
-```
-
-The main differences between development and production:
-- **Development**: Uses local Inngest Dev Server (`INNGEST_BASE_URL=http://localhost:8288`)
-- **Production**: Uses Inngest Cloud (no `INNGEST_BASE_URL` needed)
-- **Development**: Can use dummy API keys for testing
-- **Production**: Requires real API keys and proper authentication
 
 ## Features
 
@@ -98,27 +100,31 @@ The main differences between development and production:
 - Inngest account and API keys
 - OpenAI API key
 
-## Environment Variables
+
+
+## Private Repository Setup
+
+This project depends on private GitHub repositories. You need to configure your Go environment to access the private `senso-api` repository.
+
+### 1. Configure Go to recognize private repositories
+
+Tell Go to treat AI-Template-SDK repositories as private:
 
 ```bash
-# Required
-INNGEST_EVENT_KEY=your-inngest-event-key
-INNGEST_SIGNING_KEY=your-inngest-signing-key
-OPENAI_API_KEY=your-openai-api-key
-APPLICATION_API_URL=https://your-app-api.com
-DATABASE_URL=your-database-connection-string
-API_TOKEN=your-api-authentication-token
-
-# Optional
-PORT=8080                    # Default: 8080
-ENVIRONMENT=production       # Default: development
+go env -w GOPRIVATE=github.com/AI-Template-SDK/*
 ```
 
-## Setup
+This prevents Go from trying to fetch these modules from the public proxy.
 
-This project depends on private GitHub repositories. Before you can build or run this project, you need to configure your development environment.
+### 2. Configure Git to use SSH for GitHub
 
-**⚠️ Important: Please read the [Private Repository Setup Guide](./PRIVATE_REPOS_SETUP.md) before proceeding.**
+Set up Git to automatically use SSH instead of HTTPS for GitHub repositories:
+
+```bash
+git config --global url."git@github.com:".insteadOf "https://github.com/"
+```
+
+This ensures that Go can authenticate when fetching private dependencies.
 
 ## Quick Start
 
@@ -193,11 +199,37 @@ export OPENAI_API_KEY=your-key
 go run main.go
 ```
 
-### Building Docker Image
+### Running with Docker Compose
+
+For local development with Docker:
 
 ```bash
-docker build -t senso-workflows .
-docker run -p 8080:8080 \
+# Create a .env file with your GitHub PAT and API keys
+echo "GITHUB_PAT=your_github_token_here" > .env
+echo "OPENAI_API_KEY=your_openai_key" >> .env
+echo "ANTHROPIC_API_KEY=your_anthropic_key" >> .env
+
+# Start the services
+docker-compose up --build
+
+# The application will be available at http://localhost:8000
+# Inngest dev server will be available at http://localhost:8288
+# PostgreSQL will be available at localhost:5432
+```
+
+The Docker Compose setup includes:
+- **worker**: The senso-workflows application
+- **inngest**: Inngest dev server for workflow orchestration
+- **migrate**: Database migrations from senso-api package
+- **postgres**: PostgreSQL database with automatic initialization
+- **Networking**: Services can communicate with each other
+- **Volume persistence**: Database data persists between restarts
+
+### Building Docker Image Manually
+
+```bash
+docker build -f docker/worker.Dockerfile -t senso-workflows . --build-arg GITHUB_PAT=your_github_token
+docker run -p 8000:8000 \
   -e INNGEST_EVENT_KEY=your-key \
   -e OPENAI_API_KEY=your-key \
   senso-workflows
@@ -220,7 +252,10 @@ senso-workflows/
 │   ├── org_processor.go      # Main org processing workflow
 │   ├── scheduled_processor.go # Scheduled workflow trigger
 │   └── monitoring.go         # Load monitoring workflow
-├── Dockerfile                # Container configuration
+├── docker/                   # Docker configurations
+│   ├── worker.Dockerfile     # Main application container
+│   └── migrate.Dockerfile    # Database migration container
+├── docker-compose.yml        # Docker Compose configuration
 ├── go.mod                    # Go module definition
 ├── go.sum                    # Go module checksums
 ├── README.md                 # This file
@@ -301,3 +336,54 @@ This service uses the `Org` model from `senso-api` for organization data and def
 - Confirm timezone settings (uses UTC)
 - Check org creation dates and weekdays
 - Verify cron expression in scheduled processor
+
+## Service Endpoints
+
+When running with Docker Compose, the following services are available:
+
+| Service | URL | Description |
+|---------|-----|-------------|
+| **Application** | http://localhost:8000 | Main senso-workflows API |
+| **Inngest Dashboard** | http://localhost:8288 | Workflow monitoring and debugging |
+| **Health Check** | http://localhost:8000/health | Service health status |
+| **Database** | localhost:5432 | PostgreSQL database |
+
+The Inngest Dashboard provides real-time workflow monitoring, execution logs, and debugging capabilities.
+
+## Database Setup
+
+The Docker Compose setup automatically handles database migrations:
+
+### Migrations
+- **Source**: Migrations are pulled from the `senso-api` dependency (`github.com/AI-Template-SDK/senso-api`)
+- **Process**: The migrate service downloads the senso-api module and extracts migrations
+- **Tool**: Uses `migrate/migrate` to run database schema migrations
+- **Order**: Runs after PostgreSQL is healthy, before the main application starts
+
+This ensures your database schema is always up-to-date with the senso-api package version specified in `go.mod`.
+
+## GitHub Authentication Setup
+
+Since this project depends on the private `senso-api` repository, you need a GitHub Personal Access Token (PAT) to build the Docker images.
+
+### Creating a GitHub PAT
+
+1. Go to [GitHub Settings > Developer settings > Personal access tokens](https://github.com/settings/tokens)
+2. Click "Generate new token (classic)"
+3. Give it a descriptive name like "Senso Workflows Docker"
+4. Select the following scopes:
+   - `repo` (Full control of private repositories)
+5. Click "Generate token"
+6. Copy the token (you won't be able to see it again!)
+
+### Using the PAT
+
+Add your token to your environment file:
+
+```bash
+# In docker.env or .env
+GITHUB_PAT=ghp_your_actual_token_here
+```
+
+**Security Note**: Never commit your actual PAT to version control. The token should remain in your local environment files only.
+

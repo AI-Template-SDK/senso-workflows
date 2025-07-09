@@ -58,7 +58,7 @@ type DatabaseConfig struct {
 
 func Load() *Config {
 	config := &Config{
-		Port:              getEnv("PORT", "8080"),
+		Port:              getEnv("PORT", "8000"),
 		Environment:       getEnv("ENVIRONMENT", "development"),
 		InngestEventKey:   os.Getenv("INNGEST_EVENT_KEY"),
 		InngestSigningKey: os.Getenv("INNGEST_SIGNING_KEY"),
