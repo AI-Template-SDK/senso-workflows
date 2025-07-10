@@ -1,16 +1,13 @@
+// services/ingestion_service.go
 package services
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
 	"log"
-	"net/http"
 	"regexp"
 	"strings"
 
-	"github.com/AI-Template-SDK/senso-api/pkg/models"
 	"github.com/AI-Template-SDK/senso-workflows/internal/config"
 	"github.com/google/uuid"
 	"github.com/qdrant/go-client/qdrant"
@@ -23,24 +20,26 @@ type IngestionService interface {
 }
 
 type ingestionService struct {
-	qdrantClient    *qdrant.Client // Changed to the high-level client
+	qdrantClient    *qdrant.Client
 	typesenseClient *typesense.Client
 	openAIService   OpenAIProvider
-	apiClient       *http.Client
+	repos           *RepositoryManager
 	cfg             *config.Config
 }
 
+// CHANGED: The constructor now accepts the RepositoryManager.
 func NewIngestionService(
-	qdrantClient *qdrant.Client, // Changed to the high-level client
+	qdrantClient *qdrant.Client,
 	typesenseClient *typesense.Client,
 	openAIService OpenAIProvider,
+	repos *RepositoryManager,
 	cfg *config.Config,
 ) IngestionService {
 	return &ingestionService{
 		qdrantClient:    qdrantClient,
 		typesenseClient: typesenseClient,
 		openAIService:   openAIService,
-		apiClient:       &http.Client{},
+		repos:           repos,
 		cfg:             cfg,
 	}
 }
@@ -49,35 +48,32 @@ func NewIngestionService(
 func (s *ingestionService) ChunkAndIndexWebContent(ctx context.Context, contentID, versionID string) error {
 	log.Printf("[IngestionService] Starting chunking and indexing for content ID: %s", contentID)
 
-	// 1. Fetch content from senso-api
-	log.Println("[IngestionService] Step 1: Fetching content from senso-api...")
-	apiURL := fmt.Sprintf("%s/api/v1/content/%s", s.cfg.SensoAPI.BaseURL, contentID)
-	req, err := http.NewRequestWithContext(ctx, "GET", apiURL, nil)
+	// --- STEP 1: FETCH CONTENT FROM DATABASE (REPLACED HTTP CALL) ---
+	log.Println("[IngestionService] Step 1: Fetching content directly from database...")
+	contentUUID, err := uuid.Parse(contentID)
 	if err != nil {
-		return fmt.Errorf("failed to create request to senso-api: %w", err)
+		return fmt.Errorf("invalid content ID format: %w", err)
 	}
-	req.Header.Set("X-API-Key", s.cfg.SensoAPI.APIKey)
 
-	resp, err := s.apiClient.Do(req)
+	// Use the repository to get the content data
+	contentData, err := s.repos.ContentRepo.GetContentWithCurrentVersion(ctx, contentUUID)
 	if err != nil {
-		return fmt.Errorf("failed to call senso-api: %w", err)
+		return fmt.Errorf("failed to get content from database: %w", err)
 	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("senso-api returned non-200 status: %s - %s", resp.Status, string(body))
+	if contentData == nil {
+		return fmt.Errorf("content not found in database for ID %s", contentID)
 	}
 
-	var contentData models.ContentWithCurrentVersion
-	if err := json.NewDecoder(resp.Body).Decode(&contentData); err != nil {
-		return fmt.Errorf("failed to decode response from senso-api: %w", err)
+	// Determine which field contains the markdown
+	var markdownContent string
+	if contentData.WebVersion != nil && contentData.WebVersion.Markdown != "" {
+		markdownContent = contentData.WebVersion.Markdown
+	} else if contentData.RawVersion != nil && contentData.RawVersion.RawText != "" {
+		markdownContent = contentData.RawVersion.RawText
+	} else {
+		return fmt.Errorf("no web content or raw markdown found for content ID %s", contentID)
 	}
-
-	if contentData.WebVersion == nil || contentData.WebVersion.Markdown == "" {
-		return fmt.Errorf("no web content or markdown found for content ID %s", contentID)
-	}
-	markdownContent := contentData.WebVersion.Markdown
+	// --- END OF REPLACED BLOCK ---
 
 	// 2. Chunk the markdown content
 	log.Println("[IngestionService] Step 2: Chunking content...")
@@ -98,7 +94,6 @@ func (s *ingestionService) ChunkAndIndexWebContent(ctx context.Context, contentI
 	log.Printf("[IngestionService] Step 4: Indexing %d vectors to Qdrant...", len(vectors))
 	qdrantPoints := make([]*qdrant.PointStruct, len(chunks))
 	for i, chunk := range chunks {
-		// Create the payload using a simple map and the NewValueMap helper
 		payload := qdrant.NewValueMap(map[string]any{
 			"text":       chunk,
 			"content_id": contentID,
@@ -108,7 +103,6 @@ func (s *ingestionService) ChunkAndIndexWebContent(ctx context.Context, contentI
 		})
 
 		qdrantPoints[i] = &qdrant.PointStruct{
-			// Use NewID for UUIDs and NewVectors with the '...' spread operator
 			Id:      qdrant.NewID(uuid.New().String()),
 			Vectors: qdrant.NewVectors(vectors[i]...),
 			Payload: payload,

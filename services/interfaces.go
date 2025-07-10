@@ -26,6 +26,7 @@ type RepositoryManager struct {
 	MentionRepo     interfaces.QuestionRunMentionRepository
 	ClaimRepo       interfaces.QuestionRunClaimRepository
 	CitationRepo    interfaces.QuestionRunCitationRepository
+	ContentRepo     interfaces.ContentRepository
 }
 
 // NewRepositoryManager creates a new repository manager with all repositories
@@ -41,6 +42,7 @@ func NewRepositoryManager(db *database.Client) *RepositoryManager {
 		MentionRepo:     postgresql.NewQuestionRunMentionRepo(db),
 		ClaimRepo:       postgresql.NewQuestionRunClaimRepo(db),
 		CitationRepo:    postgresql.NewQuestionRunCitationRepo(db),
+		ContentRepo:     postgresql.NewContentRepo(db),
 	}
 }
 

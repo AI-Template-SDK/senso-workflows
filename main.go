@@ -118,7 +118,8 @@ func main() {
 	costService := services.NewCostService()
 	openAIService := services.NewOpenAIProvider(cfg, "gpt-4-turbo", costService)
 
-	ingestionService := services.NewIngestionService(qdrantClient, typesenseClient, openAIService, cfg)
+	// In sensor-workflows/main.go
+	ingestionService := services.NewIngestionService(qdrantClient, typesenseClient, openAIService, repoManager, cfg)
 	log.Printf("Ingestion service initialized")
 
 	// Create Inngest client
