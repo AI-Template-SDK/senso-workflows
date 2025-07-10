@@ -18,6 +18,10 @@ services:
         condition: service_completed_successfully
       inngest:
         condition: service_started
+      qdrant:
+        condition: service_healthy
+      typesense:
+        condition: service_healthy
     environment:
       # Server configuration
       - PORT=8000
@@ -40,6 +44,55 @@ services:
       - DB_MAX_IDLE_CONNS=25
       - DB_CONN_MAX_LIFETIME=300
       - DB_SSLMODE=disable
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6334
+      - TYPESENSE_HOST=typesense
+      - TYPESENSE_PORT=8108
+      - TYPESENSE_API_KEY=xyz
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  qdrant:
+    build:
+      context: .
+      dockerfile: qdrant.Dockerfile
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6333/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  typesense:
+    build:
+      context: .
+      dockerfile: typesense.Dockerfile
+    ports:
+      - "8108:8108"
+    volumes:
+      - typesense_data:/data
+    command: "--data-dir /data --api-key=xyz --enable-cors"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "curl",
+          "-f",
+          "http://localhost:8108/health",
+          "-H",
+          "X-TYPESENSE-API-KEY: xyz",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 5
     networks:
       - app-network
     restart: unless-stopped
@@ -110,3 +163,5 @@ networks:
 
 volumes:
   postgres-data:
+  qdrant_data:
+  typesense_data:
