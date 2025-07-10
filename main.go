@@ -7,17 +7,17 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings" // Added missing import
 	"time"
 
-	"github.com/inngest/inngestgo"
-	"github.com/jmoiron/sqlx"
-	"github.com/joho/godotenv"
-	_ "github.com/lib/pq"
-	
 	"github.com/AI-Template-SDK/senso-api/pkg/database"
 	"github.com/AI-Template-SDK/senso-workflows/internal/config"
 	"github.com/AI-Template-SDK/senso-workflows/services"
 	"github.com/AI-Template-SDK/senso-workflows/workflows"
+	"github.com/inngest/inngestgo"
+	"github.com/jmoiron/sqlx"
+	"github.com/joho/godotenv"
+	_ "github.com/lib/pq"
 	"github.com/qdrant/go-client/qdrant"
 	"github.com/typesense/typesense-go/v2/typesense"
 	typesenseapi "github.com/typesense/typesense-go/v2/typesense/api"
@@ -102,11 +102,10 @@ func main() {
 	}
 	log.Printf("Qdrant client initialized for host: %s", cfg.Qdrant.Host)
 
-	// Ensure the Qdrant collection exists
-	_, err = qdrantClient.CreateCollection(ctx, &qdrant.CreateCollection{
+	err = qdrantClient.CreateCollection(ctx, &qdrant.CreateCollection{
 		CollectionName: "website_content",
 		VectorsConfig: qdrant.NewVectorsConfig(&qdrant.VectorParams{
-			Size:     1536, // Dimension for text-embedding-ada-002
+			Size:     1536,
 			Distance: qdrant.Distance_Cosine,
 		}),
 	})
@@ -122,17 +121,20 @@ func main() {
 	)
 	log.Printf("Typesense client initialized for host: %s", cfg.Typesense.Host)
 
-	// Ensure the Typesense collection exists
+	// Corrected: Create pointers for bool and string values for the schema
+	facet := true
+	sort := true
+	defaultSortField := "created_at"
 	chunksSchema := &typesenseapi.CollectionSchema{
 		Name: "markdown_chunks",
 		Fields: []typesenseapi.Field{
 			{Name: "id", Type: "string"},
 			{Name: "content", Type: "string"},
-			{Name: "source_page_url", Type: "string", Facet: true},
-			{Name: "page_title", Type: "string", Facet: true},
-			{Name: "created_at", Type: "int64", Sort: true},
+			{Name: "source_page_url", Type: "string", Facet: &facet},
+			{Name: "page_title", Type: "string", Facet: &facet},
+			{Name: "created_at", Type: "int64", Sort: &sort},
 		},
-		DefaultSortingField: "created_at",
+		DefaultSortingField: &defaultSortField,
 	}
 	_, err = typesenseClient.Collections().Create(ctx, chunksSchema)
 	if err != nil && !strings.Contains(err.Error(), "already exists") {
@@ -168,29 +170,22 @@ func main() {
 		log.Fatalf("Failed to create Inngest client: %v", err)
 	}
 
-	// Initialize workflows with services
-	orgProcessor := workflows.NewOrgProcessor(
-		orgService,
-		analyticsService,
-		questionRunnerService,
-		cfg,
-	)
-	scheduledProcessor := workflows.NewScheduledProcessor(orgService)
-	contentProcessor := workflows.NewContentProcessor(ingestionService)
-	log.Printf("Content processor initialized")
-
-	// Set client on workflows
+	// Initialize and register workflows
+	orgProcessor := workflows.NewOrgProcessor(orgService, analyticsService, questionRunnerService, cfg)
 	orgProcessor.SetClient(client)
-	scheduledProcessor.SetClient(client)
-	contentProcessor.SetClient(client)
-
-	// Register functions
 	orgProcessor.ProcessOrg()
+
+	scheduledProcessor := workflows.NewScheduledProcessor(orgService)
+	scheduledProcessor.SetClient(client)
 	scheduledProcessor.DailyOrgProcessor()
 	scheduledProcessor.WeeklyLoadAnalyzer()
-	contentProcessor.ProcessWebsiteContent()
 
-	// Create handler
+	contentProcessor := workflows.NewContentProcessor(ingestionService)
+	contentProcessor.SetClient(client)
+	contentProcessor.ProcessWebsiteContent()
+	log.Printf("All processors initialized and functions registered")
+
+	// Create and start server
 	h := client.Serve()
 
 	// Setup routes
