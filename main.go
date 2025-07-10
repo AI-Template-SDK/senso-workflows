@@ -20,6 +20,7 @@ import (
 	"github.com/AI-Template-SDK/senso-workflows/workflows"
 	"github.com/qdrant/go-client/qdrant"
 	"github.com/typesense/typesense-go/v2/typesense"
+	typesenseapi "github.com/typesense/typesense-go/v2/typesense/api"
 )
 
 // createDatabaseClient creates a database client using our config structure
@@ -91,7 +92,7 @@ func main() {
 		log.Printf("Running in development mode - signing key verification disabled")
 	}
 
-	// === CORRECTED: INITIALIZE QDRANT AND TYPESENSE CLIENTS ===
+	// === CORRECTED: INITIALIZE CLIENTS AND ENSURE COLLECTIONS EXIST ===
 	qdrantClient, err := qdrant.NewClient(&qdrant.Config{
 		Host: cfg.Qdrant.Host,
 		Port: cfg.Qdrant.Port,
@@ -101,11 +102,44 @@ func main() {
 	}
 	log.Printf("Qdrant client initialized for host: %s", cfg.Qdrant.Host)
 
+	// Ensure the Qdrant collection exists
+	_, err = qdrantClient.CreateCollection(ctx, &qdrant.CreateCollection{
+		CollectionName: "website_content",
+		VectorsConfig: qdrant.NewVectorsConfig(&qdrant.VectorParams{
+			Size:     1536, // Dimension for text-embedding-ada-002
+			Distance: qdrant.Distance_Cosine,
+		}),
+	})
+	if err != nil && !strings.Contains(err.Error(), "already exists") {
+		log.Fatalf("Failed to create Qdrant collection: %v", err)
+	} else {
+		log.Println("Qdrant collection 'website_content' is ready.")
+	}
+
 	typesenseClient := typesense.NewClient(
 		typesense.WithServer(fmt.Sprintf("http://%s:%d", cfg.Typesense.Host, cfg.Typesense.Port)),
 		typesense.WithAPIKey(cfg.Typesense.APIKey),
 	)
 	log.Printf("Typesense client initialized for host: %s", cfg.Typesense.Host)
+
+	// Ensure the Typesense collection exists
+	chunksSchema := &typesenseapi.CollectionSchema{
+		Name: "markdown_chunks",
+		Fields: []typesenseapi.Field{
+			{Name: "id", Type: "string"},
+			{Name: "content", Type: "string"},
+			{Name: "source_page_url", Type: "string", Facet: true},
+			{Name: "page_title", Type: "string", Facet: true},
+			{Name: "created_at", Type: "int64", Sort: true},
+		},
+		DefaultSortingField: "created_at",
+	}
+	_, err = typesenseClient.Collections().Create(ctx, chunksSchema)
+	if err != nil && !strings.Contains(err.Error(), "already exists") {
+		log.Fatalf("Failed to create Typesense collection: %v", err)
+	} else {
+		log.Println("Typesense collection 'markdown_chunks' is ready.")
+	}
 	// === END CORRECTED ===
 
 	// Initialize services with repository manager and proper dependencies

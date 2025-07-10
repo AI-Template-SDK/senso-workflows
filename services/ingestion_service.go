@@ -48,7 +48,7 @@ func NewIngestionService(
 func (s *ingestionService) ChunkAndIndexWebContent(ctx context.Context, contentID, versionID string) error {
 	log.Printf("[IngestionService] Starting chunking and indexing for content ID: %s", contentID)
 
-	// --- STEP 1: FETCH CONTENT FROM DATABASE (REPLACED HTTP CALL) ---
+	// 1. Fetch content directly from the database
 	log.Println("[IngestionService] Step 1: Fetching content directly from database...")
 	contentUUID, err := uuid.Parse(contentID)
 	if err != nil {
@@ -64,16 +64,22 @@ func (s *ingestionService) ChunkAndIndexWebContent(ctx context.Context, contentI
 		return fmt.Errorf("content not found in database for ID %s", contentID)
 	}
 
-	// Determine which field contains the markdown
+	// This new logic handles both 'web' and 'raw' content types safely.
 	var markdownContent string
-	if contentData.WebVersion != nil && contentData.WebVersion.Markdown != "" {
+	var sourceURL string
+
+	if contentData.WebVersion != nil {
 		markdownContent = contentData.WebVersion.Markdown
-	} else if contentData.RawVersion != nil && contentData.RawVersion.RawText != "" {
+		sourceURL = contentData.WebVersion.SourceURL
+	} else if contentData.RawVersion != nil {
 		markdownContent = contentData.RawVersion.RawText
-	} else {
-		return fmt.Errorf("no web content or raw markdown found for content ID %s", contentID)
+		sourceURL = "raw_text_input" // Provide a default source for raw text
 	}
-	// --- END OF REPLACED BLOCK ---
+
+	if markdownContent == "" {
+		return fmt.Errorf("no markdown content found for content ID %s", contentID)
+	}
+	// --- END OF FIX ---
 
 	// 2. Chunk the markdown content
 	log.Println("[IngestionService] Step 2: Chunking content...")
@@ -98,7 +104,7 @@ func (s *ingestionService) ChunkAndIndexWebContent(ctx context.Context, contentI
 			"text":       chunk,
 			"content_id": contentID,
 			"version_id": versionID,
-			"source_url": contentData.WebVersion.SourceURL,
+			"source_url": sourceURL,
 			"page_title": contentData.CurrentVersion.Title,
 		})
 
@@ -126,7 +132,7 @@ func (s *ingestionService) ChunkAndIndexWebContent(ctx context.Context, contentI
 		typesenseDocs[i] = map[string]interface{}{
 			"id":              uuid.New().String(),
 			"content":         chunk,
-			"source_page_url": contentData.WebVersion.SourceURL,
+			"source_page_url": sourceURL, // Use the safe sourceURL variable
 			"page_title":      contentData.CurrentVersion.Title,
 			"created_at":      contentData.Content.CreatedAt.Unix(),
 		}
