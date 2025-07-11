@@ -27,6 +27,11 @@ type SensoAPIConfig struct {
 	APIKey  string
 }
 
+type FirecrawlConfig struct {
+	BaseURL string
+	APIKey  string
+}
+
 type Config struct {
 	Port              string
 	Environment       string
@@ -41,6 +46,7 @@ type Config struct {
 	Qdrant            QdrantConfig    // Added Qdrant config
 	Typesense         TypesenseConfig // Added Typesense config
 	SensoAPI          SensoAPIConfig  // Added SensoAPI config
+	Firecrawl         FirecrawlConfig
 }
 
 // DatabaseConfig matches the senso-api database configuration structure exactly
@@ -101,6 +107,10 @@ func Load() *Config {
 		// 'host.docker.internal' lets this container talk to a service exposed on your local machine (the Mac)
 		BaseURL: getEnv("SENSO_API_URL", "http://host.docker.internal:8000"),
 		APIKey:  getEnv("SENSO_API_KEY", "tgr_test_key_for_development_only"),
+	}
+	config.Firecrawl = FirecrawlConfig{
+		BaseURL: getEnv("FIRECRAWL_URL", "http://3.94.214.42:3002/v1"),
+		APIKey:  getEnv("FIRECRAWL_API_KEY", ""),
 	}
 	// === END BLOCK ===
 

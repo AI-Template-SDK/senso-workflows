@@ -7,7 +7,7 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"strings" // Added missing import
+	"strings"
 	"time"
 
 	"github.com/AI-Template-SDK/senso-api/pkg/database"
@@ -158,6 +158,11 @@ func main() {
 	ingestionService := services.NewIngestionService(qdrantClient, typesenseClient, openAIService, repoManager, cfg)
 	log.Printf("Ingestion service initialized")
 
+	// === ADDED FOR FIRECRAWL ===
+	firecrawlService := services.NewFirecrawlService(cfg)
+	log.Printf("Firecrawl service initialized")
+	// === END ADDED ===
+
 	// Create Inngest client
 	client, err := inngestgo.NewClient(
 		inngestgo.ClientOpts{
@@ -183,12 +188,16 @@ func main() {
 	contentProcessor := workflows.NewContentProcessor(ingestionService)
 	contentProcessor.SetClient(client)
 	contentProcessor.ProcessWebsiteContent()
+
+	// === ADDED FOR FIRECRAWL ===
+	scrapeProcessor := workflows.NewScrapeProcessor(firecrawlService)
+	scrapeProcessor.SetClient(client)
+	scrapeProcessor.ScrapeURLWorkflow()
 	log.Printf("All processors initialized and functions registered")
+	// === END ADDED ===
 
 	// Create and start server
 	h := client.Serve()
-
-	// Setup routes
 	mux := http.NewServeMux()
 	mux.Handle("/api/inngest", h)
 
