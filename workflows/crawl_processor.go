@@ -39,7 +39,7 @@ func (p *CrawlProcessor) CrawlWebsiteWorkflow() inngestgo.ServableFunction {
 		inngestgo.FunctionOpts{
 			ID:      "crawl-full-website",
 			Name:    "Crawl Full Website and Process All Pages",
-			Retries: inngestgo.IntPtr(2), // Crawls can be long, fewer retries
+			Retries: inngestgo.IntPtr(2),
 		},
 		inngestgo.EventTrigger("website/crawl.requested", nil),
 		func(ctx context.Context, input inngestgo.Input[CrawlRequestEvent]) (any, error) {
@@ -59,18 +59,16 @@ func (p *CrawlProcessor) CrawlWebsiteWorkflow() inngestgo.ServableFunction {
 
 			// Step 2: Poll for crawl completion.
 			var finalCrawlData *services.FirecrawlCrawlStatus
-			for {
-				// This unique step ID ensures Inngest retries from the last failed status check
-				stepID := fmt.Sprintf("check-status-%s-%d", jobIDStr, time.Now().Unix())
+			for i := 0; ; i++ {
+				// Use the loop counter 'i' to create a stable ID for each iteration
+				stepID := fmt.Sprintf("check-status-%s-%d", jobIDStr, i)
 				statusResultMap, err := step.Run(ctx, stepID, func(ctx context.Context) (interface{}, error) {
 					return p.firecrawlService.CheckCrawlStatus(ctx, jobIDStr)
 				})
 				if err != nil {
-					// We'll let Inngest retry this step after a delay
 					return nil, fmt.Errorf("step '%s' failed: %w", stepID, err)
 				}
-				
-				// Convert the generic map to our specific struct
+
 				var statusResult services.FirecrawlCrawlStatus
 				jsonBytes, _ := json.Marshal(statusResultMap)
 				_ = json.Unmarshal(jsonBytes, &statusResult)
@@ -82,10 +80,12 @@ func (p *CrawlProcessor) CrawlWebsiteWorkflow() inngestgo.ServableFunction {
 				}
 
 				fmt.Printf("[CrawlWebsiteWorkflow] Crawl in progress (%d/%d pages). Waiting 1 minute...\n", statusResult.Completed, statusResult.Total)
-				// Wait for 1 minute before checking the status again.
-				if err := step.Sleep(ctx, 1*time.Minute); err != nil {
-					return nil, err
-				}
+				
+				// Use the loop counter for a stable sleep ID as well
+				// Use the loop counter for a stable sleep ID.
+				sleepID := fmt.Sprintf("wait-after-check-%d", i)
+
+				step.Sleep(ctx, sleepID, 1*time.Minute)
 			}
 
 			// Step 3: Send an event for EACH scraped page to be processed individually.
@@ -97,23 +97,26 @@ func (p *CrawlProcessor) CrawlWebsiteWorkflow() inngestgo.ServableFunction {
 				fmt.Printf("[CrawlWebsiteWorkflow] Found %d pages. Sending events to trigger ingestion.\n", len(finalCrawlData.Data))
 				var events []inngestgo.Event
 				for _, page := range finalCrawlData.Data {
-					// This event will trigger the 'ingest-scraped-url' workflow we already built
+					// Corrected: Event data must be a map[string]any.
 					events = append(events, inngestgo.Event{
 						Name: "website/scrape.requested",
-						Data: WebScrapeRequestEvent{
-							OrgID: orgID,
-							URL:   page.Data.SourceURL,
+						Data: map[string]any{
+							"org_id":   orgID,
+							"url":      page.Data.SourceURL,
+							// We can add the pre-scraped markdown here to save a step in the next workflow
+							"markdown": page.Data.Markdown,
+							"title":    page.Data.Title,
 						},
 					})
 				}
-				// Send all events in a single batch.
-				return p.client.Send(ctx, events...)
+				// Corrected: client.Send expects a slice, not variadic arguments.
+				return p.client.Send(ctx, events)
 			})
 			if err != nil {
 				return nil, fmt.Errorf("step 'send-page-processing-events' failed: %w", err)
 			}
 
-			return map[string]interface{}{"status": "success", "pages_found": len(finalCrawlData.Data)}, nil
+			return map[string]interface{}{"status": "success", "pages_processed": len(finalCrawlData.Data)}, nil
 		},
 	)
 	return fn

@@ -24,9 +24,9 @@ type FirecrawlScrapeResult struct {
 }
 
 type FirecrawlCrawlRequest struct {
-	URL           string                 `json:"url"`
-	CrawlOptions  *CrawlOptions          `json:"crawlerOptions,omitempty"`
-	ScrapeOptions *ScrapeOptions         `json:"scrapeOptions,omitempty"`
+    URL           string         `json:"url"`
+    CrawlOptions                 
+    ScrapeOptions *ScrapeOptions `json:"scrapeOptions,omitempty"`
 }
 
 type CrawlOptions struct {
@@ -125,17 +125,19 @@ func (s *firecrawlService) StartCrawl(ctx context.Context, urlToCrawl string) (s
 	// Prepare the request body
 	requestBody, err := json.Marshal(FirecrawlCrawlRequest{
 		URL: urlToCrawl,
+		CrawlOptions: CrawlOptions{
+			Limit:    500,
+			MaxDepth: 5,
+		},
 		ScrapeOptions: &ScrapeOptions{
 			Formats: []string{"markdown"},
-		},
-		CrawlOptions: &CrawlOptions{
-			Limit:    500, // As per Tom's suggestion
-			MaxDepth: 5,
 		},
 	})
 	if err != nil {
 		return "", fmt.Errorf("failed to marshal firecrawl crawl request: %w", err)
 	}
+	
+	fmt.Printf("[Firecrawl Service] Sending Crawl Request Body: %s\n", string(requestBody))
 
 	req, err := http.NewRequestWithContext(ctx, "POST", s.cfg.Firecrawl.BaseURL+"/crawl", bytes.NewBuffer(requestBody))
 	if err != nil {
