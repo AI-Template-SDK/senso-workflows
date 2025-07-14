@@ -189,12 +189,6 @@ func main() {
 	contentProcessor.SetClient(client)
 	contentProcessor.ProcessWebsiteContent()
 
-	// === ADDED FOR FIRECRAWL ===
-	scrapeProcessor := workflows.NewScrapeProcessor(firecrawlService)
-	scrapeProcessor.SetClient(client)
-	scrapeProcessor.ScrapeURLWorkflow()
-	// === END ADDED ===
-
 	webIngestionProcessor := workflows.NewWebIngestionProcessor(firecrawlService, openAIService, qdrantClient, typesenseClient)
 	webIngestionProcessor.SetClient(client)
 	webIngestionProcessor.IngestURLWorkflow()

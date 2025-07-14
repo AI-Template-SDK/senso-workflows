@@ -95,22 +95,33 @@ func (p *CrawlProcessor) CrawlWebsiteWorkflow() inngestgo.ServableFunction {
 				}
 
 				fmt.Printf("[CrawlWebsiteWorkflow] Found %d pages. Sending events to trigger ingestion.\n", len(finalCrawlData.Data))
+				
 				var events []inngestgo.Event
 				for _, page := range finalCrawlData.Data {
-					// Corrected: Event data must be a map[string]any.
+					if page.Data.SourceURL == "" {
+						fmt.Printf("[CrawlWebsiteWorkflow] Skipping page with empty sourceURL.\n")
+						continue // Skip to the next page
+					}
+
 					events = append(events, inngestgo.Event{
 						Name: "website/scrape.requested",
 						Data: map[string]any{
 							"org_id":   orgID,
 							"url":      page.Data.SourceURL,
-							// We can add the pre-scraped markdown here to save a step in the next workflow
 							"markdown": page.Data.Markdown,
 							"title":    page.Data.Title,
 						},
 					})
 				}
-				// Corrected: client.Send expects a slice, not variadic arguments.
-				return p.client.Send(ctx, events)
+
+				// You must convert your typed slice to []any for the SendMany function.
+				eventsToSend := make([]any, len(events))
+				for i, e := range events {
+					eventsToSend[i] = e
+				}
+
+				// Use the correct SendMany method from the client.
+				return p.client.SendMany(ctx, eventsToSend)
 			})
 			if err != nil {
 				return nil, fmt.Errorf("step 'send-page-processing-events' failed: %w", err)
