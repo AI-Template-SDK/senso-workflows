@@ -46,12 +46,23 @@ type FirecrawlCrawlResponse struct {
 	JobID   string `json:"id"`
 }
 
+type CrawlJobResultMetadata struct {
+	SourceURL string `json:"sourceURL"`
+	Title     string `json:"title"`
+}
+
+type CrawlJobResult struct {
+	Markdown string                 `json:"markdown"`
+	Metadata CrawlJobResultMetadata `json:"metadata"`
+}
+
+
 // FirecrawlCrawlStatus defines the success response from the /crawl/{id} status endpoint
 type FirecrawlCrawlStatus struct {
 	Status    string                   `json:"status"` // "scraping", "completed", or "failed"
 	Total     int                      `json:"total"`
 	Completed int                      `json:"completed"`
-	Data      []FirecrawlScrapeResult `json:"data"`
+	Data      []CrawlJobResult 		   `json:"data"` // Use the new struct
 }
 
 // FirecrawlService defines the interface for interacting with the Firecrawl API.

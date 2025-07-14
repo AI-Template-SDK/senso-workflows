@@ -76,7 +76,7 @@ func (p *CrawlProcessor) CrawlWebsiteWorkflow() inngestgo.ServableFunction {
 				if statusResult.Status == "completed" {
 					fmt.Println("[CrawlWebsiteWorkflow] Crawl completed!")
 					finalCrawlData = &statusResult
-					break // Exit the loop
+					break
 				}
 
 				fmt.Printf("[CrawlWebsiteWorkflow] Crawl in progress (%d/%d pages). Waiting 1 minute...\n", statusResult.Completed, statusResult.Total)
@@ -88,33 +88,36 @@ func (p *CrawlProcessor) CrawlWebsiteWorkflow() inngestgo.ServableFunction {
 				step.Sleep(ctx, sleepID, 1*time.Minute)
 			}
 
-			// Step 3: Send an event for EACH scraped page to be processed individually.
-			_, err = step.Run(ctx, "send-page-processing-events", func(ctx context.Context) (interface{}, error) {
+			// Step 3: Send an event with PRE-SCRAPED content for each page.
+			_, err = step.Run(ctx, "send-content-found-events", func(ctx context.Context) (interface{}, error) {
 				if finalCrawlData == nil || len(finalCrawlData.Data) == 0 {
 					return "Crawl finished with no pages found.", nil
 				}
 
 				fmt.Printf("[CrawlWebsiteWorkflow] Found %d pages. Sending events to trigger ingestion.\n", len(finalCrawlData.Data))
-				
 				var events []inngestgo.Event
 				for _, page := range finalCrawlData.Data {
-					if page.Data.SourceURL == "" {
+					// Use the corrected struct paths and send the new event
+					if page.Metadata.SourceURL == "" {
 						fmt.Printf("[CrawlWebsiteWorkflow] Skipping page with empty sourceURL.\n")
-						continue // Skip to the next page
+						continue
 					}
-
 					events = append(events, inngestgo.Event{
-						Name: "website/scrape.requested",
+						Name: "website/content.found", // ✅ New, descriptive event name
 						Data: map[string]any{
 							"org_id":   orgID,
-							"url":      page.Data.SourceURL,
-							"markdown": page.Data.Markdown,
-							"title":    page.Data.Title,
+							"url":      page.Metadata.SourceURL,
+							"markdown": page.Markdown,         // ✅ Pass the markdown
+							"title":    page.Metadata.Title,   // ✅ Pass the title
 						},
 					})
 				}
 
-				// You must convert your typed slice to []any for the SendMany function.
+				if len(events) == 0 {
+					return "Crawl completed, but no valid pages with URLs were found to process.", nil
+				}
+
+				// Convert to []any for the v0.12.0 SendMany method
 				eventsToSend := make([]any, len(events))
 				for i, e := range events {
 					eventsToSend[i] = e
@@ -124,7 +127,7 @@ func (p *CrawlProcessor) CrawlWebsiteWorkflow() inngestgo.ServableFunction {
 				return p.client.SendMany(ctx, eventsToSend)
 			})
 			if err != nil {
-				return nil, fmt.Errorf("step 'send-page-processing-events' failed: %w", err)
+				return nil, fmt.Errorf("step 'send-content-found-events' failed: %w", err)
 			}
 
 			return map[string]interface{}{"status": "success", "pages_processed": len(finalCrawlData.Data)}, nil
