@@ -193,8 +193,16 @@ func main() {
 	scrapeProcessor := workflows.NewScrapeProcessor(firecrawlService)
 	scrapeProcessor.SetClient(client)
 	scrapeProcessor.ScrapeURLWorkflow()
-	log.Printf("All processors initialized and functions registered")
 	// === END ADDED ===
+
+	webIngestionProcessor := workflows.NewWebIngestionProcessor(firecrawlService, openAIService, qdrantClient, typesenseClient)
+	webIngestionProcessor.SetClient(client)
+	webIngestionProcessor.IngestURLWorkflow()
+
+	crawlProcessor := workflows.NewCrawlProcessor(firecrawlService)
+    crawlProcessor.SetClient(client)
+    crawlProcessor.CrawlWebsiteWorkflow()
+	log.Printf("All processors initialized and functions registered")
 
 	// Create and start server
 	h := client.Serve()

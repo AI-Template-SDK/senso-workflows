@@ -51,8 +51,6 @@ func (p *ScrapeProcessor) ScrapeURLWorkflow() inngestgo.ServableFunction {
 				return nil, fmt.Errorf("step 'scrape-url' failed: %w", err)
 			}
 
-			// --- START OF FIX ---
-			// Convert the generic map into our specific struct
 			var scrapeResult services.FirecrawlScrapeResult
 			jsonBytes, err := json.Marshal(scrapeResultMap)
 			if err != nil {
@@ -61,9 +59,7 @@ func (p *ScrapeProcessor) ScrapeURLWorkflow() inngestgo.ServableFunction {
 			if err := json.Unmarshal(jsonBytes, &scrapeResult); err != nil {
 				return nil, fmt.Errorf("failed to unmarshal into FirecrawlScrapeResult: %w", err)
 			}
-			// --- END OF FIX ---
 
-			// Now you can safely access the fields of your struct
 			fmt.Printf("[ScrapeURLWorkflow] ✅ Scrape successful for %s. Markdown length: %d\n",
 				scrapeResult.Data.SourceURL,
 				len(scrapeResult.Data.Markdown))
