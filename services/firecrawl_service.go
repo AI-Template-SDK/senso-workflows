@@ -201,12 +201,5 @@ func (s *firecrawlService) CheckCrawlStatus(ctx context.Context, jobID string) (
 		return nil, fmt.Errorf("failed to decode firecrawl status response: %w", err)
 	}
 
-	// Clean up the data field like we did for the scrape endpoint
-	for i := range result.Data {
-		if result.Data[i].Data.Markdown == "" && result.Data[i].Data.Content != "" {
-			result.Data[i].Data.Markdown = result.Data[i].Data.Content
-		}
-	}
-
 	return &result, nil
 }

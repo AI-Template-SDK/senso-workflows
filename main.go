@@ -192,6 +192,7 @@ func main() {
 	webIngestionProcessor := workflows.NewWebIngestionProcessor(firecrawlService, openAIService, qdrantClient, typesenseClient)
 	webIngestionProcessor.SetClient(client)
 	webIngestionProcessor.IngestURLWorkflow()
+	webIngestionProcessor.IngestFoundContentWorkflow()
 
 	crawlProcessor := workflows.NewCrawlProcessor(firecrawlService)
     crawlProcessor.SetClient(client)
