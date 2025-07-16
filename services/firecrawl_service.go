@@ -11,7 +11,6 @@ import (
 	"github.com/AI-Template-SDK/senso-workflows/internal/config"
 )
 
-// FirecrawlScrapeResult defines the structure of a successful scrape response
 type FirecrawlScrapeResult struct {
 	Success bool `json:"success"`
 	Data    struct {

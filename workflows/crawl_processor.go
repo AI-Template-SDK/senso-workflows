@@ -81,8 +81,6 @@ func (p *CrawlProcessor) CrawlWebsiteWorkflow() inngestgo.ServableFunction {
 
 				fmt.Printf("[CrawlWebsiteWorkflow] Crawl in progress (%d/%d pages). Waiting 1 minute...\n", statusResult.Completed, statusResult.Total)
 				
-				// Use the loop counter for a stable sleep ID as well
-				// Use the loop counter for a stable sleep ID.
 				sleepID := fmt.Sprintf("wait-after-check-%d", i)
 
 				step.Sleep(ctx, sleepID, 1*time.Minute)
@@ -97,18 +95,17 @@ func (p *CrawlProcessor) CrawlWebsiteWorkflow() inngestgo.ServableFunction {
 				fmt.Printf("[CrawlWebsiteWorkflow] Found %d pages. Sending events to trigger ingestion.\n", len(finalCrawlData.Data))
 				var events []inngestgo.Event
 				for _, page := range finalCrawlData.Data {
-					// Use the corrected struct paths and send the new event
 					if page.Metadata.SourceURL == "" {
 						fmt.Printf("[CrawlWebsiteWorkflow] Skipping page with empty sourceURL.\n")
 						continue
 					}
 					events = append(events, inngestgo.Event{
-						Name: "website/content.found", // ✅ New, descriptive event name
+						Name: "website/content.found",
 						Data: map[string]any{
 							"org_id":   orgID,
 							"url":      page.Metadata.SourceURL,
-							"markdown": page.Markdown,         // ✅ Pass the markdown
-							"title":    page.Metadata.Title,   // ✅ Pass the title
+							"markdown": page.Markdown,         
+							"title":    page.Metadata.Title,   
 						},
 					})
 				}

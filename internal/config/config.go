@@ -43,9 +43,9 @@ type Config struct {
 	DatabaseURL       string
 	APIToken          string
 	Database          DatabaseConfig
-	Qdrant            QdrantConfig    // Added Qdrant config
-	Typesense         TypesenseConfig // Added Typesense config
-	SensoAPI          SensoAPIConfig  // Added SensoAPI config
+	Qdrant            QdrantConfig
+	Typesense         TypesenseConfig
+	SensoAPI          SensoAPIConfig
 	Firecrawl         FirecrawlConfig
 }
 
@@ -93,7 +93,6 @@ func Load() *Config {
 	}
 	config.Database = dbConfig
 
-	// === BLOCK TO LOAD NEW CONFIGS ===
 	config.Qdrant = QdrantConfig{
 		Host: getEnv("QDRANT_HOST", "qdrant"),
 		Port: getEnvInt("QDRANT_PORT", 6334),
@@ -104,7 +103,7 @@ func Load() *Config {
 		APIKey: getEnv("TYPESENSE_API_KEY", "xyz"),
 	}
 	config.SensoAPI = SensoAPIConfig{
-		// 'host.docker.internal' lets this container talk to a service exposed on your local machine (the Mac)
+		// 'host.docker.internal' lets this container talk to a service exposed on your local machine
 		BaseURL: getEnv("SENSO_API_URL", "http://host.docker.internal:8000"),
 		APIKey:  getEnv("SENSO_API_KEY", "tgr_test_key_for_development_only"),
 	}
@@ -112,7 +111,6 @@ func Load() *Config {
 		BaseURL: getEnv("FIRECRAWL_URL", "http://3.94.214.42:3002/v1"),
 		APIKey:  getEnv("FIRECRAWL_API_KEY", ""),
 	}
-	// === END BLOCK ===
 
 	return config
 }
@@ -132,7 +130,7 @@ func parseDatabaseConfig() (DatabaseConfig, error) {
 		Host:            parsedURL.Hostname(),
 		Port:            5432, // default
 		User:            parsedURL.User.Username(),
-		Name:            parsedURL.Path[1:], // remove leading slash
+		Name:            parsedURL.Path[1:],
 		SSLMode:         getEnv("DB_SSLMODE", "require"),
 		MaxOpenConns:    getEnvInt("DB_MAX_OPEN_CONNS", 25),
 		MaxIdleConns:    getEnvInt("DB_MAX_IDLE_CONNS", 25),
