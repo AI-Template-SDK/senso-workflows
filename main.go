@@ -86,6 +86,7 @@ func main() {
 	repoManager := services.NewRepositoryManager(dbClient)
 	log.Printf("Repository manager initialized")
 
+	log.Printf("Checking environment value before security check: [%s]", cfg.Environment)
 	if cfg.Environment == "development" || cfg.Environment == "" {
 		os.Unsetenv("INNGEST_SIGNING_KEY")
 		cfg.InngestSigningKey = ""
@@ -93,6 +94,7 @@ func main() {
 	}
 
 	// === CORRECTED: INITIALIZE CLIENTS AND ENSURE COLLECTIONS EXIST ===
+	log.Println("Attempting to initialize Qdrant client...")
 	qdrantClient, err := qdrant.NewClient(&qdrant.Config{
 		Host: cfg.Qdrant.Host,
 		Port: cfg.Qdrant.Port,
@@ -100,7 +102,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to create Qdrant client: %v", err)
 	}
-	log.Printf("Qdrant client initialized for host: %s", cfg.Qdrant.Host)
+	log.Printf("Qdrant client object created for host: %s. Attempting to create collection...", cfg.Qdrant.Host)
 
 	err = qdrantClient.CreateCollection(ctx, &qdrant.CreateCollection{
 		CollectionName: "website_content",
@@ -110,16 +112,17 @@ func main() {
 		}),
 	})
 	if err != nil && !strings.Contains(err.Error(), "already exists") {
-		log.Fatalf("Failed to create Qdrant collection: %v", err)
+		log.Fatalf("FATAL: Failed to create Qdrant collection, check network/firewall: %v", err)
 	} else {
 		log.Println("Qdrant collection 'website_content' is ready.")
 	}
 
+	log.Println("Attempting to initialize Typesense client...")
 	typesenseClient := typesense.NewClient(
 		typesense.WithServer(fmt.Sprintf("http://%s:%d", cfg.Typesense.Host, cfg.Typesense.Port)),
 		typesense.WithAPIKey(cfg.Typesense.APIKey),
 	)
-	log.Printf("Typesense client initialized for host: %s", cfg.Typesense.Host)
+	log.Printf("Typesense client object created for host: %s. Attempting to create collection...", cfg.Typesense.Host)
 
 	// Corrected: Create pointers for bool and string values for the schema
 	facet := true
@@ -164,6 +167,7 @@ func main() {
 	// === END ADDED ===
 
 	// Create Inngest client
+	log.Printf("Creating Inngest client with AppID: %s, EventKey: %s, Environment: %s",)
 	client, err := inngestgo.NewClient(
 		inngestgo.ClientOpts{
 			AppID:    "senso-workflows",
@@ -176,33 +180,43 @@ func main() {
 	}
 
 	// Initialize and register workflows
+	log.Printf("Initializing and registering workflows...")
+
+	log.Printf("Initializing NewOrgProcessor workflow...")
 	orgProcessor := workflows.NewOrgProcessor(orgService, analyticsService, questionRunnerService, cfg)
 	orgProcessor.SetClient(client)
 	orgProcessor.ProcessOrg()
 
+	log.Printf("Initializing NewScheduledProcessor workflow...")
 	scheduledProcessor := workflows.NewScheduledProcessor(orgService)
 	scheduledProcessor.SetClient(client)
 	scheduledProcessor.DailyOrgProcessor()
 	scheduledProcessor.WeeklyLoadAnalyzer()
 
+	log.Printf("Initializing NewContentProcessor workflow...")
 	contentProcessor := workflows.NewContentProcessor(ingestionService)
 	contentProcessor.SetClient(client)
 	contentProcessor.ProcessWebsiteContent()
 
+	log.Printf("Initializing NewWebIngestionProcessor workflow...")
 	webIngestionProcessor := workflows.NewWebIngestionProcessor(firecrawlService, openAIService, qdrantClient, typesenseClient)
 	webIngestionProcessor.SetClient(client)
 	webIngestionProcessor.IngestURLWorkflow()
 	webIngestionProcessor.IngestFoundContentWorkflow()
 
+	log.Printf("Initializing NewCrawlProcessor workflow...")
 	crawlProcessor := workflows.NewCrawlProcessor(firecrawlService)
     crawlProcessor.SetClient(client)
     crawlProcessor.CrawlWebsiteWorkflow()
+
 	log.Printf("All processors initialized and functions registered")
 
+	log.Printf("Starting Inngest client...")
 	// Create and start server
 	h := client.Serve()
 	mux := http.NewServeMux()
 	mux.Handle("/api/inngest", h)
+	log.Printf("Inngest client started successfully...")
 
 	// Root endpoint for ALB health check
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
