@@ -8,6 +8,30 @@ import (
 	"strconv"
 )
 
+// Added QdrantConfig struct
+type QdrantConfig struct {
+	Host string
+	Port int
+}
+
+// Added TypesenseConfig struct
+type TypesenseConfig struct {
+	Host   string
+	Port   int
+	APIKey string
+}
+
+// Added SensoAPIConfig struct
+type SensoAPIConfig struct {
+	BaseURL string
+	APIKey  string
+}
+
+type FirecrawlConfig struct {
+	BaseURL string
+	APIKey  string
+}
+
 type Config struct {
 	Port              string
 	Environment       string
@@ -19,6 +43,10 @@ type Config struct {
 	DatabaseURL       string
 	APIToken          string
 	Database          DatabaseConfig
+	Qdrant            QdrantConfig
+	Typesense         TypesenseConfig
+	SensoAPI          SensoAPIConfig
+	Firecrawl         FirecrawlConfig
 }
 
 // DatabaseConfig matches the senso-api database configuration structure exactly
@@ -63,8 +91,27 @@ func Load() *Config {
 			ConnMaxLifetime: getEnvInt("DB_CONN_MAX_LIFETIME", 300),
 		}
 	}
-
 	config.Database = dbConfig
+
+	config.Qdrant = QdrantConfig{
+		Host: getEnv("QDRANT_HOST", "qdrant"),
+		Port: getEnvInt("QDRANT_PORT", 6334),
+	}
+	config.Typesense = TypesenseConfig{
+		Host:   getEnv("TYPESENSE_HOST", "typesense"),
+		Port:   getEnvInt("TYPESENSE_PORT", 8108),
+		APIKey: getEnv("TYPESENSE_API_KEY", "xyz"),
+	}
+	config.SensoAPI = SensoAPIConfig{
+		// 'host.docker.internal' lets this container talk to a service exposed on your local machine
+		BaseURL: getEnv("SENSO_API_URL", "http://host.docker.internal:8000"),
+		APIKey:  getEnv("SENSO_API_KEY", "tgr_test_key_for_development_only"),
+	}
+	config.Firecrawl = FirecrawlConfig{
+		BaseURL: getEnv("FIRECRAWL_URL", "http://3.94.214.42:3002/v1"),
+		APIKey:  getEnv("FIRECRAWL_API_KEY", ""),
+	}
+
 	return config
 }
 
@@ -83,7 +130,7 @@ func parseDatabaseConfig() (DatabaseConfig, error) {
 		Host:            parsedURL.Hostname(),
 		Port:            5432, // default
 		User:            parsedURL.User.Username(),
-		Name:            parsedURL.Path[1:], // remove leading slash
+		Name:            parsedURL.Path[1:],
 		SSLMode:         getEnv("DB_SSLMODE", "require"),
 		MaxOpenConns:    getEnvInt("DB_MAX_OPEN_CONNS", 25),
 		MaxIdleConns:    getEnvInt("DB_MAX_IDLE_CONNS", 25),

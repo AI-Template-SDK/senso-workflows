@@ -26,6 +26,7 @@ type RepositoryManager struct {
 	MentionRepo     interfaces.QuestionRunMentionRepository
 	ClaimRepo       interfaces.QuestionRunClaimRepository
 	CitationRepo    interfaces.QuestionRunCitationRepository
+	ContentRepo     interfaces.ContentRepository
 }
 
 // NewRepositoryManager creates a new repository manager with all repositories
@@ -41,6 +42,7 @@ func NewRepositoryManager(db *database.Client) *RepositoryManager {
 		MentionRepo:     postgresql.NewQuestionRunMentionRepo(db),
 		ClaimRepo:       postgresql.NewQuestionRunClaimRepo(db),
 		CitationRepo:    postgresql.NewQuestionRunCitationRepo(db),
+		ContentRepo:     postgresql.NewContentRepo(db),
 	}
 }
 
@@ -73,6 +75,12 @@ type ExtractedData struct {
 // AIProvider interface for different AI models
 type AIProvider interface {
 	RunQuestion(ctx context.Context, question string, webSearch bool, location *workflowModels.Location) (*AIResponse, error)
+	CreateEmbedding(ctx context.Context, text []string, model string) ([][]float32, error) // <-- ADD THIS LINE
+}
+
+type OpenAIProvider interface {
+    CreateEmbedding(ctx context.Context, text []string, model string) ([][]float32, error)
+    // You can add other methods like RunQuestion here later if needed
 }
 
 type AIResponse struct {

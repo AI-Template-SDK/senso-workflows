@@ -306,3 +306,49 @@ func (p *openAIProvider) formatLocation(location *models.Location) string {
 
 	return result
 }
+
+func (p *openAIProvider) CreateEmbedding(ctx context.Context, texts []string, model string) ([][]float32, error) {
+	if len(texts) == 0 {
+		return [][]float32{}, nil
+	}
+
+	// The openai-go client expects a specific model type from its library
+	var embeddingModel openai.EmbeddingModel
+	switch model {
+	case "text-embedding-ada-002":
+		embeddingModel = openai.EmbeddingModelTextEmbeddingAda002
+	case "text-embedding-3-small":
+		embeddingModel = openai.EmbeddingModelTextEmbedding3Small
+	case "text-embedding-3-large":
+		embeddingModel = openai.EmbeddingModelTextEmbedding3Large
+	default:
+		return nil, fmt.Errorf("unsupported embedding model: %s", model)
+	}
+
+	// Prepare the request parameters
+	params := openai.EmbeddingNewParams{
+		Input: openai.EmbeddingNewParamsInputUnion{
+			OfArrayOfStrings: texts,
+		},
+		Model: embeddingModel,
+	}
+
+	// Make the API call
+	resp, err := p.client.Embeddings.New(ctx, params)
+	if err != nil {
+		return nil, fmt.Errorf("openai embedding request failed: %w", err)
+	}
+
+	// Extract the float vectors from the response
+	embeddings := make([][]float32, len(resp.Data))
+	for i, data := range resp.Data {
+		// The library returns float64, so we convert to float32
+		float32Embedding := make([]float32, len(data.Embedding))
+		for j, val := range data.Embedding {
+			float32Embedding[j] = float32(val)
+		}
+		embeddings[i] = float32Embedding
+	}
+
+	return embeddings, nil
+}

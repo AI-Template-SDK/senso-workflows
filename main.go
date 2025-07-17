@@ -7,17 +7,20 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"time"
-
-	"github.com/inngest/inngestgo"
-	"github.com/jmoiron/sqlx"
-	"github.com/joho/godotenv"
-	_ "github.com/lib/pq"
 
 	"github.com/AI-Template-SDK/senso-api/pkg/database"
 	"github.com/AI-Template-SDK/senso-workflows/internal/config"
 	"github.com/AI-Template-SDK/senso-workflows/services"
 	"github.com/AI-Template-SDK/senso-workflows/workflows"
+	"github.com/inngest/inngestgo"
+	"github.com/jmoiron/sqlx"
+	"github.com/joho/godotenv"
+	_ "github.com/lib/pq"
+	"github.com/qdrant/go-client/qdrant"
+	"github.com/typesense/typesense-go/v2/typesense"
+	typesenseapi "github.com/typesense/typesense-go/v2/typesense/api"
 )
 
 // createDatabaseClient creates a database client using our config structure
@@ -32,12 +35,10 @@ func createDatabaseClient(ctx context.Context, cfg config.DatabaseConfig) (*data
 		return nil, fmt.Errorf("failed to connect to database: %w", err)
 	}
 
-	// Configure connection pool
 	db.SetMaxOpenConns(cfg.MaxOpenConns)
 	db.SetMaxIdleConns(cfg.MaxIdleConns)
 	db.SetConnMaxLifetime(time.Duration(cfg.ConnMaxLifetime) * time.Second)
 
-	// Test connection
 	if err := db.PingContext(ctx); err != nil {
 		return nil, fmt.Errorf("failed to ping database: %w", err)
 	}
@@ -46,12 +47,8 @@ func createDatabaseClient(ctx context.Context, cfg config.DatabaseConfig) (*data
 }
 
 func main() {
-	// Load environment variables from .env file first (standard practice)
-	// If not found, try dev.env for local development
 	if err := godotenv.Load(); err != nil {
-		// Try dev.env as fallback for local development
 		if err := godotenv.Load("dev.env"); err != nil {
-			// It's OK if neither file exists, we'll use environment variables
 			log.Printf("Note: No .env or dev.env file loaded: %v", err)
 		} else {
 			log.Printf("Loaded dev.env file for local development")
@@ -62,13 +59,11 @@ func main() {
 
 	cfg := config.Load()
 
-	// Log environment for debugging
 	log.Printf("Environment: %s", cfg.Environment)
 	log.Printf("Port: %s", cfg.Port)
 	log.Printf("Database Host: %s", cfg.Database.Host)
 	log.Printf("Database Name: %s", cfg.Database.Name)
 
-	// Log API key status (without exposing the actual keys)
 	if cfg.OpenAIAPIKey == "" {
 		log.Printf("WARNING: OpenAI API key not loaded!")
 	} else {
@@ -80,7 +75,6 @@ func main() {
 		log.Printf("Anthropic API key loaded (length: %d)", len(cfg.AnthropicAPIKey))
 	}
 
-	// Initialize database connection using our custom function
 	ctx := context.Background()
 	dbClient, err := createDatabaseClient(ctx, cfg.Database)
 	if err != nil {
@@ -89,23 +83,85 @@ func main() {
 	defer dbClient.Close()
 	log.Printf("Successfully connected to database")
 
-	// Create repository manager
 	repoManager := services.NewRepositoryManager(dbClient)
 	log.Printf("Repository manager initialized")
 
-	// In development, we don't need signing keys with the local dev server
 	if cfg.Environment == "development" || cfg.Environment == "" {
-		// Clear the signing key for local development
 		os.Unsetenv("INNGEST_SIGNING_KEY")
 		cfg.InngestSigningKey = ""
 		log.Printf("Running in development mode - signing key verification disabled")
 	}
+
+	// === CORRECTED: INITIALIZE CLIENTS AND ENSURE COLLECTIONS EXIST ===
+	qdrantClient, err := qdrant.NewClient(&qdrant.Config{
+		Host: cfg.Qdrant.Host,
+		Port: cfg.Qdrant.Port,
+	})
+	if err != nil {
+		log.Fatalf("Failed to create Qdrant client: %v", err)
+	}
+	log.Printf("Qdrant client initialized for host: %s", cfg.Qdrant.Host)
+
+	err = qdrantClient.CreateCollection(ctx, &qdrant.CreateCollection{
+		CollectionName: "website_content",
+		VectorsConfig: qdrant.NewVectorsConfig(&qdrant.VectorParams{
+			Size:     1536,
+			Distance: qdrant.Distance_Cosine,
+		}),
+	})
+	if err != nil && !strings.Contains(err.Error(), "already exists") {
+		log.Fatalf("Failed to create Qdrant collection: %v", err)
+	} else {
+		log.Println("Qdrant collection 'website_content' is ready.")
+	}
+
+	typesenseClient := typesense.NewClient(
+		typesense.WithServer(fmt.Sprintf("http://%s:%d", cfg.Typesense.Host, cfg.Typesense.Port)),
+		typesense.WithAPIKey(cfg.Typesense.APIKey),
+	)
+	log.Printf("Typesense client initialized for host: %s", cfg.Typesense.Host)
+
+	// Corrected: Create pointers for bool and string values for the schema
+	facet := true
+	sort := true
+	defaultSortField := "created_at"
+	chunksSchema := &typesenseapi.CollectionSchema{
+		Name: "markdown_chunks",
+		Fields: []typesenseapi.Field{
+			{Name: "id", Type: "string"},
+			{Name: "content", Type: "string"},
+			{Name: "source_page_url", Type: "string", Facet: &facet},
+			{Name: "page_title", Type: "string", Facet: &facet},
+			{Name: "created_at", Type: "int64", Sort: &sort},
+		},
+		DefaultSortingField: &defaultSortField,
+	}
+	_, err = typesenseClient.Collections().Create(ctx, chunksSchema)
+	if err != nil && !strings.Contains(err.Error(), "already exists") {
+		log.Fatalf("Failed to create Typesense collection: %v", err)
+	} else {
+		log.Println("Typesense collection 'markdown_chunks' is ready.")
+	}
+	// === END CORRECTED ===
 
 	// Initialize services with repository manager and proper dependencies
 	orgService := services.NewOrgService(cfg, repoManager)
 	dataExtractionService := services.NewDataExtractionService(cfg)
 	questionRunnerService := services.NewQuestionRunnerService(cfg, repoManager, dataExtractionService)
 	analyticsService := services.NewAnalyticsService(cfg, repoManager)
+	
+	// Corrected: Initialize OpenAI service correctly
+	costService := services.NewCostService()
+	openAIService := services.NewOpenAIProvider(cfg, "gpt-4-turbo", costService)
+
+	// In sensor-workflows/main.go
+	ingestionService := services.NewIngestionService(qdrantClient, typesenseClient, openAIService, repoManager, cfg)
+	log.Printf("Ingestion service initialized")
+
+	// === ADDED FOR FIRECRAWL ===
+	firecrawlService := services.NewFirecrawlService(cfg)
+	log.Printf("Firecrawl service initialized")
+	// === END ADDED ===
 
 	// Create Inngest client
 	client, err := inngestgo.NewClient(
@@ -119,31 +175,33 @@ func main() {
 		log.Fatalf("Failed to create Inngest client: %v", err)
 	}
 
-	// Initialize workflows with services
-	orgProcessor := workflows.NewOrgProcessor(
-		orgService,
-		analyticsService,
-		questionRunnerService,
-		cfg,
-	)
-	scheduledProcessor := workflows.NewScheduledProcessor(orgService)
-
-	// Set client on workflows
+	// Initialize and register workflows
+	orgProcessor := workflows.NewOrgProcessor(orgService, analyticsService, questionRunnerService, cfg)
 	orgProcessor.SetClient(client)
-	scheduledProcessor.SetClient(client)
-
-	// Register functions (they auto-register with the client when created)
 	orgProcessor.ProcessOrg()
+
+	scheduledProcessor := workflows.NewScheduledProcessor(orgService)
+	scheduledProcessor.SetClient(client)
 	scheduledProcessor.DailyOrgProcessor()
 	scheduledProcessor.WeeklyLoadAnalyzer()
 
-	// Create handler
+	contentProcessor := workflows.NewContentProcessor(ingestionService)
+	contentProcessor.SetClient(client)
+	contentProcessor.ProcessWebsiteContent()
+
+	webIngestionProcessor := workflows.NewWebIngestionProcessor(firecrawlService, openAIService, qdrantClient, typesenseClient)
+	webIngestionProcessor.SetClient(client)
+	webIngestionProcessor.IngestURLWorkflow()
+	webIngestionProcessor.IngestFoundContentWorkflow()
+
+	crawlProcessor := workflows.NewCrawlProcessor(firecrawlService)
+    crawlProcessor.SetClient(client)
+    crawlProcessor.CrawlWebsiteWorkflow()
+	log.Printf("All processors initialized and functions registered")
+
+	// Create and start server
 	h := client.Serve()
-
-	// Setup routes
 	mux := http.NewServeMux()
-
-	// Inngest webhook endpoint
 	mux.Handle("/api/inngest", h)
 
 	// Root endpoint for ALB health check
@@ -157,26 +215,16 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(`{"status":"healthy"}`))
 	})
-
-	// Test endpoint to trigger ProcessOrg workflow
 	mux.HandleFunc("/test/trigger-org", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
-
-		// Create test event
 		testOrgID := "test-org-123"
 		evt := inngestgo.Event{
 			Name: "org.process",
-			Data: map[string]interface{}{
-				"org_id":       testOrgID,
-				"triggered_by": "manual_test",
-				"user_id":      "test-user",
-			},
+			Data: map[string]interface{}{"org_id": testOrgID, "triggered_by": "manual_test", "user_id": "test-user"},
 		}
-
-		// Send event
 		result, err := client.Send(r.Context(), evt)
 		if err != nil {
 			log.Printf("Failed to send test event: %v", err)
@@ -184,7 +232,6 @@ func main() {
 			w.Write([]byte(fmt.Sprintf(`{"error":"Failed to send event: %v"}`, err)))
 			return
 		}
-
 		log.Printf("Test event sent successfully: %+v", result)
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(fmt.Sprintf(`{"status":"success","message":"Test event sent for org %s","event_ids":["%s"]}`, testOrgID, result)))
