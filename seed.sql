@@ -23,7 +23,6 @@ DECLARE
     org_website_uuid uuid;
     geo_model_uuid uuid;
     org_location_uuid uuid;
-BEGIN
     -- Generate UUIDs for all entities
     industry_uuid := uuid_generate_v4();
     partner_uuid := uuid_generate_v4();
@@ -145,7 +144,6 @@ Add heat with jalapeños, red pepper flakes, or hot sauce.
 ## Conclusion
 
 Pickle making is both an art and a science. With practice and experimentation, you''ll develop your own signature recipes that friends and family will love. Remember that the best pickles start with the best ingredients and proper technique.
-
 Happy pickling!', 'markdown');
     -- 11. Update content table with current version reference
     UPDATE
@@ -188,4 +186,3 @@ Happy pickling!', 'markdown');
     RAISE NOTICE '- Created 5 GEO questions about brand visibility and LLM optimization';
 END
 $$;
-
