@@ -152,7 +152,7 @@ func main() {
 	dataExtractionService := services.NewDataExtractionService(cfg)
 	questionRunnerService := services.NewQuestionRunnerService(cfg, repoManager, dataExtractionService)
 	analyticsService := services.NewAnalyticsService(cfg, repoManager)
-	
+
 	// Corrected: Initialize OpenAI service correctly
 	costService := services.NewCostService()
 	openAIService := services.NewOpenAIProvider(cfg, "gpt-4-turbo", costService)
@@ -167,7 +167,7 @@ func main() {
 	// === END ADDED ===
 
 	// Create Inngest client
-	log.Printf("Creating Inngest client with AppID: %s, EventKey: %s, Environment: %s",)
+	log.Printf("Creating Inngest client with AppID: %s, EventKey: %s, Environment: %s")
 	client, err := inngestgo.NewClient(
 		inngestgo.ClientOpts{
 			AppID:    "senso-workflows",
@@ -186,6 +186,7 @@ func main() {
 	orgProcessor := workflows.NewOrgProcessor(orgService, analyticsService, questionRunnerService, cfg)
 	orgProcessor.SetClient(client)
 	orgProcessor.ProcessOrg()
+	orgProcessor.ProcessSingleQuestionRun()
 
 	log.Printf("Initializing NewScheduledProcessor workflow...")
 	scheduledProcessor := workflows.NewScheduledProcessor(orgService)
@@ -206,8 +207,8 @@ func main() {
 
 	log.Printf("Initializing NewCrawlProcessor workflow...")
 	crawlProcessor := workflows.NewCrawlProcessor(firecrawlService)
-    crawlProcessor.SetClient(client)
-    crawlProcessor.CrawlWebsiteWorkflow()
+	crawlProcessor.SetClient(client)
+	crawlProcessor.CrawlWebsiteWorkflow()
 
 	log.Printf("All processors initialized and functions registered")
 

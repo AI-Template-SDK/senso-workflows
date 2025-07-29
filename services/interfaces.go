@@ -79,8 +79,8 @@ type AIProvider interface {
 }
 
 type OpenAIProvider interface {
-    CreateEmbedding(ctx context.Context, text []string, model string) ([][]float32, error)
-    // You can add other methods like RunQuestion here later if needed
+	CreateEmbedding(ctx context.Context, text []string, model string) ([][]float32, error)
+	// You can add other methods like RunQuestion here later if needed
 }
 
 type AIResponse struct {
@@ -102,6 +102,13 @@ type OrgService interface {
 type QuestionRunnerService interface {
 	RunQuestionMatrix(ctx context.Context, orgDetails *RealOrgDetails) ([]*models.QuestionRun, error)
 	ProcessSingleQuestion(ctx context.Context, question *models.GeoQuestion, model *models.GeoModel, location *models.OrgLocation, targetCompany string, orgWebsites []string) (*models.QuestionRun, error)
+	// Helper methods for accessing internal services
+	GetProvider(modelName string) (AIProvider, error)
+	GetDataExtractionService() DataExtractionService
+	GetQuestionRunRepo() interfaces.QuestionRunRepository
+	GetMentionRepo() interfaces.QuestionRunMentionRepository
+	GetClaimRepo() interfaces.QuestionRunClaimRepository
+	GetCitationRepo() interfaces.QuestionRunCitationRepository
 }
 
 // New DataExtractionService interface for parsing AI responses
