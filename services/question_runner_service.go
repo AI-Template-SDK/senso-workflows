@@ -226,3 +226,28 @@ func (s *questionRunnerService) updateLatestFlags(ctx context.Context, questions
 
 	return nil
 }
+
+// Helper methods for accessing internal services
+func (s *questionRunnerService) GetProvider(modelName string) (AIProvider, error) {
+	return s.getProvider(modelName)
+}
+
+func (s *questionRunnerService) GetDataExtractionService() DataExtractionService {
+	return s.dataExtractionService
+}
+
+func (s *questionRunnerService) GetQuestionRunRepo() interfaces.QuestionRunRepository {
+	return s.repos.QuestionRunRepo
+}
+
+func (s *questionRunnerService) GetMentionRepo() interfaces.QuestionRunMentionRepository {
+	return s.repos.MentionRepo
+}
+
+func (s *questionRunnerService) GetClaimRepo() interfaces.QuestionRunClaimRepository {
+	return s.repos.ClaimRepo
+}
+
+func (s *questionRunnerService) GetCitationRepo() interfaces.QuestionRunCitationRepository {
+	return s.repos.CitationRepo
+}

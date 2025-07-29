@@ -8,37 +8,22 @@ SET timezone = 'UTC';
 -- These will be generated as actual UUIDs
 DO $$
 DECLARE
-    industry_uuid uuid;
-    partner_uuid uuid;
-    network_uuid uuid;
-    org_uuid uuid;
-    content_uuid uuid;
-    content_version_uuid uuid;
-    geo_pool_uuid uuid;
-    geo_question1_uuid uuid;
-    geo_question2_uuid uuid;
-    geo_question3_uuid uuid;
-    geo_question4_uuid uuid;
-    geo_question5_uuid uuid;
-    org_website_uuid uuid;
-    geo_model_uuid uuid;
-    org_location_uuid uuid;
-    -- Generate UUIDs for all entities
-    industry_uuid := uuid_generate_v4();
-    partner_uuid := uuid_generate_v4();
-    network_uuid := uuid_generate_v4();
-    org_uuid := uuid_generate_v4();
-    content_uuid := uuid_generate_v4();
-    content_version_uuid := uuid_generate_v4();
-    geo_pool_uuid := uuid_generate_v4();
-    geo_question1_uuid := uuid_generate_v4();
-    geo_question2_uuid := uuid_generate_v4();
-    geo_question3_uuid := uuid_generate_v4();
-    geo_question4_uuid := uuid_generate_v4();
-    geo_question5_uuid := uuid_generate_v4();
-    org_website_uuid := uuid_generate_v4();
-    geo_model_uuid := uuid_generate_v4();
-    org_location_uuid := uuid_generate_v4();
+    industry_uuid uuid := uuid_generate_v4();
+    partner_uuid uuid := uuid_generate_v4();
+    network_uuid uuid := uuid_generate_v4();
+    org_uuid uuid := uuid_generate_v4();
+    content_uuid uuid := uuid_generate_v4();
+    content_version_uuid uuid := uuid_generate_v4();
+    geo_pool_uuid uuid := uuid_generate_v4();
+    geo_question1_uuid uuid := uuid_generate_v4();
+    geo_question2_uuid uuid := uuid_generate_v4();
+    geo_question3_uuid uuid := uuid_generate_v4();
+    geo_question4_uuid uuid := uuid_generate_v4();
+    geo_question5_uuid uuid := uuid_generate_v4();
+    org_website_uuid uuid := uuid_generate_v4();
+    geo_model_uuid uuid := uuid_generate_v4();
+    org_location_uuid uuid := uuid_generate_v4();
+BEGIN
     -- 1. Insert Industry: "Startups"
     INSERT INTO industries(industry_id, name, slug, created_at, updated_at)
         VALUES (industry_uuid, 'Startups', 'startups', NOW(), NOW());
