@@ -19,7 +19,8 @@ require (
 )
 
 // Use local senso-api for development
-replace github.com/AI-Template-SDK/senso-api => ../senso-api
+//  This tells your Go compiler to use the senso-api code directly from your local filesystem (../senso-api) instead of downloading it from GitHub.
+// replace github.com/AI-Template-SDK/senso-api => ../senso-api
 
 require (
 	github.com/apapsch/go-jsonmerge/v2 v2.0.0 // indirect
