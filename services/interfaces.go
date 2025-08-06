@@ -16,33 +16,35 @@ import (
 
 // RepositoryManager manages all database repositories
 type RepositoryManager struct {
-	OrgRepo         interfaces.OrgRepository
-	GeoQuestionRepo interfaces.GeoQuestionRepository
-	GeoModelRepo    interfaces.GeoModelRepository
-	OrgLocationRepo interfaces.OrgLocationRepository
-	OrgWebsiteRepo  interfaces.OrgWebsiteRepository
-	GeoProfileRepo  interfaces.GeoProfileRepository
-	QuestionRunRepo interfaces.QuestionRunRepository
-	MentionRepo     interfaces.QuestionRunMentionRepository
-	ClaimRepo       interfaces.QuestionRunClaimRepository
-	CitationRepo    interfaces.QuestionRunCitationRepository
-	ContentRepo     interfaces.ContentRepository
+	OrgRepo            interfaces.OrgRepository
+	GeoQuestionRepo    interfaces.GeoQuestionRepository
+	GeoModelRepo       interfaces.GeoModelRepository
+	OrgLocationRepo    interfaces.OrgLocationRepository
+	OrgWebsiteRepo     interfaces.OrgWebsiteRepository
+	GeoProfileRepo     interfaces.GeoProfileRepository
+	QuestionRunRepo    interfaces.QuestionRunRepository
+	MentionRepo        interfaces.QuestionRunMentionRepository
+	ClaimRepo          interfaces.QuestionRunClaimRepository
+	CitationRepo       interfaces.QuestionRunCitationRepository
+	ContentRepo        interfaces.ContentRepository
+	WebscrapingRunRepo interfaces.WebscrapingRunRepository
 }
 
 // NewRepositoryManager creates a new repository manager with all repositories
 func NewRepositoryManager(db *database.Client) *RepositoryManager {
 	return &RepositoryManager{
-		OrgRepo:         postgresql.NewOrgRepo(db),
-		GeoQuestionRepo: postgresql.NewGeoQuestionRepo(db),
-		GeoModelRepo:    postgresql.NewGeoModelRepo(db),
-		OrgLocationRepo: postgresql.NewOrgLocationRepo(db),
-		OrgWebsiteRepo:  postgresql.NewOrgWebsiteRepo(db),
-		GeoProfileRepo:  postgresql.NewGeoProfileRepo(db),
-		QuestionRunRepo: postgresql.NewQuestionRunRepo(db),
-		MentionRepo:     postgresql.NewQuestionRunMentionRepo(db),
-		ClaimRepo:       postgresql.NewQuestionRunClaimRepo(db),
-		CitationRepo:    postgresql.NewQuestionRunCitationRepo(db),
-		ContentRepo:     postgresql.NewContentRepo(db),
+		OrgRepo:            postgresql.NewOrgRepo(db),
+		GeoQuestionRepo:    postgresql.NewGeoQuestionRepo(db),
+		GeoModelRepo:       postgresql.NewGeoModelRepo(db),
+		OrgLocationRepo:    postgresql.NewOrgLocationRepo(db),
+		OrgWebsiteRepo:     postgresql.NewOrgWebsiteRepo(db),
+		GeoProfileRepo:     postgresql.NewGeoProfileRepo(db),
+		QuestionRunRepo:    postgresql.NewQuestionRunRepo(db),
+		MentionRepo:        postgresql.NewQuestionRunMentionRepo(db),
+		ClaimRepo:          postgresql.NewQuestionRunClaimRepo(db),
+		CitationRepo:       postgresql.NewQuestionRunCitationRepo(db),
+		ContentRepo:        postgresql.NewContentRepo(db),
+		WebscrapingRunRepo: postgresql.NewWebscrapingRunRepo(db),
 	}
 }
 

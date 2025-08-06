@@ -166,6 +166,11 @@ func main() {
 	log.Printf("Firecrawl service initialized")
 	// === END ADDED ===
 
+	// === ADDED FOR WEBSCRAPING TRACKING ===
+	webscrapingTrackingService := services.NewWebscrapingTrackingService(repoManager.WebscrapingRunRepo)
+	log.Printf("Webscraping tracking service initialized")
+	// === END ADDED ===
+
 	// Create Inngest client
 	log.Printf("Creating Inngest client with AppID: %s, EventKey: %s, Environment: %s")
 	client, err := inngestgo.NewClient(
@@ -200,7 +205,7 @@ func main() {
 	contentProcessor.ProcessWebsiteContent()
 
 	log.Printf("Initializing NewWebIngestionProcessor workflow...")
-	webIngestionProcessor := workflows.NewWebIngestionProcessor(firecrawlService, openAIService, qdrantClient, typesenseClient)
+	webIngestionProcessor := workflows.NewWebIngestionProcessor(firecrawlService, openAIService, qdrantClient, typesenseClient, webscrapingTrackingService)
 	webIngestionProcessor.SetClient(client)
 	webIngestionProcessor.IngestURLWorkflow()
 	webIngestionProcessor.IngestFoundContentWorkflow()

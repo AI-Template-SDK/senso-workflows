@@ -91,13 +91,13 @@ func (s *ingestionService) ChunkAndIndexWebContent(ctx context.Context, contentI
 
 	// 3. Generate embeddings for each chunk
 	log.Printf("[IngestionService] Step 3: Generating embeddings for %d chunks...", len(chunks))
-	vectors, err := s.openAIService.CreateEmbedding(ctx, chunks, "text-embedding-ada-002")
+	embeddingResult, err := s.openAIService.CreateEmbedding(ctx, chunks, "text-embedding-ada-002")
 	if err != nil {
 		return fmt.Errorf("failed to generate embeddings: %w", err)
 	}
 
 	// 4. Upsert chunks and vectors into Qdrant
-	log.Printf("[IngestionService] Step 4: Indexing %d vectors to Qdrant...", len(vectors))
+	log.Printf("[IngestionService] Step 4: Indexing %d vectors to Qdrant...", len(embeddingResult.Vectors))
 	qdrantPoints := make([]*qdrant.PointStruct, len(chunks))
 	for i, chunk := range chunks {
 		payload := qdrant.NewValueMap(map[string]any{
@@ -110,7 +110,7 @@ func (s *ingestionService) ChunkAndIndexWebContent(ctx context.Context, contentI
 
 		qdrantPoints[i] = &qdrant.PointStruct{
 			Id:      qdrant.NewID(uuid.New().String()),
-			Vectors: qdrant.NewVectors(vectors[i]...),
+			Vectors: qdrant.NewVectors(embeddingResult.Vectors[i]...),
 			Payload: payload,
 		}
 	}
