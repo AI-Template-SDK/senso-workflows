@@ -18,6 +18,9 @@ require (
 	github.com/typesense/typesense-go/v2 v2.0.0
 )
 
+// Use local senso-api for development
+replace github.com/AI-Template-SDK/senso-api => ../senso-api
+
 require (
 	github.com/apapsch/go-jsonmerge/v2 v2.0.0 // indirect
 	github.com/bahlo/generic-list-go v0.2.0 // indirect
