@@ -5,10 +5,10 @@ go 1.24
 toolchain go1.24.4
 
 require (
-	github.com/AI-Template-SDK/senso-api v1.5.0
+	github.com/AI-Template-SDK/senso-api v1.6.0
 	github.com/anthropics/anthropic-sdk-go v1.4.0
 	github.com/google/uuid v1.6.0
-	github.com/inngest/inngestgo v0.12.0
+	github.com/inngest/inngestgo v0.13.0
 	github.com/invopop/jsonschema v0.13.0
 	github.com/jmoiron/sqlx v1.4.0
 	github.com/joho/godotenv v1.5.1
@@ -29,7 +29,7 @@ require (
 	github.com/gowebpki/jcs v1.0.0 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
-	github.com/inngest/inngest v1.6.4-0.20250602130422-49e24112eb84 // indirect
+	github.com/inngest/inngest v1.8.2-0.20250623215333-d2cfeecbae74 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
 	github.com/oapi-codegen/runtime v1.1.1 // indirect
 	github.com/oklog/ulid/v2 v2.1.0 // indirect

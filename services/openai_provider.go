@@ -307,9 +307,15 @@ func (p *openAIProvider) formatLocation(location *models.Location) string {
 	return result
 }
 
-func (p *openAIProvider) CreateEmbedding(ctx context.Context, texts []string, model string) ([][]float32, error) {
+func (p *openAIProvider) CreateEmbedding(ctx context.Context, texts []string, model string) (*EmbeddingResult, error) {
 	if len(texts) == 0 {
-		return [][]float32{}, nil
+		return &EmbeddingResult{
+			Vectors:      [][]float32{},
+			InputTokens:  0,
+			OutputTokens: 0,
+			Cost:         0,
+			Model:        model,
+		}, nil
 	}
 
 	// The openai-go client expects a specific model type from its library
@@ -350,5 +356,14 @@ func (p *openAIProvider) CreateEmbedding(ctx context.Context, texts []string, mo
 		embeddings[i] = float32Embedding
 	}
 
-	return embeddings, nil
+	// Calculate cost using the cost service
+	cost := p.costService.CalculateCost(p.GetProviderName(), model, int(resp.Usage.PromptTokens), 0, false)
+
+	return &EmbeddingResult{
+		Vectors:      embeddings,
+		InputTokens:  int(resp.Usage.PromptTokens),
+		OutputTokens: 0, // Embeddings don't have output tokens
+		Cost:         cost,
+		Model:        model,
+	}, nil
 }

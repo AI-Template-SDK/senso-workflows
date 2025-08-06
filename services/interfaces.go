@@ -75,11 +75,20 @@ type ExtractedData struct {
 // AIProvider interface for different AI models
 type AIProvider interface {
 	RunQuestion(ctx context.Context, question string, webSearch bool, location *workflowModels.Location) (*AIResponse, error)
-	CreateEmbedding(ctx context.Context, text []string, model string) ([][]float32, error) // <-- ADD THIS LINE
+	CreateEmbedding(ctx context.Context, text []string, model string) (*EmbeddingResult, error)
+}
+
+// EmbeddingResult contains the embedding vectors and tracking data
+type EmbeddingResult struct {
+	Vectors      [][]float32
+	InputTokens  int
+	OutputTokens int
+	Cost         float64
+	Model        string
 }
 
 type OpenAIProvider interface {
-	CreateEmbedding(ctx context.Context, text []string, model string) ([][]float32, error)
+	CreateEmbedding(ctx context.Context, text []string, model string) (*EmbeddingResult, error)
 	// You can add other methods like RunQuestion here later if needed
 }
 

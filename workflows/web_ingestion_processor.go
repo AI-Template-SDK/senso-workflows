@@ -32,11 +32,12 @@ type WebContentFoundEvent struct {
 }
 
 type WebIngestionProcessor struct {
-	firecrawlService services.FirecrawlService
-	openAIService    services.OpenAIProvider
-	qdrantClient     *qdrant.Client
-	typesenseClient  *typesense.Client
-	client           inngestgo.Client
+	firecrawlService           services.FirecrawlService
+	openAIService              services.OpenAIProvider
+	qdrantClient               *qdrant.Client
+	typesenseClient            *typesense.Client
+	webscrapingTrackingService services.WebscrapingTrackingService
+	client                     inngestgo.Client
 }
 
 func NewWebIngestionProcessor(
@@ -44,12 +45,14 @@ func NewWebIngestionProcessor(
 	openAIService services.OpenAIProvider,
 	qdrantClient *qdrant.Client,
 	typesenseClient *typesense.Client,
+	webscrapingTrackingService services.WebscrapingTrackingService,
 ) *WebIngestionProcessor {
 	return &WebIngestionProcessor{
-		firecrawlService: firecrawlService,
-		openAIService:    openAIService,
-		qdrantClient:     qdrantClient,
-		typesenseClient:  typesenseClient,
+		firecrawlService:           firecrawlService,
+		openAIService:              openAIService,
+		qdrantClient:               qdrantClient,
+		typesenseClient:            typesenseClient,
+		webscrapingTrackingService: webscrapingTrackingService,
 	}
 }
 
@@ -85,8 +88,8 @@ func (p *WebIngestionProcessor) IngestURLWorkflow() inngestgo.ServableFunction {
 				return nil, fmt.Errorf("failed to unmarshal into FirecrawlScrapeResult: %w", err)
 			}
 
-			// Call the shared ingestion logic
-			return p._ingestContent(ctx, scrapeResult.Data.Markdown, scrapeResult.Data.Title, scrapeResult.Data.SourceURL, orgID)
+			// Call the shared ingestion logic with scrape event context
+			return p._ingestContent(ctx, scrapeResult.Data.Markdown, scrapeResult.Data.Title, scrapeResult.Data.SourceURL, orgID, "website/scrape.requested")
 		},
 	)
 	return fn
@@ -107,6 +110,7 @@ func (p *WebIngestionProcessor) IngestFoundContentWorkflow() inngestgo.ServableF
 				input.Event.Data.Title,
 				input.Event.Data.URL,
 				input.Event.Data.OrgID,
+				"website/content.found",
 			)
 		},
 	)
@@ -114,7 +118,7 @@ func (p *WebIngestionProcessor) IngestFoundContentWorkflow() inngestgo.ServableF
 }
 
 // ✅ HELPER FUNCTION: Contains the shared logic for chunking, embedding, and indexing.
-func (p *WebIngestionProcessor) _ingestContent(ctx context.Context, markdown, title, sourceURL, orgID string) (any, error) {
+func (p *WebIngestionProcessor) _ingestContent(ctx context.Context, markdown, title, sourceURL, orgID, eventName string) (any, error) {
 	// Step 1: Chunk the markdown content.
 	chunks, err := step.Run(ctx, "chunk-markdown", func(ctx context.Context) ([]string, error) {
 		if markdown == "" {
@@ -130,7 +134,7 @@ func (p *WebIngestionProcessor) _ingestContent(ctx context.Context, markdown, ti
 	}
 
 	// Step 2: Generate embeddings for each chunk.
-	vectors, err := step.Run(ctx, "generate-embeddings", func(ctx context.Context) ([][]float32, error) {
+	embeddingResult, err := step.Run(ctx, "generate-embeddings", func(ctx context.Context) (*services.EmbeddingResult, error) {
 		return p.openAIService.CreateEmbedding(ctx, chunks, "text-embedding-ada-002")
 	})
 	if err != nil {
@@ -149,7 +153,7 @@ func (p *WebIngestionProcessor) _ingestContent(ctx context.Context, markdown, ti
 			})
 			qdrantPoints[i] = &qdrant.PointStruct{
 				Id:      qdrant.NewID(uuid.New().String()),
-				Vectors: qdrant.NewVectors(vectors[i]...),
+				Vectors: qdrant.NewVectors(embeddingResult.Vectors[i]...),
 				Payload: payload,
 			}
 		}
@@ -181,6 +185,45 @@ func (p *WebIngestionProcessor) _ingestContent(ctx context.Context, markdown, ti
 	})
 	if err != nil {
 		return nil, fmt.Errorf("step 'index-in-typesense' failed: %w", err)
+	}
+
+	// Step 5: Record tracking data
+	_, err = step.Run(ctx, "record-tracking", func(ctx context.Context) (interface{}, error) {
+		// Convert orgID string to UUID
+		orgUUID, err := uuid.Parse(orgID)
+		if err != nil {
+			return nil, fmt.Errorf("invalid org ID: %w", err)
+		}
+
+		// Determine operation type based on event name
+		operationType := "scrape" // Default to scrape
+		if eventName == "website/content.found" {
+			operationType = "crawl"
+		}
+
+		// Record the webscraping run
+		err = p.webscrapingTrackingService.RecordRun(
+			ctx,
+			orgUUID,
+			sourceURL,
+			title,
+			operationType,
+			eventName,
+			len(chunks),
+			&embeddingResult.InputTokens,
+			&embeddingResult.Cost,
+			&embeddingResult.Model,
+			"completed",
+			nil, // No error message
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to record tracking data: %w", err)
+		}
+
+		return "tracking recorded successfully", nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("step 'record-tracking' failed: %w", err)
 	}
 
 	fmt.Printf("✅ COMPLETED: Ingestion pipeline for URL %s\n", sourceURL)
@@ -221,12 +264,12 @@ func chunkMarkdownByHeadings(markdown string) []string {
 }
 
 func smartChunk(text string) []string {
-	// A safe character limit to stay well under the token limit. 
-    // 1 token is ~4 chars, so 8192 tokens is ~32k chars. 8000 is a very safe buffer.
+	// A safe character limit to stay well under the token limit.
+	// 1 token is ~4 chars, so 8192 tokens is ~32k chars. 8000 is a very safe buffer.
 	const maxChunkSize = 8000
 
 	var finalChunks []string
-	
+
 	// First, do the semantic split by headings
 	initialChunks := chunkMarkdownByHeadings(text)
 
