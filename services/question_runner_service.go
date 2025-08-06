@@ -85,6 +85,9 @@ func (s *questionRunnerService) ProcessSingleQuestion(ctx context.Context, quest
 		ModelID:       model.GeoModelID,
 		LocationID:    &location.OrgLocationID,
 		ResponseText:  &aiResponse.Response,
+		InputTokens:   &aiResponse.InputTokens,
+		OutputTokens:  &aiResponse.OutputTokens,
+		TotalCost:     &aiResponse.Cost,
 		IsLatest:      false, // Will be set later
 		CreatedAt:     time.Now(),
 		UpdatedAt:     time.Now(),
@@ -106,7 +109,7 @@ func (s *questionRunnerService) ProcessSingleQuestion(ctx context.Context, quest
 	}
 
 	// 4. Extract claims
-	claims, err := s.dataExtractionService.ExtractClaims(ctx, run.QuestionRunID, aiResponse.Response)
+	claims, err := s.dataExtractionService.ExtractClaims(ctx, run.QuestionRunID, aiResponse.Response, targetCompany, orgWebsites)
 	if err != nil {
 		fmt.Printf("[ProcessSingleQuestion] Warning: Failed to extract claims: %v\n", err)
 	} else if len(claims) > 0 {

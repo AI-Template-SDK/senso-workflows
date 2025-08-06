@@ -5,7 +5,7 @@ go 1.24
 toolchain go1.24.4
 
 require (
-	github.com/AI-Template-SDK/senso-api v1.2.0
+	github.com/AI-Template-SDK/senso-api v1.4.0
 	github.com/anthropics/anthropic-sdk-go v1.4.0
 	github.com/google/uuid v1.6.0
 	github.com/inngest/inngestgo v0.12.0

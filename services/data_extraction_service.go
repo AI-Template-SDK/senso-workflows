@@ -79,6 +79,11 @@ func (s *dataExtractionService) ExtractMentions(ctx context.Context, questionRun
 		return nil, fmt.Errorf("failed to parse mentions extraction response: %w", err)
 	}
 
+	// Capture token and cost data from the AI call
+	inputTokens := int(chatResponse.Usage.PromptTokens)
+	outputTokens := int(chatResponse.Usage.CompletionTokens)
+	totalCost := s.costService.CalculateCost("openai", string(model), inputTokens, outputTokens, false)
+
 	var mentions []*models.QuestionRunMention
 	now := time.Now()
 
@@ -93,6 +98,9 @@ func (s *dataExtractionService) ExtractMentions(ctx context.Context, questionRun
 			MentionRank:          &extractedData.TargetCompany.Rank,
 			MentionSentiment:     &sentiment,
 			TargetOrg:            true,
+			InputTokens:          &inputTokens,
+			OutputTokens:         &outputTokens,
+			TotalCost:            &totalCost,
 			CreatedAt:            now,
 			UpdatedAt:            now,
 		})
@@ -109,6 +117,9 @@ func (s *dataExtractionService) ExtractMentions(ctx context.Context, questionRun
 			MentionRank:          &comp.Rank,
 			MentionSentiment:     &sentiment,
 			TargetOrg:            false,
+			InputTokens:          &inputTokens,
+			OutputTokens:         &outputTokens,
+			TotalCost:            &totalCost,
 			CreatedAt:            now,
 			UpdatedAt:            now,
 		})
@@ -119,10 +130,10 @@ func (s *dataExtractionService) ExtractMentions(ctx context.Context, questionRun
 }
 
 // ExtractClaims parses AI response and extracts factual claims
-func (s *dataExtractionService) ExtractClaims(ctx context.Context, questionRunID uuid.UUID, response string) ([]*models.QuestionRunClaim, error) {
+func (s *dataExtractionService) ExtractClaims(ctx context.Context, questionRunID uuid.UUID, response string, targetCompany string, orgWebsites []string) ([]*models.QuestionRunClaim, error) {
 	fmt.Printf("[ExtractClaims] Processing claims for question run %s\n", questionRunID)
 
-	prompt := s.buildClaimsExtractionPrompt(response)
+	prompt := s.buildClaimsExtractionPrompt(response, targetCompany, orgWebsites)
 
 	// Use a model that supports structured outputs
 	model := openai.ChatModelGPT4_1
@@ -163,15 +174,28 @@ func (s *dataExtractionService) ExtractClaims(ctx context.Context, questionRunID
 		return nil, fmt.Errorf("failed to parse claims extraction response: %w", err)
 	}
 
+	// Capture token and cost data from the AI call
+	inputTokens := int(chatResponse.Usage.PromptTokens)
+	outputTokens := int(chatResponse.Usage.CompletionTokens)
+	totalCost := s.costService.CalculateCost("openai", string(model), inputTokens, outputTokens, false)
+
 	var claims []*models.QuestionRunClaim
 	now := time.Now()
 
-	for i, claimText := range extractedData.Claims {
+	for i, claim := range extractedData.Claims {
+		sentiment := s.normalizeSentiment(claim.Sentiment)
+		targetMentioned := claim.TargetMentioned
+
 		claims = append(claims, &models.QuestionRunClaim{
 			QuestionRunClaimID: uuid.New(),
 			QuestionRunID:      questionRunID,
-			ClaimText:          claimText,
+			ClaimText:          claim.ClaimText,
 			ClaimOrder:         i + 1,
+			Sentiment:          &sentiment,
+			TargetMentioned:    &targetMentioned,
+			InputTokens:        &inputTokens,
+			OutputTokens:       &outputTokens,
+			TotalCost:          &totalCost,
 			CreatedAt:          now,
 			UpdatedAt:          now,
 		})
@@ -246,132 +270,105 @@ func (s *dataExtractionService) CalculateMetrics(ctx context.Context, mentions [
 }
 
 // Helper methods
-
 func (s *dataExtractionService) buildMentionsExtractionPrompt(response, targetCompany string) string {
 	return fmt.Sprintf(`You are an expert competitive intelligence analyst focused on extracting SPECIFIC COMPANY AND BRAND NAMES from financial services content.
 
-## ⚠️ CRITICAL: EXTRACT ONLY ACTUAL BUSINESS ENTITIES
+## 🚨 MOST CRITICAL RULE: ONLY EXTRACT WHAT IS ACTUALLY MENTIONED
 
-**VALID Company/Organization** (Extract these):
-- Specific corporations: "JPMorgan Chase", "Bank of America", "Wells Fargo"
-- Financial institutions: "Citibank", "Goldman Sachs", "Vanguard"  
-- Credit unions: "Navy Federal Credit Union", "State Employees Credit Union"
-- Insurance companies: "Allstate", "Geico", "Progressive"
-- Fintech companies: "PayPal", "Square", "Stripe"
-- Technology companies: "Microsoft", "Apple", "Google" 
-- Software products/platforms: "Salesforce", "HubSpot", "QuickBooks"
-- Consulting firms: "McKinsey", "Deloitte", "PwC"
-- Investment firms: "BlackRock", "Fidelity", "Charles Schwab"
+**You MUST only extract companies that are explicitly mentioned in the response text below.**
+**IGNORE any company names that appear in these instructions - they are examples only.**
+**The ONLY text you should analyze is in the "RESPONSE TEXT TO ANALYZE" section at the bottom.**
 
-**DO NOT EXTRACT** (Common mistakes to avoid):
-- ❌ Lists/Rankings: "Fortune 500 companies", "Top 10 Banks", "Global 100 Most Sustainable Corporations"
-- ❌ Awards/Programs: "Canada's Best 50 Corporate Citizens", "Best Places to Work"
-- ❌ Generic categories: "Traditional SEO Tools", "Digital Marketing Platforms", "Cloud Services"
-- ❌ Government departments: "Office of the Superintendent of Financial Institutions", "Federal Reserve"
-- ❌ Industry groups: "Canadian Bankers Association", "Credit Union National Association"
-- ❌ Product categories: "mobile banking apps", "investment platforms", "CRM systems"
-- ❌ Descriptive phrases: "leading financial institutions", "major credit card companies"
-- ❌ Academic institutions: "Harvard Business School", "Stanford University" (unless mentioned as business entities)
+## ⚠️ EXTRACTION CRITERIA: VALID Business Entities Only
 
-## TARGET COMPANY
-Target to identify: %s
+**EXTRACT These** (Only if actually mentioned in the response text):
+- Specific corporations, financial institutions, credit unions
+- Insurance companies, fintech companies, technology companies
+- Software products/platforms, consulting firms, investment firms
+
+**NEVER EXTRACT** (Common mistakes):
+- ❌ Lists/Rankings: "Fortune 500 companies", "Top 10 Banks"
+- ❌ Awards/Programs: "Best Corporate Citizens"
+- ❌ Generic categories: "SEO Tools", "Digital Marketing Platforms"
+- ❌ Government departments, Industry groups, Product categories
+- ❌ Descriptive phrases: "leading financial institutions"
+
+## TARGET ORGANIZATION ANALYSIS
+
+**Your target organization for this analysis is: "%s"**
+
+## CRITICAL EXTRACTION LOGIC
+
+**For the Target Organization:**
+- IF this organization (or recognizable variations) appears in the RESPONSE TEXT → create target_company record
+- IF this organization does NOT appear in the RESPONSE TEXT → set target_company to null
+- IGNORE the fact that you see this organization name in these instructions
+
+**Target Organization Variations to Look For:**
+- Short name/brand: Remove domain extensions (.com, .ai, .io), legal suffixes (Inc, LLC, Corp)
+- Common abbreviations and shortened versions
+- Minor spelling or formatting variations
+
+**For Competitors:**
+- ONLY extract companies explicitly named in the RESPONSE TEXT
+- Each must be a specific business entity with an official website
+- Each extraction must be traceable to specific text in the response
+
+**Quality Control:**
+- Better to extract 0 companies than to extract non-existent mentions
+- Every extraction must be found in the RESPONSE TEXT, not in these instructions
+- When in doubt, exclude rather than include
 
 ## EXTRACTION REQUIREMENTS
 
-1. **Entity Name Test**: Ask yourself "Can I visit this entity's website or buy their product/service?" If NO, don't extract it.
+1. **Presence Test**: Company must be explicitly mentioned in the response text
+2. **Entity Name Test**: Must be a specific business entity, not a category
+3. **Ranking**: Number companies by their FIRST appearance in the text
+4. **Text Extraction**: Extract the complete sentence/phrase containing each mention
+5. **Sentiment Analysis**: "positive", "negative", or "neutral"
 
-2. **Proper Noun Test**: Must be a specific proper noun referring to a named business entity, not a category or description.
+## EXAMPLES OF CORRECT BEHAVIOR
 
-3. **Ranking**: Number companies by their FIRST appearance in the text (1 = first mentioned)
+**Example A: Target IS in response text**
+Target Organization: "TechCorp Inc"
+Response Text: "TechCorp's new platform competes with Salesforce and HubSpot."
+Result: target_company = TechCorp record, competitors = [Salesforce, HubSpot]
 
-4. **Text Extraction**: 
-   - Extract the COMPLETE sentence or phrase containing each mention
-   - If mentioned multiple times, concatenate ALL contexts with " | " separator
-   - Include 5-10 words of context around each mention for clarity
-   - Preserve exact punctuation and capitalization
+**Example B: Target is NOT in response text**
+Target Organization: "TechCorp Inc"  
+Response Text: "Salesforce and HubSpot dominate the CRM market."
+Result: target_company = null, competitors = [Salesforce, HubSpot]
 
-5. **Sentiment Analysis**:
-   - "positive": Favorable language, benefits, recommendations, praise, advantages
-   - "negative": Criticism, problems, disadvantages, warnings, complaints  
-   - "neutral": Factual statements without clear positive/negative tone
+**Example C: No companies in response text**
+Target Organization: "TechCorp Inc"
+Response Text: "The software industry faces many challenges."
+Result: target_company = null, competitors = []
 
-6. **Target Company Handling**:
-   - Look for ALL variations: full legal name, common name, abbreviations, brand names
-   - If target company is NOT mentioned at all, set "target_company" to null
-   - Include indirect references like "we", "our company" only if clearly referring to target
-
-## EXAMPLES
-
-**✅ CORRECT EXTRACTION**
-Text: "While JPMorgan Chase leads in market share, smaller fintech companies like PayPal and Square are gaining ground. Many users prefer Venmo for peer-to-peer payments."
-
-Extract: JPMorgan Chase, PayPal, Square, Venmo
-
-**❌ INCORRECT EXTRACTION** 
-Text: "The Global 100 Most Sustainable Corporations list includes several financial institutions. Traditional SEO tools don't work well for banks."
-
-Do NOT extract: "Global 100 Most Sustainable Corporations", "Traditional SEO tools" 
-These are categories/lists, not specific companies.
-
-**✅ FINANCIAL SERVICES EXAMPLE**
-Target: "Sunlife Financial"
-Text: "Sunlife Financial competes with Manulife and Great-West Life in the Canadian insurance market. Many clients also consider RBC Insurance and TD Insurance for their coverage needs."
-
-Expected extraction:
-{
-  "target_company": {
-    "name": "Sunlife Financial", 
-    "rank": 1,
-    "mentioned_text": "Sunlife Financial competes with Manulife and Great-West Life",
-    "text_sentiment": "neutral"
-  },
-  "competitors": [
-    {
-      "name": "Manulife",
-      "rank": 2, 
-      "mentioned_text": "competes with Manulife and Great-West Life in the Canadian insurance market",
-      "text_sentiment": "neutral"
-    },
-    {
-      "name": "Great-West Life",
-      "rank": 3,
-      "mentioned_text": "competes with Manulife and Great-West Life in the Canadian insurance market", 
-      "text_sentiment": "neutral"
-    },
-    {
-      "name": "RBC Insurance",
-      "rank": 4,
-      "mentioned_text": "Many clients also consider RBC Insurance and TD Insurance for their coverage",
-      "text_sentiment": "neutral"
-    },
-    {
-      "name": "TD Insurance",
-      "rank": 5,
-      "mentioned_text": "consider RBC Insurance and TD Insurance for their coverage needs",
-      "text_sentiment": "neutral"
-    }
-  ]
-}
-
-## RESPONSE TO ANALYZE
+## ⚠️ RESPONSE TEXT TO ANALYZE (ANALYZE ONLY THIS TEXT) ⚠️
+"""
 %s
+"""
 
-## FINAL VALIDATION CHECKLIST
-Before extracting each entity, verify:
-✓ Is this a specific, named business entity (not a category or list)?
-✓ Could I find this company's website or purchase their products/services?
-✓ Is this a proper noun referring to an actual organization?
-✓ Am I avoiding generic terms, categories, and descriptive phrases?
-✓ Have I excluded government departments, industry associations, and academic institutions?
-
-Focus on QUALITY over quantity. Better to extract 3 real companies than 10 categories.`, targetCompany, response)
+## FINAL REMINDER
+- Look ONLY at the response text above
+- The target organization "%s" should only be extracted if it appears in that response text
+- Do not be influenced by seeing company names in these instructions`, targetCompany, response, targetCompany)
 }
 
-func (s *dataExtractionService) buildClaimsExtractionPrompt(response string) string {
+func (s *dataExtractionService) buildClaimsExtractionPrompt(response, targetCompany string, orgWebsites []string) string {
+	websitesList := ""
+	if len(orgWebsites) > 0 {
+		websitesList = "## ORGANIZATION DOMAINS (PRIMARY CLASSIFICATION):\n"
+		for _, website := range orgWebsites {
+			websitesList += fmt.Sprintf("- %s\n", website)
+		}
+		websitesList += "\n"
+	}
+
 	return fmt.Sprintf(`You are an expert fact-checker and information extraction specialist. Your task is to extract INDIVIDUAL factual claims from an AI response, breaking down complex statements into atomic, verifiable facts.
 
 ## CRITICAL INSTRUCTIONS: GRANULAR & VERBATIM EXTRACTION
-⚠️ TWO KEY REQUIREMENTS:
+⚠️ THREE KEY REQUIREMENTS:
 
 1. **EXTRACT INDIVIDUAL CLAIMS**: Break down sentences containing multiple facts into separate claims. Each claim should contain exactly ONE verifiable fact.
 
@@ -383,6 +380,22 @@ func (s *dataExtractionService) buildClaimsExtractionPrompt(response string) str
    - Clean up formatting
    
 Copy and paste the EXACT text fragments, but split them at natural fact boundaries.
+
+3. **SENTIMENT & TARGET ANALYSIS**: For each claim, analyze:
+   - **Sentiment**: positive, negative, or neutral based on the tone and language used
+   - **Target Mentioned**: true if the target company "%s" is mentioned in this specific claim
+   
+   **IMPORTANT**: Extract ALL factual claims regardless of whether the target company is mentioned or not. The target_mentioned field is just for tracking purposes - do not filter claims based on target company presence.
+
+## TARGET COMPANY INFORMATION
+
+**Company Name**: "%s"
+%s**Detection Criteria**:
+- Exact name matches (case-insensitive)
+- Common variations and abbreviations
+- Brand names and subsidiaries  
+- Indirect references ("we", "our company") only if clearly referring to target
+- Website domain matches (if any of the organization domains are mentioned)
 
 ## WHAT CONSTITUTES A CLAIM
 
@@ -402,13 +415,23 @@ Copy and paste the EXACT text fragments, but split them at natural fact boundari
 - Pure subjective assessments ("beautiful design", "excellent choice")
 - Future predictions without specific commitments
 
+## SENTIMENT ANALYSIS GUIDELINES
+
+**Positive**: Favorable language, benefits, recommendations, praise, advantages, success indicators
+**Negative**: Criticism, problems, disadvantages, warnings, complaints, failure indicators  
+**Neutral**: Factual statements without clear positive/negative tone, balanced information
+
+
+
 ## EXTRACTION RULES
 
 1. **Individual Claim Extraction**:
-   - Extract each factual assertion as a separate claim
-   - If a sentence contains multiple facts, extract each fact individually
-   - Claims can span multiple sentences, lines, or paragraphs if necessary
-   - Aim for meaningful granularity - atomic but not overly fragmented
+   - Extract complete paragraphs or substantial text blocks as single claims
+   - Keep related sentences together in the same claim
+   - Only split when there's a clear topic shift or unrelated information
+   - Aim for larger, more comprehensive claims rather than individual sentences
+   - **PREFER PARAGRAPHS**: Extract entire paragraphs as single claims when possible
+   - **AVOID OVER-SPLITTING**: Don't break up naturally flowing text into tiny pieces
 
 2. **Preserve Context & Completeness**:
    - Include sufficient context to make each claim understandable and complete
@@ -417,10 +440,11 @@ Copy and paste the EXACT text fragments, but split them at natural fact boundari
    - Include any URLs or citations that appear within the claim text
 
 3. **Splitting Guidelines**:
-   - Split at conjunctions (and, but, or) when they connect independent facts
-   - Split at semicolons and colons that separate distinct claims
-   - If splitting would create ambiguity or incomplete meaning, keep claims together
-   - Always preserve the complete factual assertion, even if it spans multiple sentences
+   - **KEEP TOGETHER**: Related sentences, consecutive statements, and flowing paragraphs
+   - **ONLY SPLIT**: When there's a clear topic shift, new subject, or unrelated information
+   - **PREFER LARGER BLOCKS**: Extract substantial text chunks rather than individual sentences
+   - **PARAGRAPH-FIRST**: Start with entire paragraphs, only split if absolutely necessary
+   - **AVOID CONJUNCTION SPLITTING**: Don't split at "and", "but", "or" unless topics are completely different
 
 4. **Exact Character Matching**:
    - Preserve all punctuation marks (.,;:!?"'-—)
@@ -435,41 +459,36 @@ Copy and paste the EXACT text fragments, but split them at natural fact boundari
    - No minimum or maximum number - extract every individual fact
    - Focus on meaningful, complete factual assertions
    - Don't prioritize or filter - include all factual assertions
+   - **CRITICAL**: Extract claims whether or not they mention the target company - target_mentioned is for tracking only
 
 ## EXAMPLES
 
 Given this response:
 "TechFlow Solutions, founded in 2018, now serves over 10,000 enterprise clients. Their flagship product processes 2.5 million API calls per day with 99.9%% uptime. The company's revenue grew 145%% year-over-year to $50 million in 2023. According to their documentation (https://docs.techflow.com/metrics), TechFlow offers 24/7 phone support in 15 languages. Industry analysts rank them #3 in customer satisfaction."
 
-Correct extraction (MEANINGFUL GRANULARITY):
+Target company: "TechFlow Solutions"
+
+Correct extraction (PREFERRED - KEEP PARAGRAPH TOGETHER):
 [
-  "TechFlow Solutions, founded in 2018",
-  "now serves over 10,000 enterprise clients",
-  "Their flagship product processes 2.5 million API calls per day with 99.9%% uptime",
-  "The company's revenue grew 145%% year-over-year to $50 million in 2023",
-  "According to their documentation (https://docs.techflow.com/metrics), TechFlow offers 24/7 phone support in 15 languages",
-  "Industry analysts rank them #3 in customer satisfaction"
+  {
+    "claim_text": "TechFlow Solutions, founded in 2018, now serves over 10,000 enterprise clients. Their flagship product processes 2.5 million API calls per day with 99.9%% uptime. The company's revenue grew 145%% year-over-year to $50 million in 2023. According to their documentation (https://docs.techflow.com/metrics), TechFlow offers 24/7 phone support in 15 languages. Industry analysts rank them #3 in customer satisfaction.",
+    "sentiment": "positive",
+    "target_mentioned": true
+  }
 ]
 
-Alternative acceptable extraction (MORE GRANULAR):
+Alternative acceptable extraction (ONLY if there are clear topic shifts):
 [
-  "TechFlow Solutions, founded in 2018",
-  "now serves over 10,000 enterprise clients", 
-  "Their flagship product processes 2.5 million API calls per day",
-  "with 99.9%% uptime",
-  "The company's revenue grew 145%% year-over-year to $50 million in 2023",
-  "TechFlow offers 24/7 phone support in 15 languages",
-  "Industry analysts rank them #3 in customer satisfaction"
-]
-
-INCORRECT extraction (DO NOT DO THIS):
-[
-  "Founded in 2018",  ❌ (loses subject, incomplete)
-  "TechFlow serves more than 10000 clients",  ❌ (paraphrased, not verbatim)
-  "• TechFlow Solutions founded in 2018",  ❌ (includes formatting elements)
-  "Processes 2.5M API calls daily",  ❌ (abbreviated and loses subject)
-  "Revenue: $50M (2023)",  ❌ (reformatted the information)
-  "According to their documentation, TechFlow offers 24/7 phone support in 15 languages"  ❌ (removed the URL)
+  {
+    "claim_text": "TechFlow Solutions, founded in 2018, now serves over 10,000 enterprise clients. Their flagship product processes 2.5 million API calls per day with 99.9%% uptime.",
+    "sentiment": "positive",
+    "target_mentioned": true
+  },
+  {
+    "claim_text": "The company's revenue grew 145%% year-over-year to $50 million in 2023. According to their documentation (https://docs.techflow.com/metrics), TechFlow offers 24/7 phone support in 15 languages. Industry analysts rank them #3 in customer satisfaction.",
+    "sentiment": "positive",
+    "target_mentioned": true
+  }
 ]
 
 ## RESPONSE TO ANALYZE
@@ -478,12 +497,16 @@ INCORRECT extraction (DO NOT DO THIS):
 ## FINAL CHECKLIST
 Before submitting each claim, verify:
 ✓ Is this EXACTLY as written in the source? (character-for-character match)
-✓ Is this a complete, meaningful statement?
+✓ Is this a complete, meaningful statement with sufficient context?
 ✓ Can this be verified as true or false?
 ✓ Have I preserved ALL punctuation and formatting?
 ✓ Did I resist the urge to "clean up" or "improve" the text?
+✓ Did I correctly identify the sentiment (positive/negative/neutral)?
+✓ Did I check if the target company "%s" is mentioned in this claim?
+✓ Did I extract ALL factual claims regardless of target company presence?
+✓ Is this claim substantial enough to be meaningful on its own?
 
-Remember: Your role is extraction, not editing. The downstream system requires exact text matches.`, response)
+Remember: Your role is extraction, not editing. The downstream system requires exact text matches.`, targetCompany, targetCompany, websitesList, response, targetCompany)
 }
 
 func (s *dataExtractionService) extractCitationsForClaim(ctx context.Context, claim *models.QuestionRunClaim, response string, orgWebsites []string) ([]*models.QuestionRunCitation, error) {
@@ -526,6 +549,11 @@ func (s *dataExtractionService) extractCitationsForClaim(ctx context.Context, cl
 		return nil, fmt.Errorf("failed to parse citations extraction response: %w", err)
 	}
 
+	// Capture token and cost data from the AI call
+	inputTokens := int(chatResponse.Usage.PromptTokens)
+	outputTokens := int(chatResponse.Usage.CompletionTokens)
+	totalCost := s.costService.CalculateCost("openai", string(model), inputTokens, outputTokens, false)
+
 	var citations []*models.QuestionRunCitation
 	now := time.Now()
 
@@ -536,6 +564,9 @@ func (s *dataExtractionService) extractCitationsForClaim(ctx context.Context, cl
 			SourceURL:             citation.SourceURL,
 			CitationType:          citation.Type,
 			CitationOrder:         i + 1,
+			InputTokens:           &inputTokens,
+			OutputTokens:          &outputTokens,
+			TotalCost:             &totalCost,
 			CreatedAt:             now,
 			UpdatedAt:             now,
 		})

@@ -99,7 +99,7 @@ type QuestionRunnerService interface {
 // New DataExtractionService interface for parsing AI responses
 type DataExtractionService interface {
 	ExtractMentions(ctx context.Context, questionRunID uuid.UUID, response string, targetCompany string) ([]*models.QuestionRunMention, error)
-	ExtractClaims(ctx context.Context, questionRunID uuid.UUID, response string) ([]*models.QuestionRunClaim, error)
+	ExtractClaims(ctx context.Context, questionRunID uuid.UUID, response string, targetCompany string, orgWebsites []string) ([]*models.QuestionRunClaim, error)
 	ExtractCitations(ctx context.Context, claims []*models.QuestionRunClaim, response string, orgWebsites []string) ([]*models.QuestionRunCitation, error)
 	CalculateMetrics(ctx context.Context, mentions []*models.QuestionRunMention, response string, targetCompany string) (*CompetitiveMetrics, error)
 }
@@ -132,7 +132,13 @@ type CompanyExtract struct {
 }
 
 type ClaimsExtractionResponse struct {
-	Claims []string `json:"claims"`
+	Claims []ClaimExtract `json:"claims"`
+}
+
+type ClaimExtract struct {
+	ClaimText       string `json:"claim_text"`
+	Sentiment       string `json:"sentiment"`        // "positive", "negative", "neutral"
+	TargetMentioned bool   `json:"target_mentioned"` // true if target company is mentioned in this claim
 }
 
 type CitationsExtractionResponse struct {
