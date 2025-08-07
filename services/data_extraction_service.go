@@ -12,6 +12,7 @@ import (
 	"github.com/AI-Template-SDK/senso-workflows/internal/config"
 	"github.com/google/uuid"
 	"github.com/openai/openai-go"
+	"github.com/openai/openai-go/azure"
 	"github.com/openai/openai-go/option"
 )
 
@@ -24,7 +25,28 @@ type dataExtractionService struct {
 func NewDataExtractionService(cfg *config.Config) DataExtractionService {
 	fmt.Printf("[NewDataExtractionService] Creating service with OpenAI key (length: %d)\n", len(cfg.OpenAIAPIKey))
 
-	client := openai.NewClient(option.WithAPIKey(cfg.OpenAIAPIKey))
+	var client openai.Client
+
+	// Check if Azure configuration is available
+	if cfg.AzureOpenAIEndpoint != "" && cfg.AzureOpenAIKey != "" && cfg.AzureOpenAIDeploymentName != "" {
+		// Use Azure OpenAI
+		client = openai.NewClient(
+			azure.WithEndpoint(cfg.AzureOpenAIEndpoint, "2024-12-01-preview"),
+			azure.WithAPIKey(cfg.AzureOpenAIKey),
+		)
+		fmt.Printf("[NewDataExtractionService] ✅ Using Azure OpenAI")
+		fmt.Printf("[NewDataExtractionService]   - Endpoint: %s", cfg.AzureOpenAIEndpoint)
+		fmt.Printf("[NewDataExtractionService]   - Deployment: %s", cfg.AzureOpenAIDeploymentName)
+		fmt.Printf("[NewDataExtractionService]   - SDK: github.com/openai/openai-go with Azure middleware")
+	} else {
+		// Use standard OpenAI
+		client = openai.NewClient(
+			option.WithAPIKey(cfg.OpenAIAPIKey),
+		)
+		fmt.Printf("[NewDataExtractionService] ✅ Using Standard OpenAI")
+		fmt.Printf("[NewDataExtractionService]   - API: api.openai.com")
+		fmt.Printf("[NewDataExtractionService]   - SDK: github.com/openai/openai-go")
+	}
 
 	return &dataExtractionService{
 		cfg:          cfg,
@@ -35,12 +57,21 @@ func NewDataExtractionService(cfg *config.Config) DataExtractionService {
 
 // ExtractMentions parses AI response and extracts company mentions
 func (s *dataExtractionService) ExtractMentions(ctx context.Context, questionRunID uuid.UUID, response string, targetCompany string) ([]*models.QuestionRunMention, error) {
-	fmt.Printf("[ExtractMentions] Processing mentions for question run %s\n", questionRunID)
+	fmt.Printf("[ExtractMentions] 🔍 Processing mentions for question run %s", questionRunID)
 
 	prompt := s.buildMentionsExtractionPrompt(response, targetCompany)
 
 	// Use a model that supports structured outputs
-	model := openai.ChatModelGPT4_1
+	var model openai.ChatModel
+	if s.cfg.AzureOpenAIDeploymentName != "" {
+		// Use Azure deployment name
+		model = openai.ChatModel(s.cfg.AzureOpenAIDeploymentName)
+		fmt.Printf("[ExtractMentions] 🎯 Using Azure OpenAI deployment: %s", s.cfg.AzureOpenAIDeploymentName)
+	} else {
+		// Use standard OpenAI model
+		model = openai.ChatModelGPT4_1
+		fmt.Printf("[ExtractMentions] 🎯 Using Standard OpenAI model: %s", model)
+	}
 
 	schemaParam := openai.ResponseFormatJSONSchemaJSONSchemaParam{
 		Name:        "company_mentions_extraction",
@@ -48,6 +79,8 @@ func (s *dataExtractionService) ExtractMentions(ctx context.Context, questionRun
 		Schema:      GenerateSchema[MentionsExtractionResponse](),
 		Strict:      openai.Bool(true),
 	}
+
+	fmt.Printf("[ExtractMentions] 🚀 Making AI call for mentions extraction...")
 
 	// Create the extraction request with structured output
 	chatResponse, err := s.openAIClient.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
@@ -65,6 +98,10 @@ func (s *dataExtractionService) ExtractMentions(ctx context.Context, questionRun
 	if err != nil {
 		return nil, fmt.Errorf("failed to extract mentions: %w", err)
 	}
+
+	fmt.Printf("[ExtractMentions] ✅ AI call completed successfully")
+	fmt.Printf("[ExtractMentions]   - Input tokens: %d", chatResponse.Usage.PromptTokens)
+	fmt.Printf("[ExtractMentions]   - Output tokens: %d", chatResponse.Usage.CompletionTokens)
 
 	// Parse the response
 	if len(chatResponse.Choices) == 0 {
@@ -125,18 +162,27 @@ func (s *dataExtractionService) ExtractMentions(ctx context.Context, questionRun
 		})
 	}
 
-	fmt.Printf("[ExtractMentions] Successfully extracted %d mentions\n", len(mentions))
+	fmt.Printf("[ExtractMentions] ✅ Successfully extracted %d mentions", len(mentions))
 	return mentions, nil
 }
 
 // ExtractClaims parses AI response and extracts factual claims
 func (s *dataExtractionService) ExtractClaims(ctx context.Context, questionRunID uuid.UUID, response string, targetCompany string, orgWebsites []string) ([]*models.QuestionRunClaim, error) {
-	fmt.Printf("[ExtractClaims] Processing claims for question run %s\n", questionRunID)
+	fmt.Printf("[ExtractClaims] 🔍 Processing claims for question run %s", questionRunID)
 
 	prompt := s.buildClaimsExtractionPrompt(response, targetCompany, orgWebsites)
 
 	// Use a model that supports structured outputs
-	model := openai.ChatModelGPT4_1
+	var model openai.ChatModel
+	if s.cfg.AzureOpenAIDeploymentName != "" {
+		// Use Azure deployment name
+		model = openai.ChatModel(s.cfg.AzureOpenAIDeploymentName)
+		fmt.Printf("[ExtractClaims] 🎯 Using Azure OpenAI deployment: %s", s.cfg.AzureOpenAIDeploymentName)
+	} else {
+		// Use standard OpenAI model
+		model = openai.ChatModelGPT4_1
+		fmt.Printf("[ExtractClaims] 🎯 Using Standard OpenAI model: %s", model)
+	}
 
 	schemaParam := openai.ResponseFormatJSONSchemaJSONSchemaParam{
 		Name:        "claims_extraction",
@@ -144,6 +190,8 @@ func (s *dataExtractionService) ExtractClaims(ctx context.Context, questionRunID
 		Schema:      GenerateSchema[ClaimsExtractionResponse](),
 		Strict:      openai.Bool(true),
 	}
+
+	fmt.Printf("[ExtractClaims] 🚀 Making AI call for claims extraction...")
 
 	// Create the extraction request
 	chatResponse, err := s.openAIClient.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
@@ -161,6 +209,10 @@ func (s *dataExtractionService) ExtractClaims(ctx context.Context, questionRunID
 	if err != nil {
 		return nil, fmt.Errorf("failed to extract claims: %w", err)
 	}
+
+	fmt.Printf("[ExtractClaims] ✅ AI call completed successfully")
+	fmt.Printf("[ExtractClaims]   - Input tokens: %d", chatResponse.Usage.PromptTokens)
+	fmt.Printf("[ExtractClaims]   - Output tokens: %d", chatResponse.Usage.CompletionTokens)
 
 	// Parse the response
 	if len(chatResponse.Choices) == 0 {
@@ -201,7 +253,7 @@ func (s *dataExtractionService) ExtractClaims(ctx context.Context, questionRunID
 		})
 	}
 
-	fmt.Printf("[ExtractClaims] Successfully extracted %d claims\n", len(claims))
+	fmt.Printf("[ExtractClaims] ✅ Successfully extracted %d claims", len(claims))
 	return claims, nil
 }
 
@@ -510,10 +562,21 @@ Remember: Your role is extraction, not editing. The downstream system requires e
 }
 
 func (s *dataExtractionService) extractCitationsForClaim(ctx context.Context, claim *models.QuestionRunClaim, response string, orgWebsites []string) ([]*models.QuestionRunCitation, error) {
+	fmt.Printf("[extractCitationsForClaim] 🔍 Processing citations for claim %s", claim.QuestionRunClaimID)
+
 	prompt := s.buildCitationsExtractionPrompt(claim.ClaimText, response, orgWebsites)
 
 	// Use a model that supports structured outputs
-	model := openai.ChatModelGPT4_1
+	var model openai.ChatModel
+	if s.cfg.AzureOpenAIDeploymentName != "" {
+		// Use Azure deployment name
+		model = openai.ChatModel(s.cfg.AzureOpenAIDeploymentName)
+		fmt.Printf("[extractCitationsForClaim] 🎯 Using Azure OpenAI deployment: %s", s.cfg.AzureOpenAIDeploymentName)
+	} else {
+		// Use standard OpenAI model
+		model = openai.ChatModelGPT4_1
+		fmt.Printf("[extractCitationsForClaim] 🎯 Using Standard OpenAI model: %s", model)
+	}
 
 	schemaParam := openai.ResponseFormatJSONSchemaJSONSchemaParam{
 		Name:        "citations_extraction",
@@ -521,6 +584,8 @@ func (s *dataExtractionService) extractCitationsForClaim(ctx context.Context, cl
 		Schema:      GenerateSchema[CitationsExtractionResponse](),
 		Strict:      openai.Bool(true),
 	}
+
+	fmt.Printf("[extractCitationsForClaim] 🚀 Making AI call for citations extraction...")
 
 	chatResponse, err := s.openAIClient.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
 		Messages: []openai.ChatCompletionMessageParamUnion{
@@ -537,6 +602,10 @@ func (s *dataExtractionService) extractCitationsForClaim(ctx context.Context, cl
 	if err != nil {
 		return nil, fmt.Errorf("failed to extract citations: %w", err)
 	}
+
+	fmt.Printf("[extractCitationsForClaim] ✅ AI call completed successfully")
+	fmt.Printf("[extractCitationsForClaim]   - Input tokens: %d", chatResponse.Usage.PromptTokens)
+	fmt.Printf("[extractCitationsForClaim]   - Output tokens: %d", chatResponse.Usage.CompletionTokens)
 
 	if len(chatResponse.Choices) == 0 {
 		return []*models.QuestionRunCitation{}, nil
@@ -572,6 +641,7 @@ func (s *dataExtractionService) extractCitationsForClaim(ctx context.Context, cl
 		})
 	}
 
+	fmt.Printf("[extractCitationsForClaim] ✅ Successfully extracted %d citations", len(citations))
 	return citations, nil
 }
 

@@ -39,3 +39,6 @@ prod.env
 
 # Binary
 senso-workflows
+
+# Python venv folder
+venv/

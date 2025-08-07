@@ -10,6 +10,7 @@ import (
 	"github.com/AI-Template-SDK/senso-workflows/internal/config"
 	"github.com/AI-Template-SDK/senso-workflows/internal/models"
 	"github.com/openai/openai-go"
+	"github.com/openai/openai-go/azure"
 	"github.com/openai/openai-go/option"
 )
 
@@ -22,7 +23,28 @@ type extractService struct {
 func NewExtractService(cfg *config.Config) ExtractService {
 	fmt.Printf("[NewExtractService] Creating service with OpenAI key (length: %d)\n", len(cfg.OpenAIAPIKey))
 
-	client := openai.NewClient(option.WithAPIKey(cfg.OpenAIAPIKey))
+	var client openai.Client
+
+	// Check if Azure configuration is available
+	if cfg.AzureOpenAIEndpoint != "" && cfg.AzureOpenAIKey != "" && cfg.AzureOpenAIDeploymentName != "" {
+		// Use Azure OpenAI
+		client = openai.NewClient(
+			azure.WithEndpoint(cfg.AzureOpenAIEndpoint, "2024-12-01-preview"),
+			azure.WithAPIKey(cfg.AzureOpenAIKey),
+		)
+		fmt.Printf("[NewExtractService] ✅ Using Azure OpenAI")
+		fmt.Printf("[NewExtractService]   - Endpoint: %s", cfg.AzureOpenAIEndpoint)
+		fmt.Printf("[NewExtractService]   - Deployment: %s", cfg.AzureOpenAIDeploymentName)
+		fmt.Printf("[NewExtractService]   - SDK: github.com/openai/openai-go with Azure middleware")
+	} else {
+		// Use standard OpenAI
+		client = openai.NewClient(
+			option.WithAPIKey(cfg.OpenAIAPIKey),
+		)
+		fmt.Printf("[NewExtractService] ✅ Using Standard OpenAI")
+		fmt.Printf("[NewExtractService]   - API: api.openai.com")
+		fmt.Printf("[NewExtractService]   - SDK: github.com/openai/openai-go")
+	}
 
 	return &extractService{
 		cfg:          cfg,
@@ -43,8 +65,15 @@ var ExtractResponseSchema = GenerateSchema[ExtractResponse]()
 func (s *extractService) ExtractCompanyMentions(ctx context.Context, question string, response string, targetCompany string, orgID string) (*models.ExtractResult, error) {
 	prompt := s.buildExtractionPrompt(question, response, targetCompany)
 
-	// Use GPT-4.1 for extraction
-	model := "gpt-4.1"
+	// Determine which model to use
+	var model openai.ChatModel
+	if s.cfg.AzureOpenAIDeploymentName != "" {
+		// Use Azure deployment name
+		model = openai.ChatModel(s.cfg.AzureOpenAIDeploymentName)
+	} else {
+		// Use standard OpenAI model
+		model = openai.ChatModel("gpt-4.1")
+	}
 
 	schemaParam := openai.ResponseFormatJSONSchemaJSONSchemaParam{
 		Name:        "company_extraction",
@@ -59,7 +88,7 @@ func (s *extractService) ExtractCompanyMentions(ctx context.Context, question st
 			openai.SystemMessage("You are an expert financial services analyst specializing in credit unions and banks. Extract company mentions accurately and comprehensively."),
 			openai.UserMessage(prompt),
 		},
-		Model: openai.ChatModel(model),
+		Model: model,
 		ResponseFormat: openai.ChatCompletionNewParamsResponseFormatUnion{
 			OfJSONSchema: &openai.ResponseFormatJSONSchemaParam{JSONSchema: schemaParam},
 		},

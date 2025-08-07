@@ -9,16 +9,19 @@ import (
 )
 
 type Config struct {
-	Port              string
-	Environment       string
-	InngestEventKey   string
-	InngestSigningKey string
-	OpenAIAPIKey      string
-	AnthropicAPIKey   string
-	ApplicationAPIURL string
-	DatabaseURL       string
-	APIToken          string
-	Database          DatabaseConfig
+	Port                      string
+	Environment               string
+	InngestEventKey           string
+	InngestSigningKey         string
+	OpenAIAPIKey              string
+	AnthropicAPIKey           string
+	AzureOpenAIEndpoint       string
+	AzureOpenAIKey            string
+	AzureOpenAIDeploymentName string
+	ApplicationAPIURL         string
+	DatabaseURL               string
+	APIToken                  string
+	Database                  DatabaseConfig
 }
 
 // DatabaseConfig matches the senso-api database configuration structure exactly
@@ -36,15 +39,18 @@ type DatabaseConfig struct {
 
 func Load() *Config {
 	config := &Config{
-		Port:              getEnv("PORT", "8000"),
-		Environment:       getEnv("ENVIRONMENT", "development"),
-		InngestEventKey:   os.Getenv("INNGEST_EVENT_KEY"),
-		InngestSigningKey: os.Getenv("INNGEST_SIGNING_KEY"),
-		OpenAIAPIKey:      os.Getenv("OPENAI_API_KEY"),
-		AnthropicAPIKey:   os.Getenv("ANTHROPIC_API_KEY"),
-		ApplicationAPIURL: os.Getenv("APPLICATION_API_URL"),
-		DatabaseURL:       os.Getenv("DATABASE_URL"),
-		APIToken:          os.Getenv("API_TOKEN"),
+		Port:                      getEnv("PORT", "8000"),
+		Environment:               getEnv("ENVIRONMENT", "development"),
+		InngestEventKey:           os.Getenv("INNGEST_EVENT_KEY"),
+		InngestSigningKey:         os.Getenv("INNGEST_SIGNING_KEY"),
+		OpenAIAPIKey:              os.Getenv("OPENAI_API_KEY"),
+		AnthropicAPIKey:           os.Getenv("ANTHROPIC_API_KEY"),
+		AzureOpenAIEndpoint:       os.Getenv("AZURE_OPENAI_ENDPOINT"),
+		AzureOpenAIKey:            os.Getenv("AZURE_OPENAI_KEY"),
+		AzureOpenAIDeploymentName: os.Getenv("AZURE_OPENAI_DEPLOYMENT_NAME"),
+		ApplicationAPIURL:         os.Getenv("APPLICATION_API_URL"),
+		DatabaseURL:               os.Getenv("DATABASE_URL"),
+		APIToken:                  os.Getenv("API_TOKEN"),
 	}
 
 	// Parse database configuration

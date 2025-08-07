@@ -152,6 +152,8 @@ func (s *questionRunnerService) ProcessSingleQuestion(ctx context.Context, quest
 
 // executeAICall performs the actual AI model call
 func (s *questionRunnerService) executeAICall(ctx context.Context, questionText, modelName string, location *models.OrgLocation) (*AIResponse, error) {
+	fmt.Printf("[executeAICall] 🚀 Making AI call for model: %s", modelName)
+
 	// Convert location to workflow model format
 	workflowLocation := &workflowModels.Location{
 		Country: location.CountryCode,
@@ -166,12 +168,18 @@ func (s *questionRunnerService) executeAICall(ctx context.Context, questionText,
 
 	// Determine if web search should be enabled (for now, disable it)
 	webSearch := true
+	fmt.Printf("[executeAICall] 🌐 Web search enabled: %t", webSearch)
 
 	// Execute the AI call
 	response, err := provider.RunQuestion(ctx, questionText, webSearch, workflowLocation)
 	if err != nil {
 		return nil, fmt.Errorf("failed to run question: %w", err)
 	}
+
+	fmt.Printf("[executeAICall] ✅ AI call completed successfully")
+	fmt.Printf("[executeAICall]   - Input tokens: %d", response.InputTokens)
+	fmt.Printf("[executeAICall]   - Output tokens: %d", response.OutputTokens)
+	fmt.Printf("[executeAICall]   - Cost: $%.6f", response.Cost)
 
 	return response, nil
 }
@@ -189,10 +197,12 @@ func (s *questionRunnerService) getProvider(model string) (AIProvider, error) {
 
 	// Determine provider based on model name
 	if strings.Contains(modelLower, "gpt") || strings.Contains(modelLower, "4.1") {
+		fmt.Printf("[getProvider] 🎯 Selected OpenAI provider for model: %s", model)
 		return NewOpenAIProvider(s.cfg, model, s.costService), nil
 	}
 
 	if strings.Contains(modelLower, "claude") || strings.Contains(modelLower, "sonnet") || strings.Contains(modelLower, "opus") || strings.Contains(modelLower, "haiku") {
+		fmt.Printf("[getProvider] 🎯 Selected Anthropic provider for model: %s", model)
 		return NewAnthropicProvider(s.cfg, model, s.costService), nil
 	}
 

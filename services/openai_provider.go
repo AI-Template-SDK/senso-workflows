@@ -13,6 +13,7 @@ import (
 	"github.com/AI-Template-SDK/senso-workflows/internal/models"
 	"github.com/invopop/jsonschema"
 	"github.com/openai/openai-go"
+	"github.com/openai/openai-go/azure"
 	"github.com/openai/openai-go/option"
 )
 
@@ -21,18 +22,41 @@ type openAIProvider struct {
 	model       string
 	costService CostService
 	apiKey      string
+	cfg         *config.Config // Added for Azure deployment name
 }
 
 func NewOpenAIProvider(cfg *config.Config, model string, costService CostService) AIProvider {
-	client := openai.NewClient(
-		option.WithAPIKey(cfg.OpenAIAPIKey),
-	)
+	var client openai.Client
+
+	// Check if Azure configuration is available
+	if cfg.AzureOpenAIEndpoint != "" && cfg.AzureOpenAIKey != "" && cfg.AzureOpenAIDeploymentName != "" {
+		// Use Azure OpenAI
+		client = openai.NewClient(
+			azure.WithEndpoint(cfg.AzureOpenAIEndpoint, "2024-12-01-preview"),
+			azure.WithAPIKey(cfg.AzureOpenAIKey),
+		)
+		fmt.Printf("[NewOpenAIProvider] ✅ Using Azure OpenAI")
+		fmt.Printf("[NewOpenAIProvider]   - Endpoint: %s", cfg.AzureOpenAIEndpoint)
+		fmt.Printf("[NewOpenAIProvider]   - Deployment: %s", cfg.AzureOpenAIDeploymentName)
+		fmt.Printf("[NewOpenAIProvider]   - Model: %s", model)
+		fmt.Printf("[NewOpenAIProvider]   - SDK: github.com/openai/openai-go with Azure middleware")
+	} else {
+		// Use standard OpenAI
+		client = openai.NewClient(
+			option.WithAPIKey(cfg.OpenAIAPIKey),
+		)
+		fmt.Printf("[NewOpenAIProvider] ✅ Using Standard OpenAI")
+		fmt.Printf("[NewOpenAIProvider]   - API: api.openai.com")
+		fmt.Printf("[NewOpenAIProvider]   - Model: %s", model)
+		fmt.Printf("[NewOpenAIProvider]   - SDK: github.com/openai/openai-go")
+	}
 
 	return &openAIProvider{
 		client:      &client,
 		model:       model,
 		costService: costService,
-		apiKey:      cfg.OpenAIAPIKey,
+		apiKey:      cfg.OpenAIAPIKey, // Keep for web search API calls
+		cfg:         cfg,              // Store config for Azure deployment name
 	}
 }
 
@@ -140,12 +164,22 @@ func (p *openAIProvider) RunQuestion(ctx context.Context, query string, websearc
 		Strict:      openai.Bool(true),
 	}
 
+	// Determine which model to use
+	var modelParam openai.ChatModel
+	if p.cfg.AzureOpenAIDeploymentName != "" {
+		// Use Azure deployment name
+		modelParam = openai.ChatModel(p.cfg.AzureOpenAIDeploymentName)
+	} else {
+		// Use standard OpenAI model
+		modelParam = openai.ChatModel(p.model)
+	}
+
 	response, err := p.client.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
 		Messages: []openai.ChatCompletionMessageParamUnion{
 			openai.SystemMessage("You are a helpful assistant that provides accurate, comprehensive answers to questions."),
 			openai.UserMessage(prompt),
 		},
-		Model: openai.ChatModel(p.model),
+		Model: modelParam,
 		ResponseFormat: openai.ChatCompletionNewParamsResponseFormatUnion{
 			OfJSONSchema: &openai.ResponseFormatJSONSchemaParam{JSONSchema: schemaParam},
 		},

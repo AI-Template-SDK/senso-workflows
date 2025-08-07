@@ -45,6 +45,59 @@ func createDatabaseClient(ctx context.Context, cfg config.DatabaseConfig) (*data
 	return &database.Client{DB: db}, nil
 }
 
+// logAIServiceConfiguration logs detailed information about AI service configuration
+func logAIServiceConfiguration(cfg *config.Config) {
+	log.Printf("=== AI SERVICE CONFIGURATION ===")
+
+	// Check Azure OpenAI configuration
+	azureConfigured := cfg.AzureOpenAIEndpoint != "" && cfg.AzureOpenAIKey != "" && cfg.AzureOpenAIDeploymentName != ""
+	openaiConfigured := cfg.OpenAIAPIKey != ""
+	anthropicConfigured := cfg.AnthropicAPIKey != ""
+
+	log.Printf("Azure OpenAI Configuration:")
+	log.Printf("  - Endpoint: %s", cfg.AzureOpenAIEndpoint)
+	log.Printf("  - API Key: %s", ifString(cfg.AzureOpenAIKey != "", "SET", "NOT SET"))
+	log.Printf("  - Deployment Name: %s", cfg.AzureOpenAIDeploymentName)
+	log.Printf("  - Fully Configured: %t", azureConfigured)
+
+	log.Printf("Standard OpenAI Configuration:")
+	log.Printf("  - API Key: %s", ifString(openaiConfigured, "SET", "NOT SET"))
+
+	log.Printf("Anthropic Configuration:")
+	log.Printf("  - API Key: %s", ifString(anthropicConfigured, "SET", "NOT SET"))
+
+	// Determine which service will be used
+	if azureConfigured {
+		log.Printf("✅ PRIMARY AI SERVICE: Azure OpenAI")
+		log.Printf("   - Using Azure deployment: %s", cfg.AzureOpenAIDeploymentName)
+		log.Printf("   - Endpoint: %s", cfg.AzureOpenAIEndpoint)
+		log.Printf("   - SDK: github.com/openai/openai-go with Azure middleware")
+	} else if openaiConfigured {
+		log.Printf("✅ PRIMARY AI SERVICE: Standard OpenAI")
+		log.Printf("   - Using OpenAI API directly")
+		log.Printf("   - SDK: github.com/openai/openai-go")
+	} else {
+		log.Printf("❌ WARNING: No OpenAI service configured!")
+	}
+
+	if anthropicConfigured {
+		log.Printf("✅ ANTHROPIC SERVICE: Available")
+		log.Printf("   - SDK: github.com/anthropics/anthropic-sdk-go")
+	} else {
+		log.Printf("ℹ️  ANTHROPIC SERVICE: Not configured")
+	}
+
+	log.Printf("=== END AI SERVICE CONFIGURATION ===")
+}
+
+// ifString is a helper function for conditional string output
+func ifString(condition bool, trueVal, falseVal string) string {
+	if condition {
+		return trueVal
+	}
+	return falseVal
+}
+
 func main() {
 	// Load environment variables from .env file first (standard practice)
 	// If not found, try dev.env for local development
@@ -68,17 +121,8 @@ func main() {
 	log.Printf("Database Host: %s", cfg.Database.Host)
 	log.Printf("Database Name: %s", cfg.Database.Name)
 
-	// Log API key status (without exposing the actual keys)
-	if cfg.OpenAIAPIKey == "" {
-		log.Printf("WARNING: OpenAI API key not loaded!")
-	} else {
-		log.Printf("OpenAI API key loaded (length: %d)", len(cfg.OpenAIAPIKey))
-	}
-	if cfg.AnthropicAPIKey == "" {
-		log.Printf("WARNING: Anthropic API key not loaded!")
-	} else {
-		log.Printf("Anthropic API key loaded (length: %d)", len(cfg.AnthropicAPIKey))
-	}
+	// Log AI service configuration
+	logAIServiceConfiguration(cfg)
 
 	// Initialize database connection using our custom function
 	ctx := context.Background()
@@ -102,10 +146,12 @@ func main() {
 	}
 
 	// Initialize services with repository manager and proper dependencies
+	log.Printf("Initializing AI services...")
 	orgService := services.NewOrgService(cfg, repoManager)
 	dataExtractionService := services.NewDataExtractionService(cfg)
 	questionRunnerService := services.NewQuestionRunnerService(cfg, repoManager, dataExtractionService)
 	analyticsService := services.NewAnalyticsService(cfg, repoManager)
+	log.Printf("✅ All AI services initialized successfully")
 
 	// Create Inngest client
 	client, err := inngestgo.NewClient(
