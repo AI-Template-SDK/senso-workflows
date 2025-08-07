@@ -43,6 +43,9 @@ func (p *CrawlProcessor) CrawlWebsiteWorkflow() inngestgo.ServableFunction {
 		},
 		inngestgo.EventTrigger("website/crawl.requested", nil),
 		func(ctx context.Context, input inngestgo.Input[CrawlRequestEvent]) (any, error) {
+			fmt.Printf("[DEBUG] Received Crawl Event Data:\n")
+			fmt.Printf("  URL: '%s'\n", input.Event.Data.URL)
+			fmt.Printf("  OrgID: '%s'\n", input.Event.Data.OrgID)
 			urlToCrawl := input.Event.Data.URL
 			orgID := input.Event.Data.OrgID
 			fmt.Printf("[CrawlWebsiteWorkflow] Starting crawl for URL: %s\n", urlToCrawl)
@@ -80,7 +83,7 @@ func (p *CrawlProcessor) CrawlWebsiteWorkflow() inngestgo.ServableFunction {
 				}
 
 				fmt.Printf("[CrawlWebsiteWorkflow] Crawl in progress (%d/%d pages). Waiting 1 minute...\n", statusResult.Completed, statusResult.Total)
-				
+
 				sleepID := fmt.Sprintf("wait-after-check-%d", i)
 
 				step.Sleep(ctx, sleepID, 1*time.Minute)
@@ -104,8 +107,8 @@ func (p *CrawlProcessor) CrawlWebsiteWorkflow() inngestgo.ServableFunction {
 						Data: map[string]any{
 							"org_id":   orgID,
 							"url":      page.Metadata.SourceURL,
-							"markdown": page.Markdown,         
-							"title":    page.Metadata.Title,   
+							"markdown": page.Markdown,
+							"title":    page.Metadata.Title,
 						},
 					})
 				}
