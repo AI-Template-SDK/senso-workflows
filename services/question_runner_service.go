@@ -99,7 +99,7 @@ func (s *questionRunnerService) ProcessSingleQuestion(ctx context.Context, quest
 	}
 
 	// 3. Extract mentions
-	mentions, err := s.dataExtractionService.ExtractMentions(ctx, run.QuestionRunID, aiResponse.Response, targetCompany)
+	mentions, err := s.dataExtractionService.ExtractMentions(ctx, run.QuestionRunID, aiResponse.Response, targetCompany, orgWebsites)
 	if err != nil {
 		fmt.Printf("[ProcessSingleQuestion] Warning: Failed to extract mentions: %v\n", err)
 	} else if len(mentions) > 0 {

@@ -56,10 +56,10 @@ func NewDataExtractionService(cfg *config.Config) DataExtractionService {
 }
 
 // ExtractMentions parses AI response and extracts company mentions
-func (s *dataExtractionService) ExtractMentions(ctx context.Context, questionRunID uuid.UUID, response string, targetCompany string) ([]*models.QuestionRunMention, error) {
+func (s *dataExtractionService) ExtractMentions(ctx context.Context, questionRunID uuid.UUID, response string, targetCompany string, orgWebsites []string) ([]*models.QuestionRunMention, error) {
 	fmt.Printf("[ExtractMentions] 🔍 Processing mentions for question run %s", questionRunID)
 
-	prompt := s.buildMentionsExtractionPrompt(response, targetCompany)
+	prompt := s.buildMentionsExtractionPrompt(response, targetCompany, orgWebsites)
 
 	// Use a model that supports structured outputs
 	var model openai.ChatModel
@@ -92,7 +92,6 @@ func (s *dataExtractionService) ExtractMentions(ctx context.Context, questionRun
 		ResponseFormat: openai.ChatCompletionNewParamsResponseFormatUnion{
 			OfJSONSchema: &openai.ResponseFormatJSONSchemaParam{JSONSchema: schemaParam},
 		},
-		Temperature: openai.Float(0), // Deterministic extraction
 	})
 
 	if err != nil {
@@ -124,23 +123,29 @@ func (s *dataExtractionService) ExtractMentions(ctx context.Context, questionRun
 	var mentions []*models.QuestionRunMention
 	now := time.Now()
 
-	// Process target company
+	// Process target company - only create a row if mentioned_text is non-empty and not "null"
 	if extractedData.TargetCompany != nil {
-		sentiment := s.normalizeSentiment(extractedData.TargetCompany.TextSentiment)
-		mentions = append(mentions, &models.QuestionRunMention{
-			QuestionRunMentionID: uuid.New(),
-			QuestionRunID:        questionRunID,
-			MentionOrg:           extractedData.TargetCompany.Name,
-			MentionText:          extractedData.TargetCompany.MentionedText,
-			MentionRank:          &extractedData.TargetCompany.Rank,
-			MentionSentiment:     &sentiment,
-			TargetOrg:            true,
-			InputTokens:          &inputTokens,
-			OutputTokens:         &outputTokens,
-			TotalCost:            &totalCost,
-			CreatedAt:            now,
-			UpdatedAt:            now,
-		})
+		rawMentionText := extractedData.TargetCompany.MentionedText
+		trimmedLower := strings.ToLower(strings.TrimSpace(rawMentionText))
+		if trimmedLower != "" && trimmedLower != "null" {
+			sentiment := s.normalizeSentiment(extractedData.TargetCompany.TextSentiment)
+			mentions = append(mentions, &models.QuestionRunMention{
+				QuestionRunMentionID: uuid.New(),
+				QuestionRunID:        questionRunID,
+				MentionOrg:           extractedData.TargetCompany.Name,
+				MentionText:          rawMentionText,
+				MentionRank:          &extractedData.TargetCompany.Rank,
+				MentionSentiment:     &sentiment,
+				TargetOrg:            true,
+				InputTokens:          &inputTokens,
+				OutputTokens:         &outputTokens,
+				TotalCost:            &totalCost,
+				CreatedAt:            now,
+				UpdatedAt:            now,
+			})
+		} else {
+			fmt.Printf("[ExtractMentions] Skipping target_company mention due to empty/invalid mentioned_text: '%s'", rawMentionText)
+		}
 	}
 
 	// Process competitors
@@ -203,7 +208,6 @@ func (s *dataExtractionService) ExtractClaims(ctx context.Context, questionRunID
 		ResponseFormat: openai.ChatCompletionNewParamsResponseFormatUnion{
 			OfJSONSchema: &openai.ResponseFormatJSONSchemaParam{JSONSchema: schemaParam},
 		},
-		Temperature: openai.Float(0),
 	})
 
 	if err != nil {
@@ -322,89 +326,60 @@ func (s *dataExtractionService) CalculateMetrics(ctx context.Context, mentions [
 }
 
 // Helper methods
-func (s *dataExtractionService) buildMentionsExtractionPrompt(response, targetCompany string) string {
-	return fmt.Sprintf(`You are an expert competitive intelligence analyst focused on extracting SPECIFIC COMPANY AND BRAND NAMES from financial services content.
+func (s *dataExtractionService) buildMentionsExtractionPrompt(response, targetCompany string, orgWebsites []string) string {
+	websitesList := ""
+	if len(orgWebsites) > 0 {
+		websitesList = "## ORGANIZATION DOMAINS (SUPPORTING SIGNALS, NOT PRIMARY):\n"
+		for _, website := range orgWebsites {
+			websitesList += fmt.Sprintf("- %s\n", website)
+		}
+		websitesList += "\n"
+	}
 
-## 🚨 MOST CRITICAL RULE: ONLY EXTRACT WHAT IS ACTUALLY MENTIONED
+	return fmt.Sprintf(`You are an expert competitive intelligence analyst extracting SPECIFIC COMPANY AND BRAND mentions from the RESPONSE TEXT ONLY.
 
-**You MUST only extract companies that are explicitly mentioned in the response text below.**
-**IGNORE any company names that appear in these instructions - they are examples only.**
-**The ONLY text you should analyze is in the "RESPONSE TEXT TO ANALYZE" section at the bottom.**
+## CRITICAL RULES
+1) Target aggregation: If the target organization "%s" appears anywhere in the RESPONSE TEXT, collect EVERY occurrence.
+   - Output ONE "mentioned_text" string that concatenates ALL distinct occurrences in order of appearance.
+   - Use the exact delimiter:  ||  (space, two pipes, space) between occurrences.
+   - Example: "DoorDash offers 24/7 support.  ||  Visit merchants.doordash.com for help.  ||  Phone support is available."
 
-## ⚠️ EXTRACTION CRITERIA: VALID Business Entities Only
+2) Span definition: An occurrence = the full sentence or bullet line that explicitly mentions the company, or a directly adjacent sentence that clearly continues the same thought.
+   - If consecutive sentences reference the company as one continuous thought, keep them together as ONE occurrence.
+   - Do not include unrelated surrounding text.
 
-**EXTRACT These** (Only if actually mentioned in the response text):
-- Specific corporations, financial institutions, credit unions
-- Insurance companies, fintech companies, technology companies
-- Software products/platforms, consulting firms, investment firms
+3) Variations allowed: Match common name variants, abbreviations, and brand/product names.
 
-**NEVER EXTRACT** (Common mistakes):
-- ❌ Lists/Rankings: "Fortune 500 companies", "Top 10 Banks"
-- ❌ Awards/Programs: "Best Corporate Citizens"
-- ❌ Generic categories: "SEO Tools", "Digital Marketing Platforms"
-- ❌ Government departments, Industry groups, Product categories
-- ❌ Descriptive phrases: "leading financial institutions"
+4) Domains are SECONDARY signals (not required):
+   - Use domain mentions only to support detection when the explicit name is absent.
+   - Count a domain as a valid mention only if it clearly belongs to the target organization.
+   - Any subdomain of the listed roots counts (e.g., www., help., merchants.).
+   - When both name and domain appear together, merge them into a single occurrence for that location.
+   - Do NOT infer from partial/generic domain strings that could match other entities.
+%s
 
-## TARGET ORGANIZATION ANALYSIS
+5) Exclusions: Ignore any companies that appear in these instructions; analyze ONLY the text in the RESPONSE TEXT section.
 
-**Your target organization for this analysis is: "%s"**
+6) De-duplication: If the same sentence appears more than once, include it only once.
 
-## CRITICAL EXTRACTION LOGIC
+7) Quality goal: Prefer including more valid occurrences over missing any. Do not omit valid target mentions.
 
-**For the Target Organization:**
-- IF this organization (or recognizable variations) appears in the RESPONSE TEXT → create target_company record
-- IF this organization does NOT appear in the RESPONSE TEXT → set target_company to null
-- IGNORE the fact that you see this organization name in these instructions
+## Output policy
+- target_company: null if not mentioned anywhere; otherwise include name/rank/sentiment.
+- mentioned_text: concatenation of ALL target occurrences using " || ".
+- For competitors, apply the same span logic (concatenate their occurrences with " || ").
 
-**Target Organization Variations to Look For:**
-- Short name/brand: Remove domain extensions (.com, .ai, .io), legal suffixes (Inc, LLC, Corp)
-- Common abbreviations and shortened versions
-- Minor spelling or formatting variations
+## Checklist before finalizing
+- Did you search the entire RESPONSE TEXT for EVERY target occurrence?
+- Is each occurrence a full sentence/bullet or continuous thought?
+- Did you use " || " exactly as the delimiter?
+- If using a domain, does it clearly belong to the target and is it used only as a supporting signal when the name is not present?
+- Did you avoid adding any text not present in the RESPONSE TEXT?
 
-**For Competitors:**
-- ONLY extract companies explicitly named in the RESPONSE TEXT
-- Each must be a specific business entity with an official website
-- Each extraction must be traceable to specific text in the response
-
-**Quality Control:**
-- Better to extract 0 companies than to extract non-existent mentions
-- Every extraction must be found in the RESPONSE TEXT, not in these instructions
-- When in doubt, exclude rather than include
-
-## EXTRACTION REQUIREMENTS
-
-1. **Presence Test**: Company must be explicitly mentioned in the response text
-2. **Entity Name Test**: Must be a specific business entity, not a category
-3. **Ranking**: Number companies by their FIRST appearance in the text
-4. **Text Extraction**: Extract the complete sentence/phrase containing each mention
-5. **Sentiment Analysis**: "positive", "negative", or "neutral"
-
-## EXAMPLES OF CORRECT BEHAVIOR
-
-**Example A: Target IS in response text**
-Target Organization: "TechCorp Inc"
-Response Text: "TechCorp's new platform competes with Salesforce and HubSpot."
-Result: target_company = TechCorp record, competitors = [Salesforce, HubSpot]
-
-**Example B: Target is NOT in response text**
-Target Organization: "TechCorp Inc"  
-Response Text: "Salesforce and HubSpot dominate the CRM market."
-Result: target_company = null, competitors = [Salesforce, HubSpot]
-
-**Example C: No companies in response text**
-Target Organization: "TechCorp Inc"
-Response Text: "The software industry faces many challenges."
-Result: target_company = null, competitors = []
-
-## ⚠️ RESPONSE TEXT TO ANALYZE (ANALYZE ONLY THIS TEXT) ⚠️
+## RESPONSE TEXT (analyze ONLY this):
 """
 %s
-"""
-
-## FINAL REMINDER
-- Look ONLY at the response text above
-- The target organization "%s" should only be extracted if it appears in that response text
-- Do not be influenced by seeing company names in these instructions`, targetCompany, response, targetCompany)
+"""`, targetCompany, websitesList, response)
 }
 
 func (s *dataExtractionService) buildClaimsExtractionPrompt(response, targetCompany string, orgWebsites []string) string {
@@ -596,7 +571,6 @@ func (s *dataExtractionService) extractCitationsForClaim(ctx context.Context, cl
 		ResponseFormat: openai.ChatCompletionNewParamsResponseFormatUnion{
 			OfJSONSchema: &openai.ResponseFormatJSONSchemaParam{JSONSchema: schemaParam},
 		},
-		Temperature: openai.Float(0),
 	})
 
 	if err != nil {
