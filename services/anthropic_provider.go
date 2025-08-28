@@ -95,6 +95,23 @@ Remember: Return ONLY the JSON object, no other text.`, query)
 	return result, nil
 }
 
+// RunQuestionWebSearch implements AIProvider for web search without location
+func (p *anthropicProvider) RunQuestionWebSearch(ctx context.Context, query string) (*AIResponse, error) {
+	fmt.Printf("[RunQuestionWebSearch] 🚀 Making web search AI call for query: %s", query)
+
+	// For Anthropic, we'll use the same approach as the regular RunQuestion but without location
+	// Since Anthropic doesn't have a separate web search API, we'll use the regular API
+	// with web search enabled but no location context
+
+	// Create a neutral location for the API call
+	neutralLocation := &models.Location{
+		Country: "US", // Default country
+	}
+
+	// Use the existing RunQuestion method with websearch=true and neutral location
+	return p.RunQuestion(ctx, query, true, neutralLocation)
+}
+
 func (p *anthropicProvider) parseJSONResponse(response string) string {
 	// Try to parse the JSON response
 	var structuredResp struct {

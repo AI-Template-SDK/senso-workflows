@@ -325,6 +325,227 @@ func (s *dataExtractionService) CalculateMetrics(ctx context.Context, mentions [
 	return metrics, nil
 }
 
+// ExtractNetworkOrgData extracts organization-specific data from network question responses
+func (s *dataExtractionService) ExtractNetworkOrgData(ctx context.Context, questionRunID uuid.UUID, orgID uuid.UUID, orgName string, orgWebsites []string, questionText string, responseText string) (*NetworkOrgExtractionResult, error) {
+	fmt.Printf("[ExtractNetworkOrgData] 🔍 Processing network org data for question run %s, org %s\n", questionRunID, orgName)
+
+	// Prepare the prompt with org context
+	websitesList := ""
+	if len(orgWebsites) > 0 {
+		websitesList = "\n## ORGANIZATION DOMAINS (SUPPORTING SIGNALS):\n"
+		for _, website := range orgWebsites {
+			websitesList += fmt.Sprintf("- %s\n", website)
+		}
+		websitesList += "\n"
+	}
+
+	prompt := fmt.Sprintf(`You are analyzing a network question response to extract organization-specific data.
+
+TARGET ORGANIZATION: %s
+ORGANIZATION DOMAINS: %s
+QUESTION: %s
+
+CRITICAL RULES:
+
+1. MENTIONED - Set to TRUE only if the EXACT organization name appears in the response
+   - Generic phrases like "local credit union", "your bank", "financial institution" are NOT mentions
+   - Only specific names like "TechFlow Bank", "Mountain Credit Union" count
+   - Match common name variants, abbreviations, and brand/product names
+   - If not mentioned by name, set mentioned=false
+
+2. CITATION - Set to TRUE only if URLs relate to this specific organization
+   - Primary citations: URLs from the organization's domains (must match domains listed above)
+   - Secondary citations: External URLs that mention this organization by name
+   - If no relevant URLs found, set citation=false
+
+3. SENTIMENT - positive/negative/neutral based on tone toward this organization
+
+4. MENTION_TEXT - CRITICAL: Extract ALL text that mentions the organization by name
+   - SPAN DEFINITION: An occurrence = the full sentence or bullet line that explicitly mentions the company, or a directly adjacent sentence that clearly continues the same thought
+   - If consecutive sentences reference the company as one continuous thought, keep them together as ONE occurrence
+   - Do not include unrelated surrounding text
+   - AGGREGATION: If the target organization appears multiple times, collect EVERY occurrence
+   - Output ONE "mention_text" string that concatenates ALL distinct occurrences in order of appearance
+   - Use the exact delimiter: " || " (space, two pipes, space) between occurrences
+   - Example: "American Airlines offers premium service. || American Airlines has the best rewards program. || Call American Airlines at 1-800-433-7300."
+   - Copy text exactly as written, preserve all punctuation and formatting
+   - Leave empty if not mentioned
+   - QUALITY GOAL: Prefer including more valid occurrences over missing any. Do not omit valid target mentions.
+
+5. MENTION_RANK - Prominence ranking (1=most prominent, 0=not mentioned)
+
+6. COMPETITORS - List only direct competitors mentioned in the response
+   - Must be competing in same market/service area
+   - Do NOT include partners, vendors, or technology providers
+
+7. CITATIONS - Extract URLs exactly as they appear
+   - Type "primary" if URL domain matches organization domains above
+   - Type "secondary" if external URL mentions the organization
+   - Only include URLs relevant to the target organization
+
+EXAMPLE:
+Response: "TechFlow Bank offers 4.5%% rates, higher than Regional Credit Union's 4.0%%. TechFlow Bank also provides excellent customer service. Learn more at https://techflow.com/rates."
+Target: "TechFlow Bank" with domains: ["techflow.com"]
+
+Output:
+{
+  "org_evaluation": {
+    "mentioned": true,
+    "citation": true, 
+    "sentiment": "positive",
+    "mention_text": "TechFlow Bank offers 4.5%% rates, higher than Regional Credit Union's 4.0%%. || TechFlow Bank also provides excellent customer service.",
+    "mention_rank": 1
+  },
+  "competitors": [{"name": "Regional Credit Union"}],
+  "citations": [{"url": "https://techflow.com/rates", "type": "primary"}]
+}
+
+WHAT IS NOT A MENTION:
+- "discuss with a local credit union" → NOT a mention
+- "contact your bank" → NOT a mention  
+- "financial institutions offer services" → NOT a mention
+
+CHECKLIST BEFORE FINALIZING:
+- Did you search the entire RESPONSE TEXT for EVERY target occurrence?
+- Is each occurrence a full sentence/bullet or continuous thought?
+- Did you use " || " exactly as the delimiter between multiple occurrences?
+- Did you avoid adding any text not present in the RESPONSE TEXT?
+- Did you include ALL sentences that mention the target organization by name?
+
+ANALYZE THIS RESPONSE:
+%s`, orgName, websitesList, questionText, responseText)
+
+	// Use a model that supports structured outputs
+	var model openai.ChatModel
+	if s.cfg.AzureOpenAIDeploymentName != "" {
+		// Use Azure deployment name
+		model = openai.ChatModel(s.cfg.AzureOpenAIDeploymentName)
+		fmt.Printf("[ExtractNetworkOrgData] 🎯 Using Azure OpenAI deployment: %s\n", s.cfg.AzureOpenAIDeploymentName)
+	} else {
+		// Use standard OpenAI model
+		model = openai.ChatModelGPT4_1
+		fmt.Printf("[ExtractNetworkOrgData] 🎯 Using Standard OpenAI model: %s\n", model)
+	}
+
+	// Define the structured output schema
+	type NetworkOrgExtractionResponse struct {
+		OrgEvaluation struct {
+			Mentioned   bool   `json:"mentioned"`
+			Citation    bool   `json:"citation"`
+			Sentiment   string `json:"sentiment"`
+			MentionText string `json:"mention_text"`
+			MentionRank int    `json:"mention_rank"`
+		} `json:"org_evaluation"`
+		Competitors []struct {
+			Name string `json:"name"`
+		} `json:"competitors"`
+		Citations []struct {
+			URL  string `json:"url"`
+			Type string `json:"type"`
+		} `json:"citations"`
+	}
+
+	schemaParam := openai.ResponseFormatJSONSchemaJSONSchemaParam{
+		Name:        "network_org_extraction",
+		Description: openai.String("Extract organization-specific data from network question responses"),
+		Schema:      GenerateSchema[NetworkOrgExtractionResponse](),
+		Strict:      openai.Bool(true),
+	}
+
+	fmt.Printf("[ExtractNetworkOrgData] 🚀 Making AI call for network org data extraction...\n")
+
+	// Create the extraction request with structured output
+	chatResponse, err := s.openAIClient.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
+		Messages: []openai.ChatCompletionMessageParamUnion{
+			openai.SystemMessage("You are an expert analyst specializing in extracting organization-specific data from network question responses."),
+			openai.UserMessage(prompt),
+		},
+		Model: model,
+		ResponseFormat: openai.ChatCompletionNewParamsResponseFormatUnion{
+			OfJSONSchema: &openai.ResponseFormatJSONSchemaParam{JSONSchema: schemaParam},
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("AI call failed: %w", err)
+	}
+
+	fmt.Printf("[ExtractNetworkOrgData] ✅ AI call completed successfully\n")
+	fmt.Printf("[ExtractNetworkOrgData]   - Input tokens: %d\n", chatResponse.Usage.PromptTokens)
+	fmt.Printf("[ExtractNetworkOrgData]   - Output tokens: %d\n", chatResponse.Usage.CompletionTokens)
+
+	// Parse the structured response
+	if len(chatResponse.Choices) == 0 {
+		return nil, fmt.Errorf("no response choices returned from OpenAI")
+	}
+
+	responseContent := chatResponse.Choices[0].Message.Content
+
+	// Parse the structured response
+	var extractedData NetworkOrgExtractionResponse
+	if err := json.Unmarshal([]byte(responseContent), &extractedData); err != nil {
+		return nil, fmt.Errorf("failed to parse network org extraction response: %w", err)
+	}
+
+	// Capture token and cost data from the AI call
+	inputTokens := int(chatResponse.Usage.PromptTokens)
+	outputTokens := int(chatResponse.Usage.CompletionTokens)
+	totalCost := s.costService.CalculateCost("openai", string(model), inputTokens, outputTokens, false)
+
+	// Create the evaluation
+	evaluation := &models.NetworkOrgEval{
+		NetworkOrgEvalID: uuid.New(),
+		QuestionRunID:    questionRunID,
+		OrgID:            orgID,
+		Mentioned:        extractedData.OrgEvaluation.Mentioned,
+		Citation:         extractedData.OrgEvaluation.Citation,
+		Sentiment:        stringPtr(extractedData.OrgEvaluation.Sentiment),
+		MentionText:      stringPtr(extractedData.OrgEvaluation.MentionText),
+		MentionRank:      intPtr(extractedData.OrgEvaluation.MentionRank),
+		InputTokens:      intPtr(inputTokens),
+		OutputTokens:     intPtr(outputTokens),
+		TotalCost:        float64Ptr(totalCost),
+		CreatedAt:        time.Now(),
+		UpdatedAt:        time.Now(),
+	}
+
+	// Create competitors
+	var competitors []*models.NetworkOrgCompetitor
+	for _, comp := range extractedData.Competitors {
+		competitor := &models.NetworkOrgCompetitor{
+			NetworkOrgCompetitorID: uuid.New(),
+			QuestionRunID:          questionRunID,
+			OrgID:                  orgID,
+			Name:                   comp.Name,
+			CreatedAt:              time.Now(),
+			UpdatedAt:              time.Now(),
+		}
+		competitors = append(competitors, competitor)
+	}
+
+	// Create citations
+	var citations []*models.NetworkOrgCitation
+	for _, cit := range extractedData.Citations {
+		citation := &models.NetworkOrgCitation{
+			NetworkOrgCitationID: uuid.New(),
+			QuestionRunID:        questionRunID,
+			OrgID:                orgID,
+			URL:                  cit.URL,
+			Type:                 cit.Type,
+			CreatedAt:            time.Now(),
+			UpdatedAt:            time.Now(),
+		}
+		citations = append(citations, citation)
+	}
+
+	fmt.Printf("[ExtractNetworkOrgData] ✅ Successfully extracted network org data: 1 evaluation, %d competitors, %d citations\n", len(competitors), len(citations))
+
+	return &NetworkOrgExtractionResult{
+		Evaluation:  evaluation,
+		Competitors: competitors,
+		Citations:   citations,
+	}, nil
+}
+
 // Helper methods
 func (s *dataExtractionService) buildMentionsExtractionPrompt(response, targetCompany string, orgWebsites []string) string {
 	websitesList := ""
@@ -653,16 +874,16 @@ When you do find a relevant URL, extract it EXACTLY as it appears:
 - Keep all anchors (#section)
 - Maintain all slashes, dots, and special characters
 
-%s## DOMAIN CLASSIFICATION SYSTEM
+%s## ⚠️ CRITICAL DOMAIN CLASSIFICATION SYSTEM - BE EXTREMELY PRECISE
 
-**PRIMARY CITATION**: URL domain matches organization's official domains (listed above)
-- Exact domain match: example.com → https://example.com/page ✓
-- Subdomain match: blog.example.com, docs.example.com, www.example.com ✓  
-- Protocol ignored: http vs https doesn't matter
-- Path/parameters ignored: any path after domain counts
-- Case insensitive: Example.com = example.com
+**PRIMARY CITATION**: URL domain EXACTLY matches organization's official domains (listed above)
+- **EXACT DOMAIN MATCH**: The URL's base domain must be IDENTICAL to one of the org domains
+- **SUBDOMAIN MATCH**: URL domain must END WITH the org domain (e.g., blog.senso.ai matches senso.ai)
+- **CASE INSENSITIVE**: Example.com = example.com
+- **PROTOCOL IGNORED**: http:// vs https:// doesn't matter
+- **PATH IGNORED**: Any path after domain doesn't affect matching
 
-**SECONDARY CITATION**: Any other valid URL that doesn't match org domains
+**SECONDARY CITATION**: Any other valid URL that does NOT match org domains
 - News sites, research papers, government sites, academic sources
 - Competitor websites, industry publications
 - Social media, forums, documentation sites
@@ -694,24 +915,37 @@ When you do find a relevant URL, extract it EXACTLY as it appears:
 - Reference style: "See [1] https://example.com"
 - Embedded in text: "The https://api.service.com endpoint provides..."
 
-## DOMAIN EXTRACTION & MATCHING LOGIC
+## ⚠️ CRITICAL DOMAIN EXTRACTION & MATCHING LOGIC - BE EXTREMELY CAREFUL
 
-1. **Extract base domain from URL**:
-   - https://blog.example.com/post → blog.example.com
-   - www.subdomain.site.org/page → subdomain.site.org
-   - http://server.com:8000/api → server.com
+**STEP 1: Extract base domain from URL**
+- https://blog.example.com/post → blog.example.com
+- www.subdomain.site.org/page → subdomain.site.org
+- http://server.com:8000/api → server.com
+- https://api.subdomain.example.com/v1/endpoint → api.subdomain.example.com
 
-2. **Compare against org domains**:
-   - Remove protocols (http://, https://)
-   - Remove www. prefix for comparison
-   - Check if URL domain ends with any org domain
-   - example.com matches: example.com, www.example.com, blog.example.com
-   - example.com does NOT match: notexample.com, example.com.evil.com
+**STEP 2: Compare against org domains (BE EXTREMELY PRECISE)**
+- Remove protocols (http://, https://)
+- Remove www. prefix for comparison
+- Check if URL domain ENDS WITH any org domain (exact suffix match)
+- Check if URL domain is IDENTICAL to any org domain
 
-3. **Classification logic**:
-   - If domain match found → PRIMARY
-   - If no domain match → SECONDARY
-   - If no URL found → empty array
+**STEP 3: Classification logic (BE CONSERVATIVE)**
+- If domain EXACTLY matches org domain → PRIMARY
+- If domain ENDS WITH org domain (subdomain) → PRIMARY
+- If NO match found → SECONDARY
+- If uncertain → SECONDARY (be conservative)
+
+**CRITICAL EXAMPLES:**
+- Org domain: senso.ai
+- https://senso.ai/page → PRIMARY ✓
+- https://www.senso.ai/page → PRIMARY ✓
+- https://blog.senso.ai/page → PRIMARY ✓
+- https://api.senso.ai/page → PRIMARY ✓
+- https://cuinsights.com/blog → SECONDARY ✗ (completely different domain)
+- https://senso-ai.com/page → SECONDARY ✗ (different domain, not subdomain)
+- https://senso.ai.evil.com/page → SECONDARY ✗ (not ending with senso.ai)
+- https://senso-ai.org/page → SECONDARY ✗ (different TLD)
+- https://senso.ai.com/page → SECONDARY ✗ (different domain structure)
 
 ## PROXIMITY-BASED EXTRACTION EXAMPLES
 
@@ -724,6 +958,18 @@ Expected output:
   {
     "source_url": "https://docs.techflow.com/reports/q4-2024.pdf",
     "type": "primary"
+  }
+]
+
+**Example 1b - Different Domain (SECONDARY)**
+Claim: "According to industry research (https://cuinsights.com/blog/story1), market growth is strong"
+Response context: "According to industry research (https://cuinsights.com/blog/story1), market growth is strong. This aligns with our internal data."
+
+Expected output:
+[
+  {
+    "source_url": "https://cuinsights.com/blog/story1",
+    "type": "secondary"
   }
 ]
 
@@ -777,12 +1023,23 @@ Before finalizing each URL:
 ✓ Did I correctly classify the domain type (primary vs secondary)?
 ✓ Am I comfortable returning empty array if no URLs are near this claim?
 
+## ⚠️ CRITICAL DOMAIN VERIFICATION CHECKLIST
+Before classifying as PRIMARY, verify:
+✓ Does the URL domain EXACTLY match one of the org domains listed above?
+✓ Does the URL domain END WITH one of the org domains (for subdomains)?
+✓ Is this a genuine subdomain (e.g., blog.senso.ai for senso.ai)?
+✓ Is this NOT a completely different domain (e.g., cuinsights.com ≠ senso.ai)?
+✓ Is this NOT a similar but different domain (e.g., senso-ai.com ≠ senso.ai)?
+✓ When in doubt about domain matching, classify as SECONDARY
+
 ## FINAL CRITICAL REMINDERS
 - **PROXIMITY IS EVERYTHING**: Only extract URLs that are contextually close to the claim
 - **EMPTY ARRAYS ARE NORMAL**: Most claims will have no citations - this is expected
 - **CONSERVATIVE OVER AGGRESSIVE**: Better to miss a citation than assign incorrectly
 - **CONTEXT MATTERS**: Look at where the claim appears in the response, not the entire response
 - **NO CITATION PRESSURE**: Don't feel compelled to find citations for every claim
+- **DOMAIN PRECISION IS CRITICAL**: Only classify as PRIMARY if domain EXACTLY matches org domains
+- **WHEN IN DOUBT, SECONDARY**: If uncertain about domain matching, classify as secondary
 
 ## METHODOLOGY
 1. Locate the exact claim text within the full response
@@ -820,4 +1077,17 @@ func (s *dataExtractionService) convertSentimentToFloat(sentiment string) float6
 	default:
 		return 0.5 // Default to neutral
 	}
+}
+
+// Helper functions for pointer types
+func stringPtr(s string) *string {
+	return &s
+}
+
+func intPtr(i int) *int {
+	return &i
+}
+
+func float64Ptr(f float64) *float64 {
+	return &f
 }

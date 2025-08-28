@@ -16,31 +16,37 @@ import (
 
 // RepositoryManager manages all database repositories
 type RepositoryManager struct {
-	OrgRepo         interfaces.OrgRepository
-	GeoQuestionRepo interfaces.GeoQuestionRepository
-	GeoModelRepo    interfaces.GeoModelRepository
-	OrgLocationRepo interfaces.OrgLocationRepository
-	OrgWebsiteRepo  interfaces.OrgWebsiteRepository
-	GeoProfileRepo  interfaces.GeoProfileRepository
-	QuestionRunRepo interfaces.QuestionRunRepository
-	MentionRepo     interfaces.QuestionRunMentionRepository
-	ClaimRepo       interfaces.QuestionRunClaimRepository
-	CitationRepo    interfaces.QuestionRunCitationRepository
+	OrgRepo                  interfaces.OrgRepository
+	GeoQuestionRepo          interfaces.GeoQuestionRepository
+	GeoModelRepo             interfaces.GeoModelRepository
+	OrgLocationRepo          interfaces.OrgLocationRepository
+	OrgWebsiteRepo           interfaces.OrgWebsiteRepository
+	GeoProfileRepo           interfaces.GeoProfileRepository
+	QuestionRunRepo          interfaces.QuestionRunRepository
+	MentionRepo              interfaces.QuestionRunMentionRepository
+	ClaimRepo                interfaces.QuestionRunClaimRepository
+	CitationRepo             interfaces.QuestionRunCitationRepository
+	NetworkOrgEvalRepo       interfaces.NetworkOrgEvalRepository
+	NetworkOrgCompetitorRepo interfaces.NetworkOrgCompetitorRepository
+	NetworkOrgCitationRepo   interfaces.NetworkOrgCitationRepository
 }
 
 // NewRepositoryManager creates a new repository manager with all repositories
 func NewRepositoryManager(db *database.Client) *RepositoryManager {
 	return &RepositoryManager{
-		OrgRepo:         postgresql.NewOrgRepo(db),
-		GeoQuestionRepo: postgresql.NewGeoQuestionRepo(db),
-		GeoModelRepo:    postgresql.NewGeoModelRepo(db),
-		OrgLocationRepo: postgresql.NewOrgLocationRepo(db),
-		OrgWebsiteRepo:  postgresql.NewOrgWebsiteRepo(db),
-		GeoProfileRepo:  postgresql.NewGeoProfileRepo(db),
-		QuestionRunRepo: postgresql.NewQuestionRunRepo(db),
-		MentionRepo:     postgresql.NewQuestionRunMentionRepo(db),
-		ClaimRepo:       postgresql.NewQuestionRunClaimRepo(db),
-		CitationRepo:    postgresql.NewQuestionRunCitationRepo(db),
+		OrgRepo:                  postgresql.NewOrgRepo(db),
+		GeoQuestionRepo:          postgresql.NewGeoQuestionRepo(db),
+		GeoModelRepo:             postgresql.NewGeoModelRepo(db),
+		OrgLocationRepo:          postgresql.NewOrgLocationRepo(db),
+		OrgWebsiteRepo:           postgresql.NewOrgWebsiteRepo(db),
+		GeoProfileRepo:           postgresql.NewGeoProfileRepo(db),
+		QuestionRunRepo:          postgresql.NewQuestionRunRepo(db),
+		MentionRepo:              postgresql.NewQuestionRunMentionRepo(db),
+		ClaimRepo:                postgresql.NewQuestionRunClaimRepo(db),
+		CitationRepo:             postgresql.NewQuestionRunCitationRepo(db),
+		NetworkOrgEvalRepo:       postgresql.NewNetworkOrgEvalRepo(db),
+		NetworkOrgCompetitorRepo: postgresql.NewNetworkOrgCompetitorRepo(db),
+		NetworkOrgCitationRepo:   postgresql.NewNetworkOrgCitationRepo(db),
 	}
 }
 
@@ -73,6 +79,7 @@ type ExtractedData struct {
 // AIProvider interface for different AI models
 type AIProvider interface {
 	RunQuestion(ctx context.Context, question string, webSearch bool, location *workflowModels.Location) (*AIResponse, error)
+	RunQuestionWebSearch(ctx context.Context, question string) (*AIResponse, error)
 }
 
 type AIResponse struct {
@@ -80,6 +87,33 @@ type AIResponse struct {
 	InputTokens  int
 	OutputTokens int
 	Cost         float64
+}
+
+// NetworkOrgProcessingResult represents the result of processing network org data
+type NetworkOrgProcessingResult struct {
+	OrgID        string
+	NetworkID    string
+	QuestionRuns int
+	Evaluations  int
+	Competitors  int
+	Citations    int
+	Status       string
+	Error        error
+}
+
+// NetworkOrgExtractionResult represents the extracted data for a network org
+type NetworkOrgExtractionResult struct {
+	Evaluation  *models.NetworkOrgEval
+	Competitors []*models.NetworkOrgCompetitor
+	Citations   []*models.NetworkOrgCitation
+}
+
+// OrgDetailsForNetworkProcessing contains org details needed for network processing
+type OrgDetailsForNetworkProcessing struct {
+	OrgID     string
+	OrgName   string
+	NetworkID string
+	Websites  []string
 }
 
 // Updated OrgService interface for database operations
@@ -94,14 +128,25 @@ type OrgService interface {
 type QuestionRunnerService interface {
 	RunQuestionMatrix(ctx context.Context, orgDetails *RealOrgDetails) ([]*models.QuestionRun, error)
 	ProcessSingleQuestion(ctx context.Context, question *models.GeoQuestion, model *models.GeoModel, location *models.OrgLocation, targetCompany string, orgWebsites []string) (*models.QuestionRun, error)
+	RunNetworkQuestionsQuestionOnly(ctx context.Context, networkID string) ([]*models.QuestionRun, error)
+	GetNetworkQuestions(ctx context.Context, networkID string) ([]*models.GeoQuestion, error)
+	ProcessNetworkQuestionOnly(ctx context.Context, question *models.GeoQuestion) (*models.QuestionRun, error)
+	UpdateNetworkLatestFlags(ctx context.Context, networkID string) error
+	RunNetworkOrgProcessing(ctx context.Context, orgID string) ([]*NetworkOrgProcessingResult, error)
+	GetOrgDetailsForNetworkProcessing(ctx context.Context, orgID string) (*OrgDetailsForNetworkProcessing, error)
+	GetLatestNetworkQuestionRuns(ctx context.Context, networkID string) ([]map[string]interface{}, error)
+	GetAllNetworkQuestionRuns(ctx context.Context, networkID string) ([]map[string]interface{}, error)
+	ProcessNetworkOrgQuestionRun(ctx context.Context, questionRunID uuid.UUID, orgID uuid.UUID, orgName string, orgWebsites []string, questionText string, responseText string) (*NetworkOrgExtractionResult, error)
+	ProcessNetworkOrgQuestionRunWithCleanup(ctx context.Context, questionRunID uuid.UUID, orgID uuid.UUID, orgName string, orgWebsites []string, questionText string, responseText string) (*NetworkOrgExtractionResult, error)
 }
 
 // New DataExtractionService interface for parsing AI responses
 type DataExtractionService interface {
-    ExtractMentions(ctx context.Context, questionRunID uuid.UUID, response string, targetCompany string, orgWebsites []string) ([]*models.QuestionRunMention, error)
+	ExtractMentions(ctx context.Context, questionRunID uuid.UUID, response string, targetCompany string, orgWebsites []string) ([]*models.QuestionRunMention, error)
 	ExtractClaims(ctx context.Context, questionRunID uuid.UUID, response string, targetCompany string, orgWebsites []string) ([]*models.QuestionRunClaim, error)
 	ExtractCitations(ctx context.Context, claims []*models.QuestionRunClaim, response string, orgWebsites []string) ([]*models.QuestionRunCitation, error)
 	CalculateMetrics(ctx context.Context, mentions []*models.QuestionRunMention, response string, targetCompany string) (*CompetitiveMetrics, error)
+	ExtractNetworkOrgData(ctx context.Context, questionRunID uuid.UUID, orgID uuid.UUID, orgName string, orgWebsites []string, questionText string, responseText string) (*NetworkOrgExtractionResult, error)
 }
 
 // Updated AnalyticsService interface for database-driven analytics

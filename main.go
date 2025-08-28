@@ -149,7 +149,7 @@ func main() {
 	log.Printf("Initializing AI services...")
 	orgService := services.NewOrgService(cfg, repoManager)
 	dataExtractionService := services.NewDataExtractionService(cfg)
-	questionRunnerService := services.NewQuestionRunnerService(cfg, repoManager, dataExtractionService)
+	questionRunnerService := services.NewQuestionRunnerService(cfg, repoManager, dataExtractionService, orgService)
 	analyticsService := services.NewAnalyticsService(cfg, repoManager)
 	log.Printf("✅ All AI services initialized successfully")
 
@@ -173,15 +173,33 @@ func main() {
 		cfg,
 	)
 	scheduledProcessor := workflows.NewScheduledProcessor(orgService)
+	networkProcessor := workflows.NewNetworkProcessor(
+		questionRunnerService,
+		cfg,
+	)
+	networkOrgProcessor := workflows.NewNetworkOrgProcessor(
+		questionRunnerService,
+		cfg,
+	)
+	networkReevalProcessor := workflows.NewNetworkReevalProcessor(
+		questionRunnerService,
+		cfg,
+	)
 
 	// Set client on workflows
 	orgProcessor.SetClient(client)
 	scheduledProcessor.SetClient(client)
+	networkProcessor.SetClient(client)
+	networkOrgProcessor.SetClient(client)
+	networkReevalProcessor.SetClient(client)
 
 	// Register functions (they auto-register with the client when created)
 	orgProcessor.ProcessOrg()
 	scheduledProcessor.DailyOrgProcessor()
 	scheduledProcessor.WeeklyLoadAnalyzer()
+	networkProcessor.ProcessNetwork()
+	networkOrgProcessor.ProcessNetworkOrg()
+	networkReevalProcessor.ProcessNetworkReeval()
 
 	// Create handler
 	h := client.Serve()

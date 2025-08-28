@@ -340,3 +340,37 @@ func (p *openAIProvider) formatLocation(location *models.Location) string {
 
 	return result
 }
+
+// RunQuestionWebSearch implements AIProvider for web search without location
+func (p *openAIProvider) RunQuestionWebSearch(ctx context.Context, query string) (*AIResponse, error) {
+	fmt.Printf("[RunQuestionWebSearch] 🚀 Making web search AI call for query: %s", query)
+
+	// For network questions, we need to use the standard OpenAI API (not Azure) with web search
+	// Create a neutral location for the API call (required for web search)
+	neutralLocation := &models.Location{
+		Country: "US", // Default country for web search
+	}
+
+	// Check if we're using Azure (which doesn't support web search)
+	if p.cfg.AzureOpenAIEndpoint != "" && p.cfg.AzureOpenAIKey != "" && p.cfg.AzureOpenAIDeploymentName != "" {
+		// Azure doesn't support web search, so we need to use standard OpenAI for web search
+		// Create a temporary standard OpenAI client for web search
+		standardClient := openai.NewClient(
+			option.WithAPIKey(p.cfg.OpenAIAPIKey),
+		)
+
+		// Create a temporary provider for web search
+		tempProvider := &openAIProvider{
+			client:      &standardClient,
+			model:       p.model,
+			costService: p.costService,
+			apiKey:      p.cfg.OpenAIAPIKey,
+			cfg:         &config.Config{OpenAIAPIKey: p.cfg.OpenAIAPIKey}, // Only standard OpenAI config
+		}
+
+		return tempProvider.runWebSearch(ctx, query, neutralLocation)
+	}
+
+	// Use the existing web search method with neutral location
+	return p.runWebSearch(ctx, query, neutralLocation)
+}
