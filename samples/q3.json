@@ -1,0 +1,117 @@
+{
+    "question": "What are the leading AI visibility tracking services?",
+    "response": "Here are some of the leading AI visibility tracking services—platforms designed to help brands monitor how they're mentioned, cited, or visible across AI-powered models and assistant outputs. These tools are rapidly gaining importance as conversational AI becomes a primary channel for user discovery and brand influence.\n\n---\n\n1. Highlighted.ai  \n- A specialist “AI Overview Tracker” that lets brands track visibility across multiple AI models including Google via Gemini, Bing via OpenAI, and Meta via Llama. It tracks prompt performance, brand mentions, and provides competitor comparison and visibility scoring.(highlighted.ai)\n\n2. Wix – AI Visibility Overview  \n- A CMS-native tool launched by Wix as part of its “Generative Engine Optimization (GEO)” suite. It helps users track citations in AI platform responses, monitor brand sentiment in LLM outputs, and benchmark performance against competitors—all from within the Wix ecosystem.(techradar.com)\n\n3. SE Ranking – AI Search Toolkit  \n- Offers visibility tracking across Google AI Overviews (“AIOs”), ChatGPT, Perplexity, Gemini, and more. The tool monitors mentions—both linked and unlinked—analyzes URLs cited in AI responses and includes historical trend analysis and competitor benchmarking.(seranking.com, deliveredsocial.com)\n\n4. Adobe – LLM Optimizer  \n- Introduced in July 2025 within Adobe’s Experience Cloud, this enterprise-grade module enables brands to track and optimize visibility across AI-powered platforms such as web chatbots and browsers, improving discoverability and engagement via AI-driven traffic insights.(investors.com)\n\n5. Zutrix – AI Search Visibility Tracking  \n- A tool that scans up to eight AI models (e.g., Claude, GPT-4, Gemini, Llama), delivering real-time monitoring with high accuracy. It offers visibility scoring, sentiment analysis, brand protection alerts, historical trend charts, and optimization suggestions.(zutrix.com)\n\n6. Finseo – AI Visibility Tracking  \n- Tracks brand mentions across ChatGPT, Claude, Gemini, Perplexity, and other AI platforms. Features include sentiment analysis, search intent classification (informational, commercial, navigational, transactional), real-time alerts, and competitor performance comparisons.(finseo.ai)\n\n7. Keyword.com – AI Rank Tracker  \n- A component of Keyword.com’s SEO suite, this tool tracks brand mentions, prompt citation, and rankings across AI models including Google AI Overviews, ChatGPT, Gemini, Perplexity, and more. Highlights which pages are being cited and helps optimize for better AI visibility.(keyword.com)\n\n8. Geneo  \n- Focused on enterprise and agency use, Geneo captures brand exposure, mention frequency, link presence, and sentiment across major generative platforms like ChatGPT, Google AI Overview, and Perplexity. It includes multi-team dashboards and alerts.(geneo.app)\n\n9. Hall  \n- A GEO and LLM monitoring solution providing real-time tracking via its “Live Hall Monitor,” offering visibility benchmarking against competitors and real-time sentiment alerts.(geneo.app)\n\n10. Peec AI  \n- A reputation tracking tool that blends traditional SEO presence with generative AI visibility—comparing keyword, brand, and backlink mentions across ChatGPT, Bing AI, Google SGE, and more.(geneo.app, tryprobe.com)\n\n11. Ahrefs Brand Radar AI  \n- An extension of Ahrefs’ core SEO suite, it tracks brand mentions in both web and AI-generated outputs from platforms like ChatGPT, Perplexity, Gemini, Microsoft Copilot, and Google AI Overviews.(geneo.app, tryprobe.com)\n\n12. Otterly.AI  \n- Part of multiple ecosystems (includes Semrush integration), Otterly.AI provides GEO monitoring across ChatGPT, Perplexity, Google AI Overviews, and Gemini. Popular with small teams due to its light setup and alerting system.(geneo.app, misaias.com, tryprobe.com)\n\n13. Scrunch  \n- Designed for GEO-first strategies, Scrunch tracks AI-generated mentions across ChatGPT, Claude, Gemini, and Google AI Overviews. It offers prompt testing, page audits, persona-based insights, and share-of-voice analysis.(misaias.com, semrush.com)\n\n14. Semrush Enterprise AIO (AI Optimization)  \n- Built for enterprise users already within Semrush, this feature monitors AI visibility across major platforms, tracks mention frequency and sentiment, and recommends content improvements.(misaias.com)\n\n15. Writesonic – AI Search Visibility Tool  \n- Combines AI-enhanced content creation with visibility monitoring. Tracks performance across LLM platforms and offers content optimization suggestions to improve AI visibility.(semrush.com)\n\n16. Surfer AI Tracker  \n- Adds AI visibility insights to Surfer’s SEO suite. It reports where and how often AI models mention your brand, includes prompt-level visibility detail, source transparency, and visual trend charts with weekly updates.(surferseo.com)\n\n---\n\nSummary Table (Text-Based)  \n- Enterprise & Agency Focus: Adobe LLM Optimizer, Geneo, SE Ranking, Semrush Enterprise AIO  \n- Agency & Tech-Savvy Marketers: Highlighted.ai, Scrunch, Finseo, Zutrix  \n- CMS & Content Platforms: Wix AI Visibility Overview, Surfer AI Tracker, Writesonic  \n- SEO Platform Extensions: Ahrefs Brand Radar AI, Keyword.com, Otterly.AI  \n- Small Teams & Quick-Start Tools: Peec AI, Otterly.AI, Keyword.com, Wrtsionic (entry tiers)\n\n---\n\nOverall, the “best” tool depends heavily on your context: enterprise scale, agency workflows, SEO stack integration, CMS environment, or small-team agility. If you share more about your goals—like real-time alerts, deep sentiment analysis, prompt-level exploration, or SEO workflow integration—I can help tailor the most suitable tool options. Let me know!",
+    "model": "gpt-4.1",
+    "tools": [
+        {
+            "type": "web_search"
+        }
+    ],
+    "target_mentioned": false,
+    "target_sentiment": "neutral",
+    "mention_text": "",
+    "citations": [
+        {
+            "url": "https://highlighted.ai/?utm_source=openai",
+            "type": "secondary"
+        },
+        {
+            "url": "https://www.techradar.com/pro/website-building/wix-introduces-a-new-tool-to-optimize-sites-for-ai?utm_source=openai",
+            "type": "secondary"
+        },
+        {
+            "url": "https://seranking.com/ai-visibility-tracker.html?utm_source=openai",
+            "type": "secondary"
+        },
+        {
+            "url": "https://deliveredsocial.com/best-ai-search-trackers-to-monitor-ai-search-performance-and-brand-visibility-in-2025/?utm_source=openai",
+            "type": "secondary"
+        },
+        {
+            "url": "https://www.investors.com/news/technology/adobe-stock-adobe-llm-optimizer-ai-tool/?utm_source=openai",
+            "type": "secondary"
+        },
+        {
+            "url": "https://zutrix.com/ai-search-visibility?utm_source=openai",
+            "type": "secondary"
+        },
+        {
+            "url": "https://www.finseo.ai/ai-visibility-tracking?utm_source=openai",
+            "type": "secondary"
+        },
+        {
+            "url": "https://keyword.com/ai-search-visibility/?utm_source=openai",
+            "type": "secondary"
+        },
+        {
+            "url": "https://geneo.app/blog/ai-visibility-optimization-tools-2025/?utm_source=openai",
+            "type": "secondary"
+        },
+        {
+            "url": "https://tryprobe.com/blog/leading-ai-visibility-optimization-tools?utm_source=openai",
+            "type": "secondary"
+        },
+        {
+            "url": "https://www.misaias.com/llm-visibility-tools/?utm_source=openai",
+            "type": "secondary"
+        },
+        {
+            "url": "https://www.semrush.com/blog/llm-monitoring-tools/?utm_source=openai",
+            "type": "secondary"
+        },
+        {
+            "url": "https://surferseo.com/updates/ai-tracker/?utm_source=openai",
+            "type": "secondary"
+        }
+    ],
+    "competitors": [
+        {
+            "name": "Highlighted.ai"
+        },
+        {
+            "name": "Wix"
+        },
+        {
+            "name": "SE Ranking"
+        },
+        {
+            "name": "Adobe"
+        },
+        {
+            "name": "Zutrix"
+        },
+        {
+            "name": "Finseo"
+        },
+        {
+            "name": "Keyword.com"
+        },
+        {
+            "name": "Geneo"
+        },
+        {
+            "name": "Hall"
+        },
+        {
+            "name": "Peec AI"
+        },
+        {
+            "name": "Ahrefs"
+        },
+        {
+            "name": "Otterly.AI"
+        },
+        {
+            "name": "Scrunch"
+        },
+        {
+            "name": "Semrush"
+        },
+        {
+            "name": "Writesonic"
+        },
+        {
+            "name": "Surfer"
+        }
+    ]
+}

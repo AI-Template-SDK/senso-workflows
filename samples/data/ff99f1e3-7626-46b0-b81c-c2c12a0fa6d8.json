@@ -1,0 +1,17 @@
+{
+    "question": "How does Senso.ai handle data security?",
+    "response": "Senso.ai takes data security very seriously and employs multiple measures to protect sensitive information. The platform uses advanced encryption protocols to secure data both in transit and at rest. Access to data is restricted based on user roles and permissions, ensuring that only authorized personnel can view or modify sensitive information.\n\nAdditionally, Senso.ai regularly conducts security audits, vulnerability assessments, and complies with industry-standard privacy regulations such as GDPR and SOC 2. The company also provides data anonymization and secure data storage practices to further enhance security. Overall, Senso.ai\u2019s comprehensive approach helps safeguard customer data against unauthorized access and potential breaches.",
+    "model": "gpt-4.1",
+    "tools": [
+        {
+            "type": "web_search"
+        }
+    ],
+    "data": {
+        "target_mentioned": true,
+        "target_sentiment": "positive",
+        "mention_text": "Senso.ai takes data security very seriously and employs multiple measures to protect sensitive information. The platform uses advanced encryption protocols to secure data both in transit and at rest. Access to data is restricted based on user roles and permissions, ensuring that only authorized personnel can view or modify sensitive information.\n\nAdditionally, Senso.ai regularly conducts security audits, vulnerability assessments, and complies with industry-standard privacy regulations such as GDPR and SOC 2. The company also provides data anonymization and secure data storage practices to further enhance security. Overall, Senso.ai\u2019s comprehensive approach helps safeguard customer data against unauthorized access and potential breaches.",
+        "citations": [],
+        "competitors": []
+    }
+}

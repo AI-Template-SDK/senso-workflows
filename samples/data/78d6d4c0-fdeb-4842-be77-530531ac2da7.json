@@ -1,0 +1,45 @@
+{
+    "question": "Is there software to optimize AI search results?",
+    "response": "Yes, there is software designed to optimize AI search results. These solutions typically use advanced algorithms, machine learning, and natural language processing (NLP) to improve the relevance and accuracy of search outputs. Examples include:\n\n- **Search Engines with AI-enhanced features**: Google Search, Bing, and ElasticSearch use AI to refine search intents and deliver better results.\n- **Enterprise Search Software**: Tools like Microsoft Azure Cognitive Search and IBM Watson Discovery offer businesses customizable AI-driven search capabilities tailored to their data.\n- **AI-powered SEO Tools**: Platforms like SEMrush and Moz incorporate machine learning to help webpages rank better and appear more relevant in searches.\n- **Custom Solutions**: Many organizations use open-source libraries (such as Apache Lucene or OpenSearch) with added AI/ML models to optimize internal search functionalities.\n\nThese tools often use techniques like semantic search, query expansion, and ranking algorithms to provide more accurate and personalized search experiences.",
+    "model": "gpt-4.1",
+    "tools": [
+        {
+            "type": "web_search"
+        }
+    ],
+    "data": {
+        "target_mentioned": false,
+        "target_sentiment": "neutral",
+        "mention_text": "",
+        "citations": [],
+        "competitors": [
+            {
+                "name": "Google Search"
+            },
+            {
+                "name": "Bing"
+            },
+            {
+                "name": "ElasticSearch"
+            },
+            {
+                "name": "Microsoft Azure Cognitive Search"
+            },
+            {
+                "name": "IBM Watson Discovery"
+            },
+            {
+                "name": "SEMrush"
+            },
+            {
+                "name": "Moz"
+            },
+            {
+                "name": "Apache Lucene"
+            },
+            {
+                "name": "OpenSearch"
+            }
+        ]
+    }
+}

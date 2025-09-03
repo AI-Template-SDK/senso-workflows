@@ -1,0 +1,17 @@
+{
+    "question": "Why would I choose Senso.ai over other AI visibility solutions?",
+    "response": "Certainly! Here is a strong response to the question:\n\n---\n\n**Why would I choose Senso.ai over other AI visibility solutions?**\n\nSenso.ai stands out from other AI visibility solutions due to its comprehensive, real-time monitoring, proactive risk detection, and user-friendly interface. Unlike traditional solutions that only provide after-the-fact reports, Senso.ai offers immediate insights into AI behavior, allowing you to identify and resolve issues before they impact operations. Its advanced analytics platform visualizes data at every stage, giving you clear, actionable intelligence on AI models, system health, and user interactions.\n\nAdditionally, Senso.ai\u2019s seamless integration with a wide range of platforms and customizable alerting ensures that it fits with your existing workflow and scales with your organization\u2019s needs. With dedicated support and a commitment to transparency and security, Senso.ai empowers you to maximize AI ROI while maintaining compliance and trust.\n\nIn summary, Senso.ai delivers deep visibility, actionable insights, and peace of mind\u2014giving you the confidence to deploy and scale AI with clarity and control.",
+    "model": "gpt-4.1",
+    "tools": [
+        {
+            "type": "web_search"
+        }
+    ],
+    "data": {
+        "target_mentioned": true,
+        "target_sentiment": "positive",
+        "mention_text": "Certainly! Here is a strong response to the question:\n\n---\n\n**Why would I choose Senso.ai over other AI visibility solutions?**\n\nSenso.ai stands out from other AI visibility solutions due to its comprehensive, real-time monitoring, proactive risk detection, and user-friendly interface. Unlike traditional solutions that only provide after-the-fact reports, Senso.ai offers immediate insights into AI behavior, allowing you to identify and resolve issues before they impact operations. Its advanced analytics platform visualizes data at every stage, giving you clear, actionable intelligence on AI models, system health, and user interactions.\n\nAdditionally, Senso.ai\u2019s seamless integration with a wide range of platforms and customizable alerting ensures that it fits with your existing workflow and scales with your organization\u2019s needs. With dedicated support and a commitment to transparency and security, Senso.ai empowers you to maximize AI ROI while maintaining compliance and trust.\n\nIn summary, Senso.ai delivers deep visibility, actionable insights, and peace of mind\u2014giving you the confidence to deploy and scale AI with clarity and control.",
+        "citations": [],
+        "competitors": []
+    }
+}

@@ -149,6 +149,7 @@ func main() {
 	log.Printf("Initializing AI services...")
 	orgService := services.NewOrgService(cfg, repoManager)
 	dataExtractionService := services.NewDataExtractionService(cfg)
+	orgEvaluationService := services.NewOrgEvaluationService(cfg, repoManager)
 	questionRunnerService := services.NewQuestionRunnerService(cfg, repoManager, dataExtractionService, orgService)
 	analyticsService := services.NewAnalyticsService(cfg, repoManager)
 	log.Printf("✅ All AI services initialized successfully")
@@ -172,6 +173,11 @@ func main() {
 		questionRunnerService,
 		cfg,
 	)
+	orgEvaluationProcessor := workflows.NewOrgEvaluationProcessor(
+		orgService,
+		orgEvaluationService,
+		cfg,
+	)
 	scheduledProcessor := workflows.NewScheduledProcessor(orgService)
 	networkProcessor := workflows.NewNetworkProcessor(
 		questionRunnerService,
@@ -186,20 +192,27 @@ func main() {
 		cfg,
 	)
 
+	// Initialize org re-evaluation processor
+	orgReevalProcessor := workflows.NewOrgReevalProcessor(cfg, orgService, orgEvaluationService)
+
 	// Set client on workflows
 	orgProcessor.SetClient(client)
+	orgEvaluationProcessor.SetClient(client)
 	scheduledProcessor.SetClient(client)
 	networkProcessor.SetClient(client)
 	networkOrgProcessor.SetClient(client)
 	networkReevalProcessor.SetClient(client)
+	orgReevalProcessor.SetClient(client)
 
 	// Register functions (they auto-register with the client when created)
 	orgProcessor.ProcessOrg()
+	orgEvaluationProcessor.ProcessOrgEvaluation()
 	scheduledProcessor.DailyOrgProcessor()
 	scheduledProcessor.WeeklyLoadAnalyzer()
 	networkProcessor.ProcessNetwork()
 	networkOrgProcessor.ProcessNetworkOrg()
 	networkReevalProcessor.ProcessNetworkReeval()
+	orgReevalProcessor.ProcessOrgReeval()
 
 	// Create handler
 	h := client.Serve()
@@ -252,6 +265,70 @@ func main() {
 		log.Printf("Test event sent successfully: %+v", result)
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(fmt.Sprintf(`{"status":"success","message":"Test event sent for org %s","event_ids":["%s"]}`, testOrgID, result)))
+	})
+
+	// Test endpoint to trigger ProcessOrgEvaluation workflow
+	mux.HandleFunc("/test/trigger-org-evaluation", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+
+		// Create test event for org evaluation
+		testOrgID := "test-org-123"
+		evt := inngestgo.Event{
+			Name: "org.evaluation.process",
+			Data: map[string]interface{}{
+				"org_id":       testOrgID,
+				"triggered_by": "manual_test",
+				"user_id":      "test-user",
+			},
+		}
+
+		// Send event
+		result, err := client.Send(r.Context(), evt)
+		if err != nil {
+			log.Printf("Failed to send org evaluation test event: %v", err)
+			w.WriteHeader(http.StatusInternalServerError)
+			w.Write([]byte(fmt.Sprintf(`{"error":"Failed to send event: %v"}`, err)))
+			return
+		}
+
+		log.Printf("Org evaluation test event sent successfully: %+v", result)
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(fmt.Sprintf(`{"status":"success","message":"Org evaluation test event sent for org %s","event_ids":["%s"]}`, testOrgID, result)))
+	})
+
+	// Test endpoint to trigger ProcessOrgReeval workflow
+	mux.HandleFunc("/test/trigger-org-reeval", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+
+		// Create test event for org re-evaluation
+		testOrgID := "test-org-123"
+		evt := inngestgo.Event{
+			Name: "org.reeval.all.process",
+			Data: map[string]interface{}{
+				"org_id":       testOrgID,
+				"triggered_by": "manual_test",
+				"user_id":      "test-user",
+			},
+		}
+
+		// Send event
+		result, err := client.Send(r.Context(), evt)
+		if err != nil {
+			log.Printf("Failed to send org re-evaluation test event: %v", err)
+			w.WriteHeader(http.StatusInternalServerError)
+			w.Write([]byte(fmt.Sprintf(`{"error":"Failed to send event: %v"}`, err)))
+			return
+		}
+
+		log.Printf("Org re-evaluation test event sent successfully: %+v", result)
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(fmt.Sprintf(`{"status":"success","message":"Org re-evaluation test event sent for org %s","event_ids":["%s"]}`, testOrgID, result)))
 	})
 
 	// Start server

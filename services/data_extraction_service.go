@@ -239,7 +239,7 @@ func (s *dataExtractionService) ExtractClaims(ctx context.Context, questionRunID
 	now := time.Now()
 
 	for i, claim := range extractedData.Claims {
-		sentiment := s.normalizeSentiment(claim.Sentiment)
+		sentiment := s.normalizeSentiment(claim.ClaimSentiment)
 		targetMentioned := claim.TargetMentioned
 
 		claims = append(claims, &models.QuestionRunClaim{

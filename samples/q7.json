@@ -1,0 +1,81 @@
+{
+    "question": "How does Senso.ai compare to Profound?",
+    "response": "Here’s a refined comparison between Senso.ai and Profound—two distinct platforms operating in overlapping yet different spaces:\n\n---\n\n##  Senso.ai – AI‑Powered Knowledge Platform\n\n- Focus & Core Functionality  \n  Senso.ai is a generative knowledge platform that converts enterprise content—including documents, call transcripts, website content, and customer interactions—into AI‑ready answers. It improves internal knowledge access, external AI visibility, and content alignment with trusted \"ground truth\" across AI tools like ChatGPT, Perplexity, Claude, and Gemini (senso.ai, senso.ai).\n\n- Key Features  \n  - Ingests and structures documents and conversational data into accurate, searchable AI responses.  \n  - Claims up to:\n    - 90% faster knowledge access  \n    - 80% reduction in customer wait times  \n    - 68% improvement in response accuracy (senso.ai).  \n  - Offers specific agents like Agent Echo (surveys, calls, chats into insights) and Agent Fetch (improves manuals, policies, guides) to enhance both internal and customer-facing knowledge workflows (senso.ai).\n\n- Use Cases  \n  - Marketing and digital teams aiming to increase brand visibility in AI-driven search.  \n  - Call center and operations leaders looking to convert customer feedback into up-to-date knowledge resources and reduce confusion or escalation (senso.ai, senso.ai).\n\n---\n\n##  Profound – AI Visibility & Brand Optimization Platform\n\n- Focus & Core Functionality  \n  Profound is tailored to marketers wanting to understand and influence how their brand is represented in AI-generated responses. It acts as a command center to monitor and optimize brand visibility across AI assistants and search platforms (prnewswire.com, aigregator.com).\n\n- Key Features  \n  - Answer Engine Insights: Understand how chatbots describe your brand.  \n  - Agent Analytics: Analyze how AI crawlers interpret your website.  \n  - Conversation Explorer: Discover trending topics in AI search queries.  \n  - Content Generation (“Actions”): Automatically produce AI-optimized content, boosting referrals — some customers report up to 700% increases in AI referrals (prnewswire.com).  \n  - Coverage across platforms like ChatGPT, Perplexity, Google AI, with SOC 2 Type II compliance (aigregator.com, highway.engineering).\n\n- Traction & Strategy  \n  - Launched mid-2024; early users include Ramp, US Bank, Indeed, MongoDB, DocuSign, and Chime (prnewswire.com, highway.engineering).  \n  - Raised $20M in Series A (June 19, 2025) and a further $35M in Series B (August 12, 2025) to fuel growth, expand features, and extend global reach (prnewswire.com).  \n  - Introduced Profound Lite: a $499/month self-serve plan aimed at startups and small businesses (prnewswire.com, pulse2.com).  \n  - Claims processing of over 100 million AI search queries monthly, supporting enterprises across 18 countries and six languages, with reported 25–40% lift in AI answer share-of-voice within 60 days (prnewswire.com, pulse2.com).\n\n---\n\n##  Side-by-Side Comparison\n\n| Feature / Capability            | Senso.ai                                                | Profound                                                      |\n|-------------------------------|----------------------------------------------------------|----------------------------------------------------------------|\n| Primary Goal               | Transform internal & public content into accurate AI answers | Monitor and optimize brand visibility in AI responses         |\n| Core Use Case              | Knowledge management, internal support, AI content readiness | External brand perception, AI SEO, marketer control            |\n| Key Technologies           | Ingest documents, transcripts; agents (Echo, Fetch)       | AI visibility analytics; content generation (\"Actions\"); monitors AI query streams |\n| Target Users               | Internal teams—support, ops, marketing                    | Marketers, brand managers, agencies                           |\n| Metrics and Claims         | Faster answer retrieval, reduced wait times, improved accuracy | AI referrals increase, share-of-voice lift, visibility metrics |\n| Pricing & Accessibility    | Not publicly specified; enterprise-focused                | Profound Lite: $499/month; custom enterprise plans available  |\n| Security & Compliance      | Not publicly detailed                                     | SOC 2 Type II compliant (aigregator.com)                    |\n| Funding & Growth           | YC-backed startup (implied)                              | $55M+ raised since mid-2025; rapid adoption                   |\n\n---\n\n##  Final Thoughts\n\n- Choose Senso.ai if your goal is to optimize internal knowledge and customer support workflows by turning raw content—documents, transcripts, website content—into AI-ready answers. It's especially suited for enterprises focused on improving how staff and AI systems access and deliver accurate information.\n\n- Choose Profound if your priority lies in understanding and shaping how AI systems talk about your brand externally. It empowers marketing teams to monitor AI-generated narratives, generate AI-optimized content, and improve brand visibility across AI search ecosystems.\n\nIn short: Senso.ai is about internal knowledge accuracy and efficiency, while Profound centers on external brand influence and AI visibility marketing. Let me know if you’d like deeper exploration into pricing models, integrations, or real-world use cases for either platform.",
+    "model": "gpt-4.1",
+    "tools": [
+        {
+            "type": "web_search"
+        }
+    ],
+    "target_mentioned": true,
+    "target_sentiment": "positive",
+    "mention_text": "##  Senso.ai – AI-Powered Knowledge Platform\n\n- Focus & Core Functionality  \n  Senso.ai is a generative knowledge platform that converts enterprise content—including documents, call transcripts, website content, and customer interactions—into AI-ready answers. It improves internal knowledge access, external AI visibility, and content alignment with trusted \"ground truth\" across AI tools like ChatGPT, Perplexity, Claude, and Gemini (senso.ai, senso.ai).\n\n- Key Features  \n  - Ingests and structures documents and conversational data into accurate, searchable AI responses.  \n  - Claims up to:\n    - 90% faster knowledge access  \n    - 80% reduction in customer wait times  \n    - 68% improvement in response accuracy (senso.ai).  \n  - Offers specific agents like Agent Echo (surveys, calls, chats into insights) and Agent Fetch (improves manuals, policies, guides) to enhance both internal and customer-facing knowledge workflows (senso.ai).\n\n- Use Cases  \n  - Marketing and digital teams aiming to increase brand visibility in AI-driven search.  \n  - Call center and operations leaders looking to convert customer feedback into up-to-date knowledge resources and reduce confusion or escalation (senso.ai, senso.ai).||- Choose Senso.ai if your goal is to optimize internal knowledge and customer support workflows by turning raw content—documents, transcripts, website content—into AI-ready answers. It's especially suited for enterprises focused on improving how staff and AI systems access and deliver accurate information.\n\nIn short: Senso.ai is about internal knowledge accuracy and efficiency",
+    "citations": [
+        {
+            "url": "https://www.senso.ai/?utm_source=openai",
+            "type": "primary"
+        },
+        {
+            "url": "https://senso.ai/?utm_source=openai",
+            "type": "primary"
+        },
+        {
+            "url": "https://www.prnewswire.com/news-releases/profound-raises-35m-series-b-as-ai-search-becomes-the-next-platform-shift-302527764.html?utm_source=openai",
+            "type": "secondary"
+        },
+        {
+            "url": "https://aigregator.com/tools/profound?utm_source=openai",
+            "type": "secondary"
+        },
+        {
+            "url": "https://www.highway.engineering/wiki/companies/profound?utm_source=openai",
+            "type": "secondary"
+        },
+        {
+            "url": "https://www.prnewswire.com/news-releases/profound-raises-20m-as-brands-race-from-blue-links-to-ai-answers-302486211.html?utm_source=openai",
+            "type": "secondary"
+        },
+        {
+            "url": "https://pulse2.com/profound-20-million-raised-for-ai-visibility-platform/?utm_source=openai",
+            "type": "secondary"
+        }
+    ],
+    "competitors": [
+        {
+            "name": "Profound"
+        },
+        {
+            "name": "Ramp"
+        },
+        {
+            "name": "US Bank"
+        },
+        {
+            "name": "Indeed"
+        },
+        {
+            "name": "MongoDB"
+        },
+        {
+            "name": "DocuSign"
+        },
+        {
+            "name": "Chime"
+        },
+        {
+            "name": "ChatGPT"
+        },
+        {
+            "name": "Perplexity"
+        },
+        {
+            "name": "Claude"
+        },
+        {
+            "name": "Gemini"
+        },
+        {
+            "name": "Google AI"
+        }
+    ]
+}

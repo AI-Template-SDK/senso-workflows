@@ -1,0 +1,17 @@
+{
+    "question": "How can Senso.ai help a credit union improve visibility?",
+    "response": "Senso.ai can help a credit union improve visibility by providing advanced data analytics and artificial intelligence tools that offer deeper insights into member behavior and financial health. By leveraging predictive analytics, Senso.ai can identify members who may be at risk of attrition, highlight lending opportunities, and monitor key engagement metrics. This enhanced visibility allows credit unions to proactively reach out to members with personalized offers, improve member retention, and effectively manage risk, ultimately leading to better decision-making and a more competitive position in the financial services market.",
+    "model": "gpt-4.1",
+    "tools": [
+        {
+            "type": "web_search"
+        }
+    ],
+    "data": {
+        "target_mentioned": true,
+        "target_sentiment": "positive",
+        "mention_text": "Senso.ai can help a credit union improve visibility by providing advanced data analytics and artificial intelligence tools that offer deeper insights into member behavior and financial health. By leveraging predictive analytics, Senso.ai can identify members who may be at risk of attrition, highlight lending opportunities, and monitor key engagement metrics. This enhanced visibility allows credit unions to proactively reach out to members with personalized offers, improve member retention, and effectively manage risk, ultimately leading to better decision-making and a more competitive position in the financial services market.",
+        "citations": [],
+        "competitors": []
+    }
+}

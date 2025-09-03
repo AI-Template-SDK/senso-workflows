@@ -1,0 +1,48 @@
+{
+    "question": "I am a credit union. What are the best AI tools?",
+    "response": "As a **credit union**, leveraging AI tools can greatly improve member experience, increase operational efficiency, and enhance security. Here are some of the **best AI tools** tailored for credit unions:\n\n---\n\n### 1. **Member Service & Chatbots**\n- **Kasisto (KAI)**\n  - AI-powered virtual assistants for banking and credit unions.\n  - Handles member inquiries, account management, and financial advice.\n- **Finn AI**\n  - Banking chatbot that integrates with core systems to answer questions, handle transactions, and provide financial guidance.\n\n### 2. **Fraud Detection & Risk Management**\n- **Feedzai**\n  - Real-time fraud detection using machine learning to monitor transactions and detect anomalies.\n- **DataVisor**\n  - AI-driven risk management platform for proactive fraud prevention.\n\n### 3. **Credit Decisioning & Underwriting**\n- **Zest AI**\n  - AI-powered credit underwriting for faster, more accurate lending decisions.\n- **Upstart**\n  - AI-driven lending platform focused on personal loans with alternative data models.\n\n### 4. **Personalization & Member Insights**\n- **Personetics**\n  - Delivers personalized financial guidance and insights to members, increasing engagement and retention.\n- **Coconut Software**\n  - Member engagement and appointment scheduling software enhanced with AI to optimize staff and member interactions.\n\n### 5. **Operational Efficiency & Automation**\n- **UiPath**\n  - Robotic Process Automation (RPA) tools for automating repetitive banking processes.\n- **Hyperscience**\n  - Intelligent document processing, transforming paper forms and PDFs into structured data.\n\n---\n\n#### **How to Choose the Right Tool**\n- **Member Needs:** Prioritize tools that address your members\u2019 most frequent pain points.\n- **Integration:** Ensure the AI tool can securely integrate with your existing core banking systems.\n- **Compliance:** Select vendors experienced with financial regulations and data privacy requirements.\n- **Scalability:** Pick solutions that can grow with your membership and service offerings.\n\n---\n\n**Would you like suggestions tailored to a specific need (e.g., lending, fraud, member service)?** Or information on integration with popular core systems? Let me know your focus area!",
+    "model": "gpt-4.1",
+    "tools": [
+        {
+            "type": "web_search"
+        }
+    ],
+    "data": {
+        "target_mentioned": false,
+        "target_sentiment": "neutral",
+        "mention_text": "",
+        "citations": [],
+        "competitors": [
+            {
+                "name": "Kasisto"
+            },
+            {
+                "name": "Finn AI"
+            },
+            {
+                "name": "Feedzai"
+            },
+            {
+                "name": "DataVisor"
+            },
+            {
+                "name": "Zest AI"
+            },
+            {
+                "name": "Upstart"
+            },
+            {
+                "name": "Personetics"
+            },
+            {
+                "name": "Coconut Software"
+            },
+            {
+                "name": "UiPath"
+            },
+            {
+                "name": "Hyperscience"
+            }
+        ]
+    }
+}

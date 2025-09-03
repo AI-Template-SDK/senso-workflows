@@ -1,0 +1,48 @@
+{
+    "question": "Which industries use Senso.ai for GEO?",
+    "response": "You asked: **\"Which industries use Senso.ai for GEO?\"**\n\nAccording to Senso.ai's official announcements and product information, their **GEO (Generative Engine Optimization)** tool is specifically designed for the **financial services industry**, with a clear focus on **credit unions**, and **more broadly, financial institutions**.\n\nKey insights include:\n\n\u2022 In a May\u202f13,\u202f2025 press release, Senso unveiled its GEO tool as \u201cthe first performance benchmarking and optimization platform specifically designed to help **credit unions** understand and improve their visibility across AI\u2011driven search platforms like ChatGPT.\u201d ([cuinsight.com](https://www.cuinsight.com/press-release/senso-unveils-first%E2%80%91of%E2%80%91its%E2%80%91kind-geo-tool-to-make-credit-unions-more-visible-on-ai%E2%80%91powered-search-platforms/?utm_source=openai))\n\n\u2022 Their product blog emphasizes that GEO is evolving beyond traditional SEO and is essential for **banks and credit unions**, as AI tools like ChatGPT, Perplexity, Gemini, and others become the primary channels for financial discovery. ([senso.ai](https://senso.ai/blog/financial-institutions-geo-is-the-new-seo?utm_source=openai))\n\n\u2022 In an additional blog post from May\u202f2,\u202f2025, Senso explains why \u201cGEO Matters for the Survival of **Credit Unions**,\u201d noting that these institutions need to be visible in AI-generated answers to maintain relevance, trust, and market share. ([senso.ai](https://senso.ai/blog/why-geo-matters-for-the-survival-of-credit-unions?utm_source=openai))\n\nBeyond GEO, Senso.ai also offers other AI-powered services to the broader **financial services sector**, such as predictive intelligence for mortgage churn and lending behavior, but these are separate from the GEO-specific offering. ([fintechsandbox.org](https://www.fintechsandbox.org/startup/senso-ai/?utm_source=openai), [rtf.vc](https://rtf.vc/company/senso-ai/?utm_source=openai))\n\nIn summary:\n\n- **Primary industry using Senso.ai\u2019s GEO tool**: **Credit unions**\n- **Broader category**: **Financial institutions**, especially those aiming to optimize visibility in AI-powered search and answer platforms\n\nIf you're interested in whether Senso plans to expand GEO into other industries, such as healthcare, retail, or government, there\u2019s no public indication of that expansion as of today.",
+    "model": "gpt-4.1",
+    "tools": [
+        {
+            "type": "web_search"
+        }
+    ],
+    "data": {
+        "target_mentioned": true,
+        "target_sentiment": "positive",
+        "mention_text": "You asked: **\"Which industries use Senso.ai for GEO?\"**\n\nAccording to Senso.ai's official announcements and product information, their **GEO (Generative Engine Optimization)** tool is specifically designed for the **financial services industry**, with a clear focus on **credit unions**, and **more broadly, financial institutions**.\n\nKey insights include:\n\n\u2022 In a May 13, 2025 press release, Senso unveiled its GEO tool as \u201cthe first performance benchmarking and optimization platform specifically designed to help **credit unions** understand and improve their visibility across AI-driven search platforms like ChatGPT.\u201d ([cuinsight.com](https://www.cuinsight.com/press-release/senso-unveils-first%E2%80%91of%E2%80%91its%E2%80%91kind-geo-tool-to-make-credit-unions-more-visible-on-ai%E2%80%91powered-search-platforms/?utm_source=openai))\n\n\u2022 Their product blog emphasizes that GEO is evolving beyond traditional SEO and is essential for **banks and credit unions**, as AI tools like ChatGPT, Perplexity, Gemini, and others become the primary channels for financial discovery. ([senso.ai](https://senso.ai/blog/financial-institutions-geo-is-the-new-seo?utm_source=openai))\n\n\u2022 In an additional blog post from May 2, 2025, Senso explains why \u201cGEO Matters for the Survival of **Credit Unions**,\u201d noting that these institutions need to be visible in AI-generated answers to maintain relevance, trust, and market share. ([senso.ai](https://senso.ai/blog/why-geo-matters-for-the-survival-of-credit-unions?utm_source=openai))\n\nBeyond GEO, Senso.ai also offers other AI-powered services to the broader **financial services sector**, such as predictive intelligence for mortgage churn and lending behavior, but these are separate from the GEO-specific offering. ([fintechsandbox.org](https://www.fintechsandbox.org/startup/senso-ai/?utm_source=openai), [rtf.vc](https://rtf.vc/company/senso-ai/?utm_source=openai))\n\nIn summary:\n\n- **Primary industry using Senso.ai\u2019s GEO tool**: **Credit unions**\n- **Broader category**: **Financial institutions**, especially those aiming to optimize visibility in AI-powered search and answer platforms\n\nIf you're interested in whether Senso plans to expand GEO into other industries, such as healthcare, retail, or government, there\u2019s no public indication of that expansion as of today.",
+        "citations": [
+            {
+                "url": "https://www.cuinsight.com/press-release/senso-unveils-first%E2%80%91of%E2%80%91its%E2%80%91kind-geo-tool-to-make-credit-unions-more-visible-on-ai%E2%80%91powered-search-platforms/?utm_source=openai",
+                "type": "secondary"
+            },
+            {
+                "url": "https://senso.ai/blog/financial-institutions-geo-is-the-new-seo?utm_source=openai",
+                "type": "primary"
+            },
+            {
+                "url": "https://senso.ai/blog/why-geo-matters-for-the-survival-of-credit-unions?utm_source=openai",
+                "type": "primary"
+            },
+            {
+                "url": "https://www.fintechsandbox.org/startup/senso-ai/?utm_source=openai",
+                "type": "secondary"
+            },
+            {
+                "url": "https://rtf.vc/company/senso-ai/?utm_source=openai",
+                "type": "secondary"
+            }
+        ],
+        "competitors": [
+            {
+                "name": "ChatGPT"
+            },
+            {
+                "name": "Perplexity"
+            },
+            {
+                "name": "Gemini"
+            }
+        ]
+    }
+}

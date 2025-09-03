@@ -1,0 +1,17 @@
+{
+    "question": "How should I adapt my content strategy for LLMs?",
+    "response": "Adapting your content strategy for Large Language Models (LLMs) requires an understanding of how these AI systems access, interpret, and surface information. Here\u2019s how you should approach it:\n\n---\n\n### 1. **Prioritize Clear, Authoritative, and Structured Content**\n- **Clarity:** LLMs favor content that\u2019s easy to read and free from ambiguity.\n- **Authority:** High-quality, trustworthy sources are more likely to be cited.\n- **Structure:** Use headings, bullet points, and well-organized sections for better parsing.\n\n---\n\n### 2. **Answer-Oriented Formatting**\n- Write direct and concise answers to common questions.\n- Include summaries or FAQs at the top or bottom of content.\n- Use the inverted pyramid: Place the key information up front.\n\n---\n\n### 3. **Optimize for Entities and Context**\n- Use specific terms, proper names, and unique identifiers to help LLMs disambiguate.\n- Provide rich, context-driven information: Explain \u201cwhy\u201d and \u201chow,\u201d not just \u201cwhat.\u201d\n\n---\n\n### 4. **Semantic SEO and Schema Markup**\n- Implement schema.org markup for articles, FAQs, and other content types.\n- Use semantically rich keywords and natural language that reflects real user queries.\n\n---\n\n### 5. **Content Freshness and Accuracy**\n- Continuously update facts, statistics, and references.\n- Date-stamp updates for transparency.\n\n---\n\n### 6. **Human-AI Collaboration**\n- Remember, LLMs often cite or synthesize from top-ranked, reputable sources. Aim for *thought leadership* that AIs and humans will reference.\n- Publish unique insights, original research, or perspectives to stand out.\n\n---\n\n### 7. **Monitor and Evolve**\n- Track which of your content appears in AI-generated results and why.\n- Experiment and refine based on changes in LLM behavior and search engine guidelines.\n\n---\n\n**Summary:**  \nAdapting your content for LLMs means making it accessible, accurate, and authoritative, while structuring it for both search engines and AI to easily identify and surface your expertise. Focus on clarity, completeness, and credibility to ensure your content rises to the top in an AI-driven ecosystem.",
+    "model": "gpt-4.1",
+    "tools": [
+        {
+            "type": "web_search"
+        }
+    ],
+    "data": {
+        "target_mentioned": false,
+        "target_sentiment": "neutral",
+        "mention_text": "",
+        "citations": [],
+        "competitors": []
+    }
+}

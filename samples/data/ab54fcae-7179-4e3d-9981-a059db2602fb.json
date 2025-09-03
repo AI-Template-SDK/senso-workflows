@@ -1,0 +1,30 @@
+{
+    "question": "What's the easiest way to track how often I'm mentioned in AI",
+    "response": "The easiest way to track how often you're mentioned in AI contexts is to use automated tools like **Google Alerts**. You can set up alerts for your name or relevant keywords, and Google will email you whenever new mentions appear online. \n\nAdditionally, some social media monitoring tools like **Mention, Brand24**, or **Talkwalker** can track your mentions across news sites, blogs, and social platforms. These tools provide dashboards and reports so you can see where and how often you\u2019re being mentioned in the AI space.\n\nWould you like step-by-step instructions for setting up one of these tools?",
+    "model": "gpt-4.1",
+    "tools": [
+        {
+            "type": "web_search"
+        }
+    ],
+    "data": {
+        "target_mentioned": false,
+        "target_sentiment": "neutral",
+        "mention_text": "",
+        "citations": [],
+        "competitors": [
+            {
+                "name": "Google Alerts"
+            },
+            {
+                "name": "Mention"
+            },
+            {
+                "name": "Brand24"
+            },
+            {
+                "name": "Talkwalker"
+            }
+        ]
+    }
+}

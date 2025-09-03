@@ -1,0 +1,17 @@
+{
+    "question": "How do I improve my brand's visibility in AI search?",
+    "response": "To improve your brand's visibility in AI search, consider the following strategies:\n\n1. **Optimize for Conversational Queries**: AI search engines and chatbots prioritize conversational, natural-language queries. Ensure your website content answers common questions your audience might ask.\n\n2. **Structured Data and Schema Markup**: Incorporate schema.org markup on your website. This helps AI understand and display your content accurately in search results.\n\n3. **High-Quality, Authoritative Content**: Regularly publish helpful, expert-driven content. AI prioritizes content with depth, accuracy, and clear sources.\n\n4. **Leverage Featured Snippets**: Structure FAQs, how-tos, and listicles clearly, as these are more likely to be picked up as featured snippets or direct answers in AI-generated search results.\n\n5. **Optimize for Voice Search**: Write in a natural, conversational style, since many AI searches are voice-based and favor straightforward, spoken language.\n\n6. **Build Backlinks and Mentions**: Garner authoritative backlinks and brand mentions from reputable sources. AI models assess trustworthiness and popularity.\n\n7. **Maintain Active Social Profiles**: AI systems reference well-maintained social profiles for brand legitimacy and fresh content.\n\n8. **Monitor and Adapt**: Regularly track your appearance in AI search engines, and adapt your strategy to reflect changing AI algorithms and trends.\n\nIf you need tailored advice for your specific industry or want help with implementing any of these steps, let me know!",
+    "model": "gpt-4.1",
+    "tools": [
+        {
+            "type": "web_search"
+        }
+    ],
+    "data": {
+        "target_mentioned": false,
+        "target_sentiment": "neutral",
+        "mention_text": "",
+        "citations": [],
+        "competitors": []
+    }
+}

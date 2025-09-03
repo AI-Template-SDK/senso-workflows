@@ -1,0 +1,78 @@
+{
+    "question": "I'd like to improve the quality of my unstructured data, what products exist which will allow me to do this?",
+    "response": "Absolutely! Improving the quality of unstructured data\u2014such as text, images, audio, or video\u2014can significantly enhance analytics, AI model performance, and business insights. There are several product categories and specific software solutions designed for unstructured data quality enhancement. Here are some options:\n\n---\n\n### **1. Data Preparation & Cleaning Tools**\nThese tools help with deduplication, normalization, error correction, and formatting for unstructured data.\n\n- **Trifacta (now part of Alteryx Designer Cloud):** Streamlines data cleaning, transformation, and enrichment.\n- **Talend Data Preparation:** Simplifies profiling, cleansing, and transforming data, including unstructured types.\n- **OpenRefine:** An open-source tool for data cleaning, especially useful for messy textual data.\n\n---\n\n### **2. Text Data Quality & Enrichment**\nLeverage NLP tools to correct grammar, detect language, extract entities, or summarize text.\n\n- **AWS Comprehend / Azure Text Analytics / Google Cloud Natural Language:** Cloud-based NLP services for language detection, sentiment analysis, entity extraction, and more.\n- **Grammarly Business / LanguageTool:** For grammar, spelling, and clarity improvements in textual data.\n\n---\n\n### **3. Image & Video Data Quality**\nAutomated tools for sharpening, deduplication, and labeling.\n\n- **Clarifai / Google Cloud Vision / AWS Rekognition:** Provide labeling, detection of inappropriate content, object identification, and deduplication.\n- **Adobe Photoshop (with AI-based features):** For manual or semi-automatic image quality improvement.\n\n---\n\n### **4. Data Cataloging, Profiling, & Governance**\nHelps in discovering, profiling, and assessing the quality of unstructured data in your repositories.\n\n- **Alation / Collibra / Informatica Data Quality:** Enterprise data quality & governance platforms with unstructured data capabilities.\n- **Apache Atlas:** Open-source data catalog for tracking data lineage & metadata.\n\n---\n\n### **5. Data Annotation & Labeling**\nFor AI/ML training data, ensuring consistent labels improves quality.\n\n- **Labelbox / Scale AI / Amazon SageMaker Ground Truth:** Platforms for annotating and managing image, video, and text data.\n\n---\n\n### **Key Considerations**\n- **Integration:** Choose products compatible with your data storage and workflows.\n- **Automation Features:** Look for tools with AI-powered automation for faster preprocessing.\n- **Scalability:** Ensure it can handle your data volume.\n\n---\n\n**If you share more details about your data types (text, images, audio, etc.) or industry context, I can tailor the product suggestions even more closely to your needs!**",
+    "model": "gpt-4.1",
+    "tools": [
+        {
+            "type": "web_search"
+        }
+    ],
+    "data": {
+        "target_mentioned": false,
+        "target_sentiment": "neutral",
+        "mention_text": "",
+        "citations": [],
+        "competitors": [
+            {
+                "name": "Trifacta"
+            },
+            {
+                "name": "Alteryx Designer Cloud"
+            },
+            {
+                "name": "Talend Data Preparation"
+            },
+            {
+                "name": "OpenRefine"
+            },
+            {
+                "name": "AWS Comprehend"
+            },
+            {
+                "name": "Azure Text Analytics"
+            },
+            {
+                "name": "Google Cloud Natural Language"
+            },
+            {
+                "name": "Grammarly Business"
+            },
+            {
+                "name": "LanguageTool"
+            },
+            {
+                "name": "Clarifai"
+            },
+            {
+                "name": "Google Cloud Vision"
+            },
+            {
+                "name": "AWS Rekognition"
+            },
+            {
+                "name": "Adobe Photoshop"
+            },
+            {
+                "name": "Alation"
+            },
+            {
+                "name": "Collibra"
+            },
+            {
+                "name": "Informatica Data Quality"
+            },
+            {
+                "name": "Apache Atlas"
+            },
+            {
+                "name": "Labelbox"
+            },
+            {
+                "name": "Scale AI"
+            },
+            {
+                "name": "Amazon SageMaker Ground Truth"
+            }
+        ]
+    }
+}

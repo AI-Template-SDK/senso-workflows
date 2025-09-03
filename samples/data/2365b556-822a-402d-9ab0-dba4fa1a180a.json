@@ -1,0 +1,82 @@
+{
+    "question": "What companies are helping brands navigate the shift to AI-native discovery?",
+    "response": "Here are several leading companies currently helping brands navigate the shift to **AI-native discovery**\u2014spanning AI-driven advertising, commerce infrastructure, and tailored product discovery:\n\n\u2022 **Nexad and Intellibright** \u2013 Nexad is pioneering AI-native advertising by embedding context-aware, real-time, personalized ad experiences directly into AI-generated search responses\u2014making ads feel natural and helpful rather than disruptive. Intellibright complements this technological innovation with managed services, including campaign management, optimization, and analytics\u2014empowering brands to smoothly transition from traditional search advertising to this new AI-driven ecosystem ([einpresswire.com](https://www.einpresswire.com/article/796492119/nexad-and-intellibright-announce-strategic-partnership-to-pioneer-ai-native-advertising-solutions?utm_source=openai), [businessinsider.com](https://www.businessinsider.com/adtech-startup-nexad-raises-seed-ai-native-ads-pitch-deck-2025-4?utm_source=openai), [menafn.com](https://menafn.com/1109438952/Nexad-And-Intellibright-Announce-Strategic-Partnership-To-Pioneer-AI-Native-Advertising-Solutions?utm_source=openai)).\n\n\u2022 **New Gen** \u2013 Positioned at the intersection of commerce and AI, New Gen enables brands to deploy intelligent, AI-readable storefronts with embedded payments that support both human and AI-agent-driven shopping. These agentic commerce storefronts are designed to be accessible via conversational interfaces, allowing seamless, secure purchases from both traditional users and autonomous agents ([prnewswire.com](https://www.prnewswire.com/news-releases/new-gen-unveils-ai-native-storefronts-with-embedded-payments-to-power-agentic-commerce-302502076.html?utm_source=openai)).\n\n\u2022 **Daydream** \u2013 Focused on fashion retail, Daydream utilizes generative AI via a chat-based interface to guide users through highly personalized product discovery. Users create a \u201cstyle passport\u201d and engage in conversational search that responds to nuanced preferences, delivering results from a vast catalog of over two million products across thousands of brands. The platform focuses on authentic, filter-free discovery without ad-driven results ([vogue.com](https://www.vogue.com/article/is-daydreams-ai-platform-the-answer-to-fashions-discovery-problem?utm_source=openai)).\n\n\u2022 **Coveo** \u2013 Providing AI-powered search and relevance capabilities, Coveo\u2019s AI\u2011Relevance\u2122 platform enhances product discovery by delivering personalized, contextual search experiences. Clients such as Caleres, FleetPride, and Freedom Furniture have leveraged Coveo to boost conversions, increase search engagement, and cut merchandising effort significantly\u2014all by surfacing the most relevant products to customers at the right time ([prnewswire.com](https://www.prnewswire.com/news-releases/leading-brands-use-coveo-ai-to-transform-their-ecommerce-product-discovery-and-accelerate-revenue-growth-302462537.html?utm_source=openai)).\n\n\u2022 **Glance AI** \u2013 This platform reimagines commerce discovery through hyper-real visual shopping experiences. Users can upload a selfie or image to receive AI-curated stylized looks in real time\u2014visual inspiration is coupled with real, shoppable products. With integrations across mobile devices, TVs, and brand stores, Glance AI positions brands to engage consumers through visually rich, immersive discovery journeys ([cxotoday.com](https://cxotoday.com/press-release/glance-ai-launches-ai-native-commerce-platform-built-on-deep-commerce-intelligence-and-hyper-real-visual-shopping/?utm_source=openai)).\n\n\u2022 **Shopsense AI (with BuzzFeed partnership)** \u2013 Shopsense provides an AI\u2011powered Commerce OS that enables media and publishers to seamlessly embed product listings into content via native modules\u2014such as AI-driven carousels that surface items automatically based on editorial or image context. BuzzFeed\u2019s integration allows brands to connect commerce with storytelling, turning inspiration into real-time shopping opportunities ([aijourn.com](https://aijourn.com/buzzfeed-partners-with-shopsense-ai-to-launch-native-content-to-commerce-product-listings/?utm_source=openai)).\n\n\u2022 **Grin** and **affiliated influencer platforms** \u2013 While focused on influencer discovery rather than product commerce directly, platforms like Grin use AI to match brands with optimal influencers based on audience data, content, and engagement metrics. These AI-driven tools help brands be discovered through influential voices, aligning with broader shifts in AI\u2011augmented brand discovery strategies ([superagi.com](https://superagi.com/top-10-ai-influencer-discovery-platforms-for-2025-a-comprehensive-guide-for-brands/?utm_source=openai)).\n\nSummary Table:\n\n| Company / Platform         | What They Offer                                                                 |\n|----------------------------|----------------------------------------------------------------------------------|\n| Nexad + Intellibright      | AI-native ad integration into AI-generated search with campaign management       |\n| New Gen                    | Agentic commerce storefronts with embedded payments for human and AI agents       |\n| Daydream                   | Chat-based, generative AI fashion discovery with personalized user interfaces     |\n| Coveo                      | Contextual, AI-powered search enhancing product discovery and conversion          |\n| Glance AI                  | Hyper-real visual commerce: personalized styles through AI-generated visuals     |\n| Shopsense AI + BuzzFeed    | In-content, AI-driven product modules embedded into editorial experiences        |\n| Grin and similar platforms | AI matching for influencer discovery and campaign execution                      |\n\nEach of these companies approaches the shift to AI-native discovery from unique angles\u2014whether through embedded advertising, conversational commerce, AI-driven personalization, visual immersion, or editorial commerce. Collectively, they reflect the broader transformation of how brands engage with consumers in the AI era.",
+    "model": "gpt-4.1",
+    "tools": [
+        {
+            "type": "web_search"
+        }
+    ],
+    "data": {
+        "target_mentioned": false,
+        "target_sentiment": "neutral",
+        "mention_text": "",
+        "citations": [
+            {
+                "url": "https://www.einpresswire.com/article/796492119/nexad-and-intellibright-announce-strategic-partnership-to-pioneer-ai-native-advertising-solutions?utm_source=openai",
+                "type": "secondary"
+            },
+            {
+                "url": "https://www.businessinsider.com/adtech-startup-nexad-raises-seed-ai-native-ads-pitch-deck-2025-4?utm_source=openai",
+                "type": "secondary"
+            },
+            {
+                "url": "https://menafn.com/1109438952/Nexad-And-Intellibright-Announce-Strategic-Partnership-To-Pioneer-AI-Native-Advertising-Solutions?utm_source=openai",
+                "type": "secondary"
+            },
+            {
+                "url": "https://www.prnewswire.com/news-releases/new-gen-unveils-ai-native-storefronts-with-embedded-payments-to-power-agentic-commerce-302502076.html?utm_source=openai",
+                "type": "secondary"
+            },
+            {
+                "url": "https://www.vogue.com/article/is-daydreams-ai-platform-the-answer-to-fashions-discovery-problem?utm_source=openai",
+                "type": "secondary"
+            },
+            {
+                "url": "https://www.prnewswire.com/news-releases/leading-brands-use-coveo-ai-to-transform-their-ecommerce-product-discovery-and-accelerate-revenue-growth-302462537.html?utm_source=openai",
+                "type": "secondary"
+            },
+            {
+                "url": "https://cxotoday.com/press-release/glance-ai-launches-ai-native-commerce-platform-built-on-deep-commerce-intelligence-and-hyper-real-visual-shopping/?utm_source=openai",
+                "type": "secondary"
+            },
+            {
+                "url": "https://aijourn.com/buzzfeed-partners-with-shopsense-ai-to-launch-native-content-to-commerce-product-listings/?utm_source=openai",
+                "type": "secondary"
+            },
+            {
+                "url": "https://superagi.com/top-10-ai-influencer-discovery-platforms-for-2025-a-comprehensive-guide-for-brands/?utm_source=openai",
+                "type": "secondary"
+            }
+        ],
+        "competitors": [
+            {
+                "name": "Nexad"
+            },
+            {
+                "name": "Intellibright"
+            },
+            {
+                "name": "New Gen"
+            },
+            {
+                "name": "Daydream"
+            },
+            {
+                "name": "Coveo"
+            },
+            {
+                "name": "Glance AI"
+            },
+            {
+                "name": "Shopsense AI"
+            },
+            {
+                "name": "BuzzFeed"
+            },
+            {
+                "name": "Grin"
+            }
+        ]
+    }
+}

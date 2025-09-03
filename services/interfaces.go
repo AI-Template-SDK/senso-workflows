@@ -29,6 +29,12 @@ type RepositoryManager struct {
 	NetworkOrgEvalRepo       interfaces.NetworkOrgEvalRepository
 	NetworkOrgCompetitorRepo interfaces.NetworkOrgCompetitorRepository
 	NetworkOrgCitationRepo   interfaces.NetworkOrgCitationRepository
+	// New org evaluation repositories
+	OrgEvalRepo       interfaces.OrgEvalRepository
+	OrgCitationRepo   interfaces.OrgCitationRepository
+	OrgCompetitorRepo interfaces.OrgCompetitorRepository
+	// Question run batch repository
+	QuestionRunBatchRepo interfaces.QuestionRunBatchRepository
 }
 
 // NewRepositoryManager creates a new repository manager with all repositories
@@ -47,6 +53,12 @@ func NewRepositoryManager(db *database.Client) *RepositoryManager {
 		NetworkOrgEvalRepo:       postgresql.NewNetworkOrgEvalRepo(db),
 		NetworkOrgCompetitorRepo: postgresql.NewNetworkOrgCompetitorRepo(db),
 		NetworkOrgCitationRepo:   postgresql.NewNetworkOrgCitationRepo(db),
+		// New org evaluation repositories
+		OrgEvalRepo:       postgresql.NewOrgEvalRepo(db),
+		OrgCitationRepo:   postgresql.NewOrgCitationRepo(db),
+		OrgCompetitorRepo: postgresql.NewOrgCompetitorRepo(db),
+		// Question run batch repository
+		QuestionRunBatchRepo: postgresql.NewQuestionRunBatchRepo(db),
 	}
 }
 
@@ -78,15 +90,17 @@ type ExtractedData struct {
 
 // AIProvider interface for different AI models
 type AIProvider interface {
-	RunQuestion(ctx context.Context, question string, webSearch bool, location *workflowModels.Location) (*AIResponse, error)
-	RunQuestionWebSearch(ctx context.Context, question string) (*AIResponse, error)
+	RunQuestion(ctx context.Context, query string, websearch bool, location *workflowModels.Location) (*AIResponse, error)
+	RunQuestionWebSearch(ctx context.Context, query string) (*AIResponse, error)
 }
 
+// AIResponse contains the response from an AI provider
 type AIResponse struct {
 	Response     string
 	InputTokens  int
 	OutputTokens int
 	Cost         float64
+	Citations    []string
 }
 
 // NetworkOrgProcessingResult represents the result of processing network org data
@@ -116,7 +130,7 @@ type OrgDetailsForNetworkProcessing struct {
 	Websites  []string
 }
 
-// Updated OrgService interface for database operations
+// OrgService interface for organization operations
 type OrgService interface {
 	GetOrgDetails(ctx context.Context, orgID string) (*RealOrgDetails, error)
 	GetOrgsByCreationWeekday(ctx context.Context, weekday time.Weekday) ([]*workflowModels.OrgSummary, error)
@@ -163,6 +177,115 @@ type ExtractService interface {
 	ExtractCompanyMentions(ctx context.Context, question string, response string, targetCompany string, orgID string) (*workflowModels.ExtractResult, error)
 }
 
+// NEW: OrgEvaluationService interface for the new org evaluation pipeline
+type OrgEvaluationService interface {
+	GenerateNameVariations(ctx context.Context, orgName string, websites []string) ([]string, error)
+	ExtractOrgEvaluation(ctx context.Context, questionRunID, orgID uuid.UUID, orgName string, orgWebsites []string, responseText string) (*OrgEvaluationResult, error)
+	ExtractCompetitors(ctx context.Context, questionRunID, orgID uuid.UUID, orgName string, responseText string) (*CompetitorExtractionResult, error)
+	ExtractCitations(ctx context.Context, questionRunID, orgID uuid.UUID, responseText string, orgWebsites []string) (*CitationExtractionResult, error)
+	ProcessOrgQuestionRuns(ctx context.Context, orgID uuid.UUID, orgName string, orgWebsites []string, questionRuns []*models.QuestionRun) (*OrgEvaluationSummary, error)
+	RunQuestionMatrixWithOrgEvaluation(ctx context.Context, orgDetails *RealOrgDetails, batchID uuid.UUID) (*OrgEvaluationSummary, error)
+	// Batch management methods
+	CreateBatch(ctx context.Context, batch *models.QuestionRunBatch) error
+	StartBatch(ctx context.Context, batchID uuid.UUID) error
+	CompleteBatch(ctx context.Context, batchID uuid.UUID) error
+	FailBatch(ctx context.Context, batchID uuid.UUID) error
+	UpdateBatchProgress(ctx context.Context, batchID uuid.UUID, completed, failed int) error
+	// Question matrix breakdown methods
+	CalculateQuestionMatrix(ctx context.Context, orgDetails *RealOrgDetails) ([]*QuestionJob, error)
+	ProcessSingleQuestionJob(ctx context.Context, job *QuestionJob, orgID uuid.UUID, orgName string, websites []string, nameVariations []string, batchID uuid.UUID) (*QuestionJobResult, error)
+	UpdateLatestFlagsForBatch(ctx context.Context, batchID uuid.UUID) error
+	// Org re-evaluation methods
+	GetAllOrgQuestionRuns(ctx context.Context, orgID uuid.UUID) ([]*OrgQuestionRun, error)
+	ProcessOrgQuestionRunReeval(ctx context.Context, questionRunID uuid.UUID, orgID uuid.UUID, orgName string, websites []string, nameVariations []string, questionText, responseText string) (*OrgReevalResult, error)
+	RunOrgReEvaluation(ctx context.Context, orgID uuid.UUID) (*OrgReevalSummary, error)
+}
+
+// NEW: Result types for org evaluation
+type OrgEvaluationResult struct {
+	Evaluation   *models.OrgEval
+	InputTokens  int
+	OutputTokens int
+	TotalCost    float64
+}
+
+type CompetitorExtractionResult struct {
+	Competitors  []*models.OrgCompetitor
+	InputTokens  int
+	OutputTokens int
+	TotalCost    float64
+}
+
+type CitationExtractionResult struct {
+	Citations    []*models.OrgCitation
+	InputTokens  int
+	OutputTokens int
+	TotalCost    float64
+}
+
+type OrgEvaluationSummary struct {
+	TotalProcessed   int
+	TotalEvaluations int
+	TotalCitations   int
+	TotalCompetitors int
+	TotalCost        float64
+	ProcessingErrors []string
+}
+
+// QuestionJob represents a single question×model×location combination to process
+type QuestionJob struct {
+	QuestionID   uuid.UUID `json:"question_id"`
+	ModelID      uuid.UUID `json:"model_id"`
+	LocationID   uuid.UUID `json:"location_id"`
+	QuestionText string    `json:"question_text"`
+	ModelName    string    `json:"model_name"`
+	LocationCode string    `json:"location_code"`
+	LocationName string    `json:"location_name"`
+	JobIndex     int       `json:"job_index"`
+	TotalJobs    int       `json:"total_jobs"`
+}
+
+// QuestionJobResult represents the result of processing a single question job
+type QuestionJobResult struct {
+	QuestionRunID   uuid.UUID `json:"question_run_id"`
+	JobIndex        int       `json:"job_index"`
+	Status          string    `json:"status"` // "completed" or "failed"
+	HasEvaluation   bool      `json:"has_evaluation"`
+	CompetitorCount int       `json:"competitor_count"`
+	CitationCount   int       `json:"citation_count"`
+	TotalCost       float64   `json:"total_cost"`
+	ErrorMessage    string    `json:"error_message,omitempty"`
+}
+
+// OrgQuestionRun represents an existing question run for re-evaluation
+type OrgQuestionRun struct {
+	QuestionRunID uuid.UUID `json:"question_run_id"`
+	QuestionText  string    `json:"question_text"`
+	ResponseText  string    `json:"response_text"`
+	GeoQuestionID uuid.UUID `json:"geo_question_id"`
+}
+
+// OrgReevalResult represents the result of re-evaluating a single question run
+type OrgReevalResult struct {
+	QuestionRunID   uuid.UUID `json:"question_run_id"`
+	HasEvaluation   bool      `json:"has_evaluation"`
+	CompetitorCount int       `json:"competitor_count"`
+	CitationCount   int       `json:"citation_count"`
+	TotalCost       float64   `json:"total_cost"`
+	Status          string    `json:"status"` // "completed" or "failed"
+	ErrorMessage    string    `json:"error_message,omitempty"`
+}
+
+// OrgReevalSummary represents the summary of org re-evaluation processing
+type OrgReevalSummary struct {
+	TotalProcessed   int      `json:"total_processed"`
+	TotalEvaluations int      `json:"total_evaluations"`
+	TotalCitations   int      `json:"total_citations"`
+	TotalCompetitors int      `json:"total_competitors"`
+	TotalCost        float64  `json:"total_cost"`
+	ProcessingErrors []string `json:"processing_errors"`
+}
+
 // Structured output types for AI extraction
 type MentionsExtractionResponse struct {
 	TargetCompany *CompanyExtract  `json:"target_company"`
@@ -182,8 +305,8 @@ type ClaimsExtractionResponse struct {
 
 type ClaimExtract struct {
 	ClaimText       string `json:"claim_text"`
-	Sentiment       string `json:"sentiment"`        // "positive", "negative", "neutral"
-	TargetMentioned bool   `json:"target_mentioned"` // true if target company is mentioned in this claim
+	ClaimSentiment  string `json:"claim_sentiment"`
+	TargetMentioned bool   `json:"target_mentioned"`
 }
 
 type CitationsExtractionResponse struct {
@@ -195,13 +318,26 @@ type CitationExtract struct {
 	Type      string  `json:"type"`
 }
 
-// GenerateSchema generates JSON schema for structured outputs
+// GenerateSchema generates a JSON schema for structured outputs
 func GenerateSchema[T any]() interface{} {
 	reflector := jsonschema.Reflector{
 		AllowAdditionalProperties: false,
 		DoNotReference:            true,
 	}
-	var v T
-	schema := reflector.Reflect(v)
-	return schema
+
+	var zero T
+	schema := reflector.Reflect(zero)
+
+	// Convert to the format expected by OpenAI
+	result := map[string]interface{}{
+		"type":       "object",
+		"properties": schema.Properties,
+		"required":   schema.Required,
+	}
+
+	if schema.AdditionalProperties != nil {
+		result["additionalProperties"] = false
+	}
+
+	return result
 }
