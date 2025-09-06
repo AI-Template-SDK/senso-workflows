@@ -66,11 +66,8 @@ type NameListResponse struct {
 }
 
 type OrgEvaluationResponse struct {
-	Mentioned   bool   `json:"mentioned" jsonschema_description:"Whether organization is mentioned by name"`
-	Citation    bool   `json:"citation" jsonschema_description:"Whether URLs relate to this organization"`
 	Sentiment   string `json:"sentiment" jsonschema_description:"Sentiment: positive, negative, or neutral"`
-	MentionText string `json:"mention_text" jsonschema_description:"All substantive content about the organization separated by ||"`
-	MentionRank int    `json:"mention_rank" jsonschema_description:"Prominence ranking (1=most prominent, 0=not mentioned)"`
+	MentionText string `json:"mention_text" jsonschema_description:"All text mentioning the organization with exact formatting preserved, separated by ||"`
 }
 
 type CompetitorListResponse struct {
@@ -187,18 +184,61 @@ Associated websites:
 }
 
 // ExtractOrgEvaluation implements the get_mention_text() function from Python
-func (s *orgEvaluationService) ExtractOrgEvaluation(ctx context.Context, questionRunID, orgID uuid.UUID, orgName string, orgWebsites []string, responseText string) (*OrgEvaluationResult, error) {
+func (s *orgEvaluationService) ExtractOrgEvaluation(ctx context.Context, questionRunID, orgID uuid.UUID, orgName string, orgWebsites []string, nameVariations []string, responseText string) (*OrgEvaluationResult, error) {
 	fmt.Printf("[ExtractOrgEvaluation] 🔍 Processing org evaluation for question run %s, org %s\n", questionRunID, orgName)
-
-	// First generate name variations
-	nameVariations, err := s.GenerateNameVariations(ctx, orgName, orgWebsites)
-	if err != nil {
-		return nil, fmt.Errorf("failed to generate name variations: %w", err)
-	}
 
 	nameVariationsStr := strings.Join(nameVariations, ", ")
 
-	prompt := fmt.Sprintf("You are an expert in brand share-of-voice analysis. Your task is to extract ALL content that substantively discusses or describes the target brand, measuring how much of the response is genuinely ABOUT the brand (not just mentioning it).\n\n**TARGET BRAND:** %s\n**Brand variations:** %s\n\n**SHARE-OF-VOICE EXTRACTION STRATEGY:**\n\nThis is NOT about finding every mention - it's about measuring how much content is genuinely ABOUT the target brand.\n\n1. **Content Classification:**\n   - **Substantive Content**: Paragraphs, sections, or passages that describe, explain, analyze, or discuss the brand in depth with narrative text\n   - **Passing Mentions**: Brief references, comparisons, or lists where the brand is mentioned but not the focus\n   - **Structured Data**: Tables, comparison charts, feature lists that contain brand info but lack narrative discussion\n   - **Extract ONLY substantive narrative content** - ignore passing mentions and structured data\n\n2. **Extraction Rules:**\n   - **Dedicated Sections**: Extract complete sections with headers that focus on the brand\n   - **Descriptive Paragraphs**: Extract full paragraphs that explain what the brand does, how it works, its features\n   - **Analysis/Comparison**: Extract parts that analyze the brand's capabilities, positioning, or characteristics\n   - **Recommendations**: Extract conclusions or recommendations specifically about the brand\n   - **List Entries**: Extract numbered/bulleted list items that substantively describe the brand\n   - **Introductory Context**: Extract opening sentences/paragraphs that establish context for discussing the brand\n   - **Summary References**: Extract concluding summaries, bullet points, or lists that reference the brand\n   - **Contextual Mentions**: Include sentences that provide important context about the brand, even if they mention other entities\n   - **Multiple Parts**: Use \"||\" to separate distinct substantive sections\n\n3. **What NOT to Extract:**\n   - Brief mentions in lists of competitors\n   - Single-sentence references without elaboration\n   - Citations or source references\n   - Content primarily about other topics that just mentions the brand\n   - **Comparison tables or structured data** (even if they contain brand information)\n   - **Table rows, columns, or cells** that list brand attributes without narrative discussion\n\n**EXAMPLES:**\n\nExample 1 - Full brand response:\n\"What does Senso.ai do? [Entire response explaining capabilities]\"\n→ Extract: [Full response] (high share-of-voice)\n\nExample 2 - Dedicated section in comparison:\n\"## Company A does X... ## Senso.ai - AI Platform [detailed description] ## Company B does Y...\"\n→ Extract: [Only the Senso.ai section] (moderate share-of-voice)\n\nExample 3 - Multiple substantive parts:\n\"Senso.ai offers advanced features... [other content]... In conclusion, choose Senso.ai for...\"\n→ Extract: \"Senso.ai offers advanced features...||In conclusion, choose Senso.ai for...\" (moderate share-of-voice)\n\nExample 4 - Passing mentions only:\n\"Leading AI tools include ChatGPT, Senso.ai, Claude, and others in the market.\"\n→ Extract: \"\" (no substantive content, just a mention)\n\nExample 5 - Comparison table:\n\"| Feature | Senso.ai | Competitor | ... | Primary Goal | Transform content into AI answers | Monitor brand visibility |\"\n→ Extract: \"\" (structured comparison data, not substantive discussion)\n\nExample 6 - List context with substantive entry:\n\"Here are 10 AI tools including Senso.ai: 1. Senso.ai - A platform that transforms content... Summary: - Senso.ai (included as requested)\"\n→ Extract: \"Here are 10 AI tools including Senso.ai:||1. Senso.ai - A platform that transforms content...||Summary: - Senso.ai (included as requested)\" (intro + list entry + summary)\n\nExample 7 - Contextual disclaimer:\n\"Senso.ai is legitimate for AI SEO. Note that senso.ai and senso.cloud are entirely separate products.\"\n→ Extract: Include the disclaimer (provides important context about the brand, even though it mentions another entity)\n\n**SENTIMENT ANALYSIS GUIDELINES:**\n\n- **Neutral**: Factual, informational, or descriptive content without clear bias\n  - Explaining what a company does, their features, policies\n  - Comparative analysis that's balanced\n  - Technical descriptions or specifications\n- **Positive**: Clear favorable language, praise, validation, or endorsement\n  - Words like \"excellent,\" \"innovative,\" \"leading,\" \"impressive,\" \"legitimate,\" \"credible\"\n  - Highlighting advantages, superior capabilities, or success metrics\n  - Validation of legitimacy or effectiveness (\"appears to be legitimate,\" \"functions as advertised\")\n  - Testimonials, success stories, or positive outcomes\n  - Recommendations or endorsements\n- **Negative**: Critical, unfavorable, or concerning language\n  - Problems, issues, limitations, criticisms\n  - Negative comparisons or warnings\n  - Questioning legitimacy or effectiveness\n\n**RESPONSE TO ANALYZE:**\n```\n%s\n```\n\n**INSTRUCTIONS:**\n- Focus on SUBSTANTIVE content about the brand, not just mentions\n- Measure share-of-voice: how much content is genuinely ABOUT the target brand\n- Extract complete thoughts and sections, maintain formatting\n- Use \"||\" to separate distinct substantive parts\n- **Capture ALL parts**: If the brand appears in intro, detailed discussion, AND summary, extract all three parts\n- **Don't miss context**: Include introductory sentences that set up discussion of the brand\n- **Don't miss conclusions**: Include summary references, bullet points, or final mentions\n- If no substantive content exists (only passing mentions), return empty string for mention_text and \"neutral\" for sentiment\n- Sentiment must be exactly one of: \"positive\", \"negative\", or \"neutral\" (lowercase)\n- Set mentioned=true only if the organization name appears in the response\n- Set citation=true only if URLs relate to this specific organization\n- Set mention_rank based on prominence (1=most prominent, 0=not mentioned)", "`"+orgName+"`", nameVariationsStr, responseText)
+	prompt := fmt.Sprintf(`You are an expert text extraction specialist. The target organization IS MENTIONED in this text. Your task is to extract ALL text that mentions the organization and determine the overall sentiment.
+
+**TARGET ORGANIZATION:** %s
+**Organization name variations:** %s
+
+**TASK 1: EXTRACT MENTION TEXT**
+
+Find EVERY occurrence where the target organization is mentioned by name (including variations) and extract the text with perfect formatting preservation.
+
+**EXTRACTION RULES:**
+- **PRESERVE EXACT FORMATTING**: Copy text character-for-character including:
+  - All punctuation marks (periods, commas, colons, semicolons, etc.)
+  - All markdown formatting (**, *, ##, [], (), etc.)
+  - All spacing, line breaks, and indentation
+  - All special characters and symbols
+- **INCLUDE CITATIONS**: Always include URLs, links, and citation references that appear with mentions
+- **ALL FORMATS**: Extract from paragraphs, lists, tables, headers, footnotes, structured data
+- **COMPLETE CONTEXT**: Extract the full sentence/paragraph/section that contains the mention
+
+**SPAN DEFINITION:**
+- **Single occurrence** = Complete sentence, bullet point, table row, or logical text unit that mentions the organization
+- **Adjacent context** = If consecutive sentences form one continuous thought about the organization, keep them together
+- **Aggregation** = Use exact delimiter " || " (space-pipe-pipe-space) between separate occurrences
+
+**EXAMPLES:**
+
+Table mention: "| TechFlow Bank | https://techflow.com | Best rates |"
+→ Extract: "| TechFlow Bank | https://techflow.com | Best rates |"
+
+Multiple mentions: "**TechFlow Bank** offers great rates. Visit TechFlow Bank today."
+→ Extract: "**TechFlow Bank** offers great rates. || Visit TechFlow Bank today."
+
+List with citation: "- TechFlow Bank (https://techflow.com) - Recommended"
+→ Extract: "- TechFlow Bank (https://techflow.com) - Recommended"
+
+**TASK 2: DETERMINE SENTIMENT**
+
+Analyze the overall sentiment toward the target organization across all mentions:
+- **positive**: Favorable language, praise, recommendations ("excellent", "best", "recommended", "leading")
+- **negative**: Critical language, problems, warnings ("poor", "issues", "avoid", "problematic")
+- **neutral**: Factual, descriptive, balanced content without clear bias
+
+**RESPONSE TO ANALYZE:**
+`+"`"+`
+%s
+`+"`"+`
+
+**OUTPUT REQUIREMENTS:**
+- mention_text: ALL extracted text with perfect formatting, separated by " || "
+- sentiment: exactly one of "positive", "negative", or "neutral" (lowercase)`, "`"+orgName+"`", nameVariationsStr, responseText)
 
 	// ALWAYS use Azure SDK with gpt-4.1 for org evaluation
 	model := openai.ChatModel("gpt-4.1")
@@ -216,7 +256,7 @@ func (s *orgEvaluationService) ExtractOrgEvaluation(ctx context.Context, questio
 	// Create the extraction request with structured output
 	chatResponse, err := s.openAIClient.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
 		Messages: []openai.ChatCompletionMessageParamUnion{
-			openai.SystemMessage("You are an expert in brand share-of-voice analysis. Extract substantive content about the target brand and analyze sentiment accurately."),
+			openai.SystemMessage("You are an expert text extraction specialist. Extract mention text with perfect formatting and determine sentiment. The organization is already confirmed to be mentioned."),
 			openai.UserMessage(prompt),
 		},
 		Model: model,
@@ -258,8 +298,8 @@ func (s *orgEvaluationService) ExtractOrgEvaluation(ctx context.Context, questio
 		OrgEvalID:     uuid.New(),
 		QuestionRunID: questionRunID,
 		OrgID:         orgID,
-		Mentioned:     extractedData.Mentioned,
-		Citation:      extractedData.Citation,
+		Mentioned:     true,  // We already know it's mentioned from pre-filtering
+		Citation:      false, // Will be set by separate citation extraction if needed
 		InputTokens:   &inputTokens,
 		OutputTokens:  &outputTokens,
 		TotalCost:     &totalCost,
@@ -267,19 +307,19 @@ func (s *orgEvaluationService) ExtractOrgEvaluation(ctx context.Context, questio
 		UpdatedAt:     now,
 	}
 
-	// Set optional fields only if they have meaningful values
+	// Set the LLM-extracted fields
 	if extractedData.Sentiment != "" {
 		orgEval.Sentiment = &extractedData.Sentiment
 	}
 	if extractedData.MentionText != "" {
 		orgEval.MentionText = &extractedData.MentionText
 	}
-	if extractedData.MentionRank > 0 {
-		orgEval.MentionRank = &extractedData.MentionRank
-	}
+	// Set mention rank to 1 since we know it's mentioned and prominent enough to trigger extraction
+	mentionRank := 1
+	orgEval.MentionRank = &mentionRank
 
-	fmt.Printf("[ExtractOrgEvaluation] ✅ Created org evaluation: mentioned=%t, sentiment=%s, rank=%d",
-		extractedData.Mentioned, extractedData.Sentiment, extractedData.MentionRank)
+	fmt.Printf("[ExtractOrgEvaluation] ✅ Created org evaluation: mentioned=true, sentiment=%s, mention_text_length=%d",
+		extractedData.Sentiment, len(extractedData.MentionText))
 
 	return &OrgEvaluationResult{
 		Evaluation:   orgEval,
@@ -477,8 +517,16 @@ func (s *orgEvaluationService) ProcessOrgQuestionRuns(ctx context.Context, orgID
 		responseText := *questionRun.ResponseText
 		summary.TotalProcessed++
 
+		// Generate name variations for this org
+		nameVariations, err := s.GenerateNameVariations(ctx, orgName, orgWebsites)
+		if err != nil {
+			summary.ProcessingErrors = append(summary.ProcessingErrors,
+				fmt.Sprintf("Failed to generate name variations for question run %s: %v", questionRun.QuestionRunID, err))
+			continue
+		}
+
 		// Extract org evaluation
-		evalResult, err := s.ExtractOrgEvaluation(ctx, questionRun.QuestionRunID, orgID, orgName, orgWebsites, responseText)
+		evalResult, err := s.ExtractOrgEvaluation(ctx, questionRun.QuestionRunID, orgID, orgName, orgWebsites, nameVariations, responseText)
 		if err != nil {
 			summary.ProcessingErrors = append(summary.ProcessingErrors,
 				fmt.Sprintf("Failed to extract evaluation for question run %s: %v", questionRun.QuestionRunID, err))
@@ -1051,14 +1099,21 @@ func (s *orgEvaluationService) ProcessOrgQuestionRunReeval(ctx context.Context, 
 
 	// Step 3: Conditionally run org evaluation LLM (if mentioned)
 	if mentioned {
-		evalResult, err := s.ExtractOrgEvaluation(ctx, questionRunID, orgID, orgName, websites, responseText)
+		evalResult, err := s.ExtractOrgEvaluation(ctx, questionRunID, orgID, orgName, websites, nameVariations, responseText)
 		if err != nil {
 			result.ErrorMessage = fmt.Sprintf("Org evaluation failed: %v", err)
 			return result, nil
 		}
+
+		// CRITICAL: Store the evaluation in the database
+		if err := s.repos.OrgEvalRepo.Create(ctx, evalResult.Evaluation); err != nil {
+			result.ErrorMessage = fmt.Sprintf("Failed to store org evaluation: %v", err)
+			return result, nil
+		}
+
 		result.HasEvaluation = true
 		result.TotalCost += evalResult.TotalCost
-		fmt.Printf("[ProcessOrgQuestionRunReeval] ✅ Org evaluation completed with cost $%.6f\n", evalResult.TotalCost)
+		fmt.Printf("[ProcessOrgQuestionRunReeval] ✅ Org evaluation completed and stored with cost $%.6f\n", evalResult.TotalCost)
 	} else {
 		// Create minimal org eval record indicating no mention
 		mentionText := ""
@@ -1090,9 +1145,18 @@ func (s *orgEvaluationService) ProcessOrgQuestionRunReeval(ctx context.Context, 
 		result.ErrorMessage = fmt.Sprintf("Competitor extraction failed: %v", err)
 		return result, nil
 	}
+
+	// CRITICAL: Store competitors in database
+	for _, competitor := range competitorResult.Competitors {
+		if err := s.repos.OrgCompetitorRepo.Create(ctx, competitor); err != nil {
+			result.ErrorMessage = fmt.Sprintf("Failed to store competitor %s: %v", competitor.Name, err)
+			return result, nil
+		}
+	}
+
 	result.CompetitorCount = len(competitorResult.Competitors)
 	result.TotalCost += competitorResult.TotalCost
-	fmt.Printf("[ProcessOrgQuestionRunReeval] ✅ Extracted %d competitors with cost $%.6f\n",
+	fmt.Printf("[ProcessOrgQuestionRunReeval] ✅ Extracted and stored %d competitors with cost $%.6f\n",
 		len(competitorResult.Competitors), competitorResult.TotalCost)
 
 	// Step 5: Always run citation extraction
@@ -1101,9 +1165,18 @@ func (s *orgEvaluationService) ProcessOrgQuestionRunReeval(ctx context.Context, 
 		result.ErrorMessage = fmt.Sprintf("Citation extraction failed: %v", err)
 		return result, nil
 	}
+
+	// CRITICAL: Store citations in database
+	for _, citation := range citationResult.Citations {
+		if err := s.repos.OrgCitationRepo.Create(ctx, citation); err != nil {
+			result.ErrorMessage = fmt.Sprintf("Failed to store citation %s: %v", citation.URL, err)
+			return result, nil
+		}
+	}
+
 	result.CitationCount = len(citationResult.Citations)
 	result.TotalCost += citationResult.TotalCost
-	fmt.Printf("[ProcessOrgQuestionRunReeval] ✅ Extracted %d citations with cost $%.6f\n",
+	fmt.Printf("[ProcessOrgQuestionRunReeval] ✅ Extracted and stored %d citations with cost $%.6f\n",
 		len(citationResult.Citations), citationResult.TotalCost)
 
 	// Success!
@@ -1149,7 +1222,7 @@ func (s *orgEvaluationService) processQuestionRunWithOrgEvaluation(ctx context.C
 
 	// Step 3: Extract org evaluation ONLY if mentioned (following Python logic)
 	if mentioned {
-		evalResult, err := s.ExtractOrgEvaluation(ctx, questionRun.QuestionRunID, orgID, orgName, orgWebsites, responseText)
+		evalResult, err := s.ExtractOrgEvaluation(ctx, questionRun.QuestionRunID, orgID, orgName, orgWebsites, nameVariations, responseText)
 		if err != nil {
 			return fmt.Errorf("failed to extract evaluation: %w", err)
 		}

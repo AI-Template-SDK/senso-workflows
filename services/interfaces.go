@@ -180,7 +180,7 @@ type ExtractService interface {
 // NEW: OrgEvaluationService interface for the new org evaluation pipeline
 type OrgEvaluationService interface {
 	GenerateNameVariations(ctx context.Context, orgName string, websites []string) ([]string, error)
-	ExtractOrgEvaluation(ctx context.Context, questionRunID, orgID uuid.UUID, orgName string, orgWebsites []string, responseText string) (*OrgEvaluationResult, error)
+	ExtractOrgEvaluation(ctx context.Context, questionRunID, orgID uuid.UUID, orgName string, orgWebsites []string, nameVariations []string, responseText string) (*OrgEvaluationResult, error)
 	ExtractCompetitors(ctx context.Context, questionRunID, orgID uuid.UUID, orgName string, responseText string) (*CompetitorExtractionResult, error)
 	ExtractCitations(ctx context.Context, questionRunID, orgID uuid.UUID, responseText string, orgWebsites []string) (*CitationExtractionResult, error)
 	ProcessOrgQuestionRuns(ctx context.Context, orgID uuid.UUID, orgName string, orgWebsites []string, questionRuns []*models.QuestionRun) (*OrgEvaluationSummary, error)
