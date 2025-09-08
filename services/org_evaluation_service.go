@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"regexp"
 	"strings"
 	"time"
@@ -17,6 +18,7 @@ import (
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/azure"
 	"github.com/openai/openai-go/option"
+	"golang.org/x/net/publicsuffix"
 )
 
 type orgEvaluationService struct {
@@ -454,20 +456,10 @@ func (s *orgEvaluationService) ExtractCitations(ctx context.Context, questionRun
 		// Remove trailing slashes for comparison
 		normalizedURL = strings.TrimRight(normalizedURL, "/")
 
-		// Determine if this is a primary or secondary citation
+		// Determine if this is a primary or secondary citation using proper domain parsing
 		citationType := "secondary" // Default to secondary
-
-		for _, primarySite := range orgWebsites {
-			primaryNormalized := strings.ToLower(strings.TrimRight(primarySite, "/"))
-
-			// Check if the citation URL matches or is a subdomain of primary sites
-			if normalizedURL == primaryNormalized ||
-				strings.HasPrefix(normalizedURL, primaryNormalized+"/") ||
-				strings.Replace(primaryNormalized, "https://www.", "https://", 1) == normalizedURL ||
-				strings.Replace(primaryNormalized, "https://", "https://www.", 1) == normalizedURL {
-				citationType = "primary"
-				break
-			}
+		if isPrimaryDomain(normalizedURL, orgWebsites) {
+			citationType = "primary"
 		}
 
 		citation := &models.OrgCitation{
@@ -1078,12 +1070,10 @@ func (s *orgEvaluationService) ProcessOrgQuestionRunReeval(ctx context.Context, 
 		return result, nil
 	}
 
-	// Note: OrgCitationRepo cleanup might not be available yet, skip for now
-	// TODO: Add when DeleteByQuestionRunAndOrg method is available
-	// if err := s.repos.OrgCitationRepo.DeleteByQuestionRunAndOrg(ctx, questionRunID, orgID); err != nil {
-	//     result.ErrorMessage = fmt.Sprintf("Failed to cleanup org citations: %v", err)
-	//     return result, nil
-	// }
+	if err := s.repos.OrgCitationRepo.DeleteByQuestionRunAndOrg(ctx, questionRunID, orgID); err != nil {
+		result.ErrorMessage = fmt.Sprintf("Failed to cleanup org citations: %v", err)
+		return result, nil
+	}
 
 	// Step 2: Check for mentions using name variations
 	mentioned := false
@@ -1117,7 +1107,6 @@ func (s *orgEvaluationService) ProcessOrgQuestionRunReeval(ctx context.Context, 
 	} else {
 		// Create minimal org eval record indicating no mention
 		mentionText := ""
-		sentiment := "neutral"
 		inputTokens := 0
 		outputTokens := 0
 		totalCost := 0.0
@@ -1127,7 +1116,7 @@ func (s *orgEvaluationService) ProcessOrgQuestionRunReeval(ctx context.Context, 
 			QuestionRunID: questionRunID,
 			OrgID:         orgID,
 			MentionText:   &mentionText,
-			Sentiment:     &sentiment,
+			Sentiment:     nil, // No sentiment can be inferred if org is not mentioned
 			InputTokens:   &inputTokens,
 			OutputTokens:  &outputTokens,
 			TotalCost:     &totalCost,
@@ -1248,9 +1237,8 @@ func (s *orgEvaluationService) processQuestionRunWithOrgEvaluation(ctx context.C
 			UpdatedAt:     now,
 		}
 
-		// Set neutral sentiment for non-mentioned cases
-		sentiment := "neutral"
-		orgEval.Sentiment = &sentiment
+		// No sentiment can be inferred if org is not mentioned
+		orgEval.Sentiment = nil
 
 		// Store minimal evaluation
 		if err := s.repos.OrgEvalRepo.Create(ctx, orgEval); err != nil {
@@ -1327,4 +1315,54 @@ func countCitationsByType(citations []*models.OrgCitation, citationType string) 
 		}
 	}
 	return count
+}
+
+// getBaseDomain extracts the base domain (eTLD+1) from a URL using publicsuffix
+func getBaseDomain(urlStr string) (string, error) {
+	// Handle URLs without protocol
+	if !strings.HasPrefix(urlStr, "http://") && !strings.HasPrefix(urlStr, "https://") {
+		urlStr = "https://" + urlStr
+	}
+
+	// Parse URL to get hostname
+	u, err := url.Parse(urlStr)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse URL %s: %w", urlStr, err)
+	}
+
+	hostname := u.Hostname()
+	if hostname == "" {
+		return "", fmt.Errorf("no hostname found in URL: %s", urlStr)
+	}
+
+	// Extract the effective TLD+1 (base domain)
+	baseDomain, err := publicsuffix.EffectiveTLDPlusOne(hostname)
+	if err != nil {
+		return "", fmt.Errorf("failed to get base domain for %s: %w", hostname, err)
+	}
+
+	return baseDomain, nil
+}
+
+// isPrimaryDomain checks if a citation URL belongs to any of the organization's domains
+func isPrimaryDomain(citationURL string, orgDomains []string) bool {
+	citationBase, err := getBaseDomain(citationURL)
+	if err != nil {
+		// If we can't parse the citation URL, default to secondary
+		return false
+	}
+
+	for _, orgDomain := range orgDomains {
+		orgBase, err := getBaseDomain(orgDomain)
+		if err != nil {
+			// If we can't parse the org domain, skip it
+			continue
+		}
+
+		// Case-insensitive comparison of base domains
+		if strings.EqualFold(citationBase, orgBase) {
+			return true
+		}
+	}
+	return false
 }
