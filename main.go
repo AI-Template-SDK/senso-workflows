@@ -149,7 +149,7 @@ func main() {
 	log.Printf("Initializing AI services...")
 	orgService := services.NewOrgService(cfg, repoManager)
 	dataExtractionService := services.NewDataExtractionService(cfg)
-	orgEvaluationService := services.NewOrgEvaluationService(cfg, repoManager)
+	orgEvaluationService := services.NewOrgEvaluationService(cfg, repoManager, dataExtractionService)
 	questionRunnerService := services.NewQuestionRunnerService(cfg, repoManager, dataExtractionService, orgService)
 	analyticsService := services.NewAnalyticsService(cfg, repoManager)
 	log.Printf("✅ All AI services initialized successfully")
@@ -195,6 +195,9 @@ func main() {
 	// Initialize org re-evaluation processor
 	orgReevalProcessor := workflows.NewOrgReevalProcessor(cfg, orgService, orgEvaluationService)
 
+	// Initialize network org re-evaluation processor (enhanced)
+	networkOrgReevalProcessor := workflows.NewNetworkOrgReevalProcessor(cfg, orgService, orgEvaluationService, questionRunnerService)
+
 	// Set client on workflows
 	orgProcessor.SetClient(client)
 	orgEvaluationProcessor.SetClient(client)
@@ -203,6 +206,7 @@ func main() {
 	networkOrgProcessor.SetClient(client)
 	networkReevalProcessor.SetClient(client)
 	orgReevalProcessor.SetClient(client)
+	networkOrgReevalProcessor.SetClient(client)
 
 	// Register functions (they auto-register with the client when created)
 	orgProcessor.ProcessOrg()
@@ -213,6 +217,7 @@ func main() {
 	networkOrgProcessor.ProcessNetworkOrg()
 	networkReevalProcessor.ProcessNetworkReeval()
 	orgReevalProcessor.ProcessOrgReeval()
+	networkOrgReevalProcessor.ProcessNetworkOrgReeval()
 
 	// Create handler
 	h := client.Serve()

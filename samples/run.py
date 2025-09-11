@@ -31,7 +31,10 @@ Generate REALISTIC variations of this brand name that would actually be used by 
 
 1. **Exact matches**: The brand name as provided
 2. **Case variations**: lowercase, UPPERCASE, Title Case, camelCase
-3. **Spacing variations**: with spaces, without spaces, with hyphens, with underscores
+3. **Spacing variations**: CRITICAL for compound words - always include both spaced and unspaced versions:
+   - Compound words: "SunLife" → "Sun Life", "TotalExpert" → "Total Expert"
+   - With spaces, without spaces, with hyphens, with underscores
+   - For ANY compound-looking word, generate the spaced version
 4. **Legal/formal variations**: Including "Inc", "LLC", "Ltd", "Corp", etc. (only if realistic for this type of company)
 5. **Natural shortened versions**: Logical shortened forms (e.g., "Senso.ai" → "Senso", "Microsoft Corporation" → "Microsoft")
 6. **Realistic acronyms**: Only create acronyms from multi-word names where it makes sense:
@@ -48,9 +51,13 @@ IMPORTANT CONSTRAINTS:
 - Only include variations that would realistically be used in professional business contexts
 - Focus on how the brand name would naturally be written, typed, or formatted
 
+**CRITICAL: For compound words, ALWAYS generate spaced versions**
+
 Examples:
 - "Senso.ai" → Good: Senso.ai, senso.ai, SENSO.AI, Senso, senso, SENSO, SensoAI, sensoai
 - "Senso.ai" → Bad: S.AI, SAI, support@senso.ai, www.senso.ai
+- "SunLife" → MUST include: SunLife, Sun Life, sunlife, sun life, SUNLIFE, SUN LIFE, Sun-Life, sun-life
+- "TotalExpert" → MUST include: TotalExpert, Total Expert, totalexpert, total expert, TOTALEXPERT, TOTAL EXPERT, Total-Expert, total-expert
 - "Tech Corp Solutions" → Good: TCS, Tech Corp, TechCorp, Tech Corp Solutions
 - "Apple" → Good: Apple, apple, APPLE (no meaningful acronym for single word)
 
@@ -60,6 +67,7 @@ Instructions:
 - Each variation should have a clear reason for existing
 - For multi-word names, consider logical acronyms using first letters
 - For compound names or names with extensions (.ai, .com), consider the root word
+- **MANDATORY**: If the brand name looks like a compound word (two or more words joined together), generate the spaced version
 - Avoid nonsensical permutations or made-up abbreviations
 
 Return only the list of name variations, no explanations.

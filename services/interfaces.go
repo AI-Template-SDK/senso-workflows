@@ -198,6 +198,8 @@ type OrgEvaluationService interface {
 	// Org re-evaluation methods
 	GetAllOrgQuestionRuns(ctx context.Context, orgID uuid.UUID) ([]*OrgQuestionRun, error)
 	ProcessOrgQuestionRunReeval(ctx context.Context, questionRunID uuid.UUID, orgID uuid.UUID, orgName string, websites []string, nameVariations []string, questionText, responseText string) (*OrgReevalResult, error)
+	// Network org re-evaluation methods
+	ProcessNetworkOrgQuestionRunReeval(ctx context.Context, questionRunID uuid.UUID, orgID uuid.UUID, orgName string, websites []string, nameVariations []string, questionText, responseText string) (*OrgReevalResult, error)
 	RunOrgReEvaluation(ctx context.Context, orgID uuid.UUID) (*OrgReevalSummary, error)
 }
 

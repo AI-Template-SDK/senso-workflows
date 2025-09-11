@@ -15,6 +15,7 @@ require (
 	github.com/lib/pq v1.10.9
 	github.com/openai/openai-go v1.7.0
 	golang.org/x/net v0.43.0
+	mvdan.cc/xurls/v2 v2.5.0
 )
 
 require (

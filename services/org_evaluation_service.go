@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
-	"regexp"
 	"strings"
 	"time"
 
@@ -19,16 +18,18 @@ import (
 	"github.com/openai/openai-go/azure"
 	"github.com/openai/openai-go/option"
 	"golang.org/x/net/publicsuffix"
+	"mvdan.cc/xurls/v2"
 )
 
 type orgEvaluationService struct {
-	cfg          *config.Config
-	openAIClient *openai.Client
-	costService  CostService
-	repos        *RepositoryManager
+	cfg                   *config.Config
+	openAIClient          *openai.Client
+	costService           CostService
+	repos                 *RepositoryManager
+	dataExtractionService DataExtractionService
 }
 
-func NewOrgEvaluationService(cfg *config.Config, repos *RepositoryManager) OrgEvaluationService {
+func NewOrgEvaluationService(cfg *config.Config, repos *RepositoryManager, dataExtractionService DataExtractionService) OrgEvaluationService {
 	fmt.Printf("[NewOrgEvaluationService] Creating service with OpenAI key (length: %d)\n", len(cfg.OpenAIAPIKey))
 
 	var client openai.Client
@@ -55,10 +56,11 @@ func NewOrgEvaluationService(cfg *config.Config, repos *RepositoryManager) OrgEv
 	}
 
 	return &orgEvaluationService{
-		cfg:          cfg,
-		openAIClient: &client,
-		costService:  NewCostService(),
-		repos:        repos,
+		cfg:                   cfg,
+		openAIClient:          &client,
+		costService:           NewCostService(),
+		repos:                 repos,
+		dataExtractionService: dataExtractionService,
 	}
 }
 
@@ -96,7 +98,10 @@ Generate REALISTIC variations of this brand name that would actually be used by 
 
 1. **Exact matches**: The brand name as provided
 2. **Case variations**: lowercase, UPPERCASE, Title Case, camelCase
-3. **Spacing variations**: with spaces, without spaces, with hyphens, with underscores
+3. **Spacing variations**: CRITICAL for compound words - always include both spaced and unspaced versions:
+   - Compound words: "SunLife" → "Sun Life", "TotalExpert" → "Total Expert"
+   - With spaces, without spaces, with hyphens, with underscores
+   - For ANY compound-looking word, generate the spaced version
 4. **Legal/formal variations**: Including "Inc", "LLC", "Ltd", "Corp", etc. (only if realistic for this type of company)
 5. **Natural shortened versions**: Logical shortened forms (e.g., "Senso.ai" → "Senso", "Microsoft Corporation" → "Microsoft")
 6. **Realistic acronyms**: Only create acronyms from multi-word names where it makes sense:
@@ -113,9 +118,13 @@ IMPORTANT CONSTRAINTS:
 - Only include variations that would realistically be used in professional business contexts
 - Focus on how the brand name would naturally be written, typed, or formatted
 
+**CRITICAL: For compound words, ALWAYS generate spaced versions**
+
 Examples:
 - "Senso.ai" → Good: Senso.ai, senso.ai, SENSO.AI, Senso, senso, SENSO, SensoAI, sensoai
 - "Senso.ai" → Bad: S.AI, SAI, support@senso.ai, www.senso.ai
+- "SunLife" → MUST include: SunLife, Sun Life, sunlife, sun life, SUNLIFE, SUN LIFE, Sun-Life, sun-life
+- "TotalExpert" → MUST include: TotalExpert, Total Expert, totalexpert, total expert, TOTALEXPERT, TOTAL EXPERT, Total-Expert, total-expert
 - "Tech Corp Solutions" → Good: TCS, Tech Corp, TechCorp, Tech Corp Solutions
 - "Apple" → Good: Apple, apple, APPLE (no meaningful acronym for single word)
 
@@ -125,6 +134,7 @@ Instructions:
 - Each variation should have a clear reason for existing
 - For multi-word names, consider logical acronyms using first letters
 - For compound names or names with extensions (.ai, .com), consider the root word
+- **MANDATORY**: If the brand name looks like a compound word (two or more words joined together), generate the spaced version
 - Avoid nonsensical permutations or made-up abbreviations
 
 Return only the list of name variations, no explanations.
@@ -426,13 +436,8 @@ func (s *orgEvaluationService) ExtractCompetitors(ctx context.Context, questionR
 func (s *orgEvaluationService) ExtractCitations(ctx context.Context, questionRunID, orgID uuid.UUID, responseText string, orgWebsites []string) (*CitationExtractionResult, error) {
 	fmt.Printf("[ExtractCitations] 🔍 Processing citations for question run %s, org %s\n", questionRunID, orgID)
 
-	// Regex pattern to match URLs (Go-compatible version of Python regex)
-	// Original Python used negative lookahead (?!www) which Go doesn't support
-	// Workaround: Split into explicit alternatives instead of using negative lookahead
-	citationPattern := regexp.MustCompile(`https?://www\.[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s,.)}\]]{2,}|https?://[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s,.)}\]]{2,}|www\.[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s,.)}\]]{2,}|[a-zA-Z0-9-]+\.[a-zA-Z]{2,6}\.[^\s,.)}\]]{2,}`)
-
-	// Find all potential citations
-	matches := citationPattern.FindAllString(responseText, -1)
+	// Use xurls strict mode to find all URLs in the text
+	matches := xurls.Strict().FindAllString(responseText, -1)
 
 	var citations []*models.OrgCitation
 	seenURLs := make(map[string]bool)
@@ -1172,6 +1177,114 @@ func (s *orgEvaluationService) ProcessOrgQuestionRunReeval(ctx context.Context, 
 	result.Status = "completed"
 	fmt.Printf("[ProcessOrgQuestionRunReeval] ✅ Successfully processed question run %s with total cost $%.6f\n",
 		questionRunID, result.TotalCost)
+
+	return result, nil
+}
+
+// ProcessNetworkOrgQuestionRunReeval processes a single network question run with org evaluation methodology but saves to network_org_* tables
+func (s *orgEvaluationService) ProcessNetworkOrgQuestionRunReeval(ctx context.Context, questionRunID uuid.UUID, orgID uuid.UUID, orgName string, websites []string, nameVariations []string, questionText, responseText string) (*OrgReevalResult, error) {
+	fmt.Printf("[ProcessNetworkOrgQuestionRunReeval] Processing network question run %s for org %s using org evaluation methodology\n", questionRunID, orgID)
+
+	result := &OrgReevalResult{
+		QuestionRunID: questionRunID,
+		Status:        "failed", // Default to failed, will update on success
+	}
+
+	// Step 1: Clean up existing network_org_* data for this question run + org
+	fmt.Printf("[ProcessNetworkOrgQuestionRunReeval] Cleaning up existing network org data for question run %s and org %s\n", questionRunID, orgID)
+
+	if err := s.repos.NetworkOrgEvalRepo.DeleteByQuestionRunAndOrg(ctx, questionRunID, orgID); err != nil {
+		result.ErrorMessage = fmt.Sprintf("Failed to cleanup network org evaluations: %v", err)
+		return result, nil
+	}
+
+	if err := s.repos.NetworkOrgCompetitorRepo.DeleteByQuestionRunAndOrg(ctx, questionRunID, orgID); err != nil {
+		result.ErrorMessage = fmt.Sprintf("Failed to cleanup network org competitors: %v", err)
+		return result, nil
+	}
+
+	if err := s.repos.NetworkOrgCitationRepo.DeleteByQuestionRunAndOrg(ctx, questionRunID, orgID); err != nil {
+		result.ErrorMessage = fmt.Sprintf("Failed to cleanup network org citations: %v", err)
+		return result, nil
+	}
+
+	// Step 2: Check for mentions using name variations
+	mentioned := false
+	responseTextLower := strings.ToLower(responseText)
+	for _, variation := range nameVariations {
+		if strings.Contains(responseTextLower, strings.ToLower(variation)) {
+			mentioned = true
+			break
+		}
+	}
+
+	fmt.Printf("[ProcessNetworkOrgQuestionRunReeval] Mention detected: %t\n", mentioned)
+
+	// Step 3: Conditionally run org evaluation LLM (if mentioned) but extract to network org format
+	if mentioned {
+		// Use the data extraction service to extract network org data with org evaluation methodology
+		extractionResult, err := s.dataExtractionService.ExtractNetworkOrgData(ctx, questionRunID, orgID, orgName, websites, questionText, responseText)
+		if err != nil {
+			result.ErrorMessage = fmt.Sprintf("Network org evaluation failed: %v", err)
+			return result, nil
+		}
+
+		// Store the evaluation in the network_org_evals table
+		if err := s.repos.NetworkOrgEvalRepo.Create(ctx, extractionResult.Evaluation); err != nil {
+			result.ErrorMessage = fmt.Sprintf("Failed to store network org evaluation: %v", err)
+			return result, nil
+		}
+
+		// Store competitors in network_org_competitors table
+		for _, competitor := range extractionResult.Competitors {
+			if err := s.repos.NetworkOrgCompetitorRepo.Create(ctx, competitor); err != nil {
+				result.ErrorMessage = fmt.Sprintf("Failed to store network org competitor %s: %v", competitor.Name, err)
+				return result, nil
+			}
+		}
+
+		// Store citations in network_org_citations table
+		for _, citation := range extractionResult.Citations {
+			if err := s.repos.NetworkOrgCitationRepo.Create(ctx, citation); err != nil {
+				result.ErrorMessage = fmt.Sprintf("Failed to store network org citation %s: %v", citation.URL, err)
+				return result, nil
+			}
+		}
+
+		result.HasEvaluation = true
+		result.CompetitorCount = len(extractionResult.Competitors)
+		result.CitationCount = len(extractionResult.Citations)
+		// Note: NetworkOrgExtractionResult doesn't have cost tracking, so we'll set it to 0
+		result.TotalCost = 0.0
+
+		fmt.Printf("[ProcessNetworkOrgQuestionRunReeval] ✅ Network org evaluation completed and stored: 1 eval, %d competitors, %d citations\n",
+			result.CompetitorCount, result.CitationCount)
+	} else {
+		// Create minimal network org eval record indicating no mention
+		networkOrgEval := &models.NetworkOrgEval{
+			NetworkOrgEvalID: uuid.New(),
+			QuestionRunID:    questionRunID,
+			OrgID:            orgID,
+			Mentioned:        false,
+			Citation:         false,
+			Sentiment:        nil,
+			MentionText:      nil,
+			MentionRank:      nil,
+			CreatedAt:        time.Now(),
+			UpdatedAt:        time.Now(),
+		}
+
+		if err := s.repos.NetworkOrgEvalRepo.Create(ctx, networkOrgEval); err != nil {
+			result.ErrorMessage = fmt.Sprintf("Failed to create minimal network org eval: %v", err)
+			return result, nil
+		}
+
+		fmt.Printf("[ProcessNetworkOrgQuestionRunReeval] ✅ Created minimal network org eval (no mention)\n")
+	}
+
+	// Success!
+	result.Status = "completed"
+	fmt.Printf("[ProcessNetworkOrgQuestionRunReeval] ✅ Successfully processed network question run %s with enhanced methodology\n", questionRunID)
 
 	return result, nil
 }
