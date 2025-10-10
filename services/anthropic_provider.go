@@ -86,10 +86,11 @@ Remember: Return ONLY the JSON object, no other text.`, query)
 	parsedResponse := p.parseJSONResponse(fullResponse)
 
 	result := &AIResponse{
-		Response:     parsedResponse,
-		InputTokens:  int(response.Usage.InputTokens),
-		OutputTokens: int(response.Usage.OutputTokens),
-		Cost:         p.costService.CalculateCost(p.GetProviderName(), p.model, int(response.Usage.InputTokens), int(response.Usage.OutputTokens), false),
+		Response:                parsedResponse,
+		InputTokens:             int(response.Usage.InputTokens),
+		OutputTokens:            int(response.Usage.OutputTokens),
+		Cost:                    p.costService.CalculateCost(p.GetProviderName(), p.model, int(response.Usage.InputTokens), int(response.Usage.OutputTokens), false),
+		ShouldProcessEvaluation: true,
 	}
 
 	return result, nil
@@ -186,4 +187,30 @@ func (p *anthropicProvider) extractResponseText(response anthropic.Message) stri
 	}
 
 	return strings.Join(textParts, "")
+}
+
+// SupportsBatching returns false for Anthropic (no native batching support)
+func (p *anthropicProvider) SupportsBatching() bool {
+	return false
+}
+
+// GetMaxBatchSize returns 1 for Anthropic (no batching)
+func (p *anthropicProvider) GetMaxBatchSize() int {
+	return 1
+}
+
+// RunQuestionBatch processes questions sequentially for Anthropic (no batching support)
+func (p *anthropicProvider) RunQuestionBatch(ctx context.Context, queries []string, websearch bool, location *models.Location) ([]*AIResponse, error) {
+	fmt.Printf("[AnthropicProvider] 🔄 Processing %d questions sequentially (no batching support)\n", len(queries))
+
+	responses := make([]*AIResponse, len(queries))
+	for i, query := range queries {
+		response, err := p.RunQuestion(ctx, query, websearch, location)
+		if err != nil {
+			return nil, fmt.Errorf("failed to process question %d: %w", i+1, err)
+		}
+		responses[i] = response
+	}
+
+	return responses, nil
 }

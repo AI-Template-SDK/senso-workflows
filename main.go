@@ -198,6 +198,12 @@ func main() {
 	// Initialize network org re-evaluation processor (enhanced)
 	networkOrgReevalProcessor := workflows.NewNetworkOrgReevalProcessor(cfg, orgService, orgEvaluationService, questionRunnerService)
 
+	// Initialize network org missing processor
+	networkOrgMissingProcessor := workflows.NewNetworkOrgMissingProcessor(
+		questionRunnerService,
+		cfg,
+	)
+
 	// Set client on workflows
 	orgProcessor.SetClient(client)
 	orgEvaluationProcessor.SetClient(client)
@@ -207,6 +213,7 @@ func main() {
 	networkReevalProcessor.SetClient(client)
 	orgReevalProcessor.SetClient(client)
 	networkOrgReevalProcessor.SetClient(client)
+	networkOrgMissingProcessor.SetClient(client)
 
 	// Register functions (they auto-register with the client when created)
 	orgProcessor.ProcessOrg()
@@ -218,6 +225,7 @@ func main() {
 	networkReevalProcessor.ProcessNetworkReeval()
 	orgReevalProcessor.ProcessOrgReeval()
 	networkOrgReevalProcessor.ProcessNetworkOrgReeval()
+	networkOrgMissingProcessor.ProcessNetworkOrgMissing()
 
 	// Create handler
 	h := client.Serve()

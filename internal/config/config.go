@@ -21,6 +21,10 @@ type Config struct {
 	ApplicationAPIURL         string
 	DatabaseURL               string
 	APIToken                  string
+	BrightDataAPIKey          string
+	BrightDataDatasetID       string
+	PerplexityDatasetID       string
+	GeminiDatasetID           string
 	Database                  DatabaseConfig
 }
 
@@ -51,6 +55,10 @@ func Load() *Config {
 		ApplicationAPIURL:         os.Getenv("APPLICATION_API_URL"),
 		DatabaseURL:               os.Getenv("DATABASE_URL"),
 		APIToken:                  os.Getenv("API_TOKEN"),
+		BrightDataAPIKey:          os.Getenv("BRIGHTDATA_API_KEY"),
+		BrightDataDatasetID:       os.Getenv("BRIGHTDATA_DATASET_ID"),
+		PerplexityDatasetID:       os.Getenv("PERPLEXITY_DATASET_ID"),
+		GeminiDatasetID:           os.Getenv("GEMINI_DATASET_ID"),
 	}
 
 	// Parse database configuration

@@ -81,7 +81,8 @@ class BatchFixProcessor:
         JOIN geo_questions gq ON qr.geo_question_id = gq.geo_question_id
         WHERE qr.batch_id IS NULL
         AND gq.org_id IS NOT NULL
-        AND gq.scope = 'org'
+        and gq.deleted_at is null
+        and qr.deleted_at is null
         ORDER BY org_id
         """
         
@@ -105,7 +106,8 @@ class BatchFixProcessor:
         JOIN geo_questions gq ON qr.geo_question_id = gq.geo_question_id
         WHERE qr.batch_id IS NULL
         AND gq.org_id::text = %s
-        AND gq.scope = 'org'
+        AND gq.deleted_at is null
+        AND qr.deleted_at is null
         ORDER BY qr.created_at::date, qr.created_at
         """
         
@@ -117,7 +119,7 @@ class BatchFixProcessor:
         query = """
         SELECT batch_id FROM question_run_batches 
         WHERE org_id = %s 
-        AND created_at::date = %s
+        AND started_at::date = %s and deleted_at is null
         LIMIT 1
         """
         
@@ -172,6 +174,7 @@ class BatchFixProcessor:
         UPDATE question_runs 
         SET batch_id = %s::uuid, updated_at = %s
         WHERE question_run_id = ANY(%s::uuid[])
+        AND deleted_at is null
         """
         
         self.cursor.execute(update_query, (batch_id, datetime.now(), run_ids))
@@ -189,7 +192,8 @@ class BatchFixProcessor:
         self.cursor.execute("""
             UPDATE question_run_batches 
             SET is_latest = false, updated_at = %s
-            WHERE org_id = %s
+            WHERE org_id = %s 
+            AND deleted_at is null
         """, (datetime.now(), org_id))
         
         # Then set the most recent batch as latest
@@ -199,7 +203,7 @@ class BatchFixProcessor:
             WHERE batch_id = (
                 SELECT batch_id 
                 FROM question_run_batches 
-                WHERE org_id = %s 
+                WHERE org_id = %s and deleted_at is null
                 ORDER BY created_at DESC 
                 LIMIT 1
             )

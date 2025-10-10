@@ -80,9 +80,12 @@ class NetworkBatchFixProcessor:
             gq.network_id::text as network_id
         FROM question_runs qr
         JOIN geo_questions gq ON qr.geo_question_id = gq.geo_question_id
+        JOIN networks n ON gq.network_id = n.network_id
         WHERE qr.batch_id IS NULL
         AND gq.network_id IS NOT NULL
-        AND gq.scope = 'network'
+        and gq.deleted_at is null
+        and qr.deleted_at is null
+        and n.deleted_at is null
         ORDER BY network_id
         """
         
@@ -106,7 +109,8 @@ class NetworkBatchFixProcessor:
         JOIN geo_questions gq ON qr.geo_question_id = gq.geo_question_id
         WHERE qr.batch_id IS NULL
         AND gq.network_id::text = %s
-        AND gq.scope = 'network'
+        and gq.deleted_at is null
+        and qr.deleted_at is null
         ORDER BY qr.created_at::date, qr.created_at
         """
         
@@ -118,8 +122,8 @@ class NetworkBatchFixProcessor:
         query = """
         SELECT batch_id FROM question_run_batches 
         WHERE network_id = %s 
-        AND created_at::date = %s
-        AND scope = 'network'
+        AND started_at::date = %s
+        and deleted_at is null
         LIMIT 1
         """
         
@@ -174,6 +178,7 @@ class NetworkBatchFixProcessor:
         UPDATE question_runs 
         SET batch_id = %s::uuid, updated_at = %s
         WHERE question_run_id = ANY(%s::uuid[])
+        and deleted_at is null
         """
         
         self.cursor.execute(update_query, (batch_id, datetime.now(), run_ids))
@@ -191,7 +196,7 @@ class NetworkBatchFixProcessor:
         self.cursor.execute("""
             UPDATE question_run_batches 
             SET is_latest = false, updated_at = %s
-            WHERE network_id = %s AND scope = 'network'
+            WHERE network_id = %s AND scope = 'network' and deleted_at is null
         """, (datetime.now(), network_id))
         
         # Then set the most recent batch as latest
@@ -201,7 +206,7 @@ class NetworkBatchFixProcessor:
             WHERE batch_id = (
                 SELECT batch_id 
                 FROM question_run_batches 
-                WHERE network_id = %s AND scope = 'network'
+                WHERE network_id = %s AND deleted_at is null
                 ORDER BY created_at DESC 
                 LIMIT 1
             )

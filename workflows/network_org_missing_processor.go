@@ -1,4 +1,4 @@
-// workflows/network_org_processor.go
+// workflows/network_org_missing_processor.go
 package workflows
 
 import (
@@ -14,48 +14,48 @@ import (
 	"github.com/AI-Template-SDK/senso-workflows/services"
 )
 
-type NetworkOrgProcessor struct {
+type NetworkOrgMissingProcessor struct {
 	questionRunnerService services.QuestionRunnerService
 	client                inngestgo.Client
 	cfg                   *config.Config
 }
 
-func NewNetworkOrgProcessor(
+func NewNetworkOrgMissingProcessor(
 	questionRunnerService services.QuestionRunnerService,
 	cfg *config.Config,
-) *NetworkOrgProcessor {
-	return &NetworkOrgProcessor{
+) *NetworkOrgMissingProcessor {
+	return &NetworkOrgMissingProcessor{
 		questionRunnerService: questionRunnerService,
 		cfg:                   cfg,
 	}
 }
 
-func (p *NetworkOrgProcessor) SetClient(client inngestgo.Client) {
+func (p *NetworkOrgMissingProcessor) SetClient(client inngestgo.Client) {
 	p.client = client
 }
 
-func (p *NetworkOrgProcessor) ProcessNetworkOrg() inngestgo.ServableFunction {
+func (p *NetworkOrgMissingProcessor) ProcessNetworkOrgMissing() inngestgo.ServableFunction {
 	fn, err := inngestgo.CreateFunction(
 		p.client,
 		inngestgo.FunctionOpts{
-			ID:      "process-network-org",
-			Name:    "Process Network Org Data Extraction",
+			ID:      "process-network-org-missing",
+			Name:    "Process Network Org Missing Evaluations",
 			Retries: inngestgo.IntPtr(3),
 		},
-		inngestgo.EventTrigger("network.org.process", nil),
-		func(ctx context.Context, input inngestgo.Input[NetworkOrgProcessEvent]) (any, error) {
+		inngestgo.EventTrigger("network.org.missing.process", nil),
+		func(ctx context.Context, input inngestgo.Input[NetworkOrgMissingProcessEvent]) (any, error) {
 			orgID := input.Event.Data.OrgID
-			fmt.Printf("[ProcessNetworkOrg] Starting network org processing for org: %s\n", orgID)
+			fmt.Printf("[ProcessNetworkOrgMissing] Starting network org missing evaluation processing for org: %s\n", orgID)
 
 			// Step 1: Fetch org details and network
 			orgDetailsResult, err := step.Run(ctx, "fetch-org-details", func(ctx context.Context) (interface{}, error) {
-				fmt.Printf("[ProcessNetworkOrg] Step 1: Fetching org details and network for org: %s\n", orgID)
+				fmt.Printf("[ProcessNetworkOrgMissing] Step 1: Fetching org details and network for org: %s\n", orgID)
 				orgDetails, err := p.questionRunnerService.GetOrgDetailsForNetworkProcessing(ctx, orgID)
 				if err != nil {
 					return nil, fmt.Errorf("failed to fetch org details: %w", err)
 				}
 
-				fmt.Printf("[ProcessNetworkOrg] Found org: %s in network: %s\n", orgDetails.OrgName, orgDetails.NetworkID)
+				fmt.Printf("[ProcessNetworkOrgMissing] Found org: %s in network: %s\n", orgDetails.OrgName, orgDetails.NetworkID)
 				return map[string]interface{}{
 					"org_name":     orgDetails.OrgName,
 					"network_id":   orgDetails.NetworkID,
@@ -66,18 +66,18 @@ func (p *NetworkOrgProcessor) ProcessNetworkOrg() inngestgo.ServableFunction {
 				return nil, fmt.Errorf("step 1 failed: %w", err)
 			}
 
-			// Step 2: Get latest network question runs
-			questionRunsResult, err := step.Run(ctx, "fetch-network-question-runs", func(ctx context.Context) (interface{}, error) {
-				fmt.Printf("[ProcessNetworkOrg] Step 2: Fetching latest network question runs\n")
+			// Step 2: Get question runs missing network_org_eval records
+			questionRunsResult, err := step.Run(ctx, "fetch-missing-question-runs", func(ctx context.Context) (interface{}, error) {
+				fmt.Printf("[ProcessNetworkOrgMissing] Step 2: Fetching question runs missing evaluations\n")
 				orgDetailsData := orgDetailsResult.(map[string]interface{})
 				networkID := orgDetailsData["network_id"].(string)
 
-				questionRuns, err := p.questionRunnerService.GetLatestNetworkQuestionRuns(ctx, networkID)
+				questionRuns, err := p.questionRunnerService.GetMissingNetworkOrgQuestionRuns(ctx, networkID, orgID)
 				if err != nil {
-					return nil, fmt.Errorf("failed to fetch network question runs: %w", err)
+					return nil, fmt.Errorf("failed to fetch missing question runs: %w", err)
 				}
 
-				fmt.Printf("[ProcessNetworkOrg] Found %d latest network question runs\n", len(questionRuns))
+				fmt.Printf("[ProcessNetworkOrgMissing] Found %d question runs missing evaluations\n", len(questionRuns))
 				return map[string]interface{}{
 					"question_runs": questionRuns,
 					"count":         len(questionRuns),
@@ -90,7 +90,6 @@ func (p *NetworkOrgProcessor) ProcessNetworkOrg() inngestgo.ServableFunction {
 			// Extract data from results
 			orgDetailsData := orgDetailsResult.(map[string]interface{})
 			questionRunsData := questionRunsResult.(map[string]interface{})
-			questionRuns := questionRunsData["question_runs"].([]interface{})
 			questionCount := int(questionRunsData["count"].(float64))
 			orgName := orgDetailsData["org_name"].(string)
 			networkID := orgDetailsData["network_id"].(string)
@@ -101,6 +100,24 @@ func (p *NetworkOrgProcessor) ProcessNetworkOrg() inngestgo.ServableFunction {
 			for i, website := range orgWebsites {
 				websites[i] = website.(string)
 			}
+
+			// If no missing evaluations, return early
+			if questionCount == 0 {
+				fmt.Printf("[ProcessNetworkOrgMissing] ✅ No missing evaluations found for org %s\n", orgID)
+				return map[string]interface{}{
+					"org_id":                  orgID,
+					"network_id":              networkID,
+					"org_name":                orgName,
+					"status":                  "completed",
+					"pipeline":                "network_org_missing_processing",
+					"question_runs_processed": 0,
+					"message":                 "No missing evaluations to process",
+					"completed_at":            time.Now().UTC(),
+				}, nil
+			}
+
+			// Extract question runs (only after we know there are results)
+			questionRuns := questionRunsData["question_runs"].([]interface{})
 
 			// Step 3: Process each question run individually
 			var allResults []interface{}
@@ -113,7 +130,7 @@ func (p *NetworkOrgProcessor) ProcessNetworkOrg() inngestgo.ServableFunction {
 				stepName := fmt.Sprintf("process-question-run-%d", questionIndex)
 
 				_, err := step.Run(ctx, stepName, func(ctx context.Context) (interface{}, error) {
-					fmt.Printf("[ProcessNetworkOrg] Step %d: Processing question run %d/%d: %s\n",
+					fmt.Printf("[ProcessNetworkOrgMissing] Step %d: Processing question run %d/%d: %s\n",
 						questionIndex+2, questionIndex, questionCount, questionRunID)
 
 					// Parse UUIDs
@@ -132,7 +149,7 @@ func (p *NetworkOrgProcessor) ProcessNetworkOrg() inngestgo.ServableFunction {
 						return nil, fmt.Errorf("failed to process question run %s: %w", questionRunID, err)
 					}
 
-					fmt.Printf("[ProcessNetworkOrg] Successfully processed question run %d/%d: %s\n",
+					fmt.Printf("[ProcessNetworkOrgMissing] Successfully processed question run %d/%d: %s\n",
 						questionIndex, questionCount, questionRunID)
 
 					return map[string]interface{}{
@@ -144,7 +161,7 @@ func (p *NetworkOrgProcessor) ProcessNetworkOrg() inngestgo.ServableFunction {
 					}, nil
 				})
 				if err != nil {
-					fmt.Printf("[ProcessNetworkOrg] Warning: Failed to process question run %d/%d: %v\n",
+					fmt.Printf("[ProcessNetworkOrgMissing] Warning: Failed to process question run %d/%d: %v\n",
 						questionIndex, questionCount, err)
 					continue
 				}
@@ -162,25 +179,26 @@ func (p *NetworkOrgProcessor) ProcessNetworkOrg() inngestgo.ServableFunction {
 				"network_id":              networkID,
 				"org_name":                orgName,
 				"status":                  "completed",
-				"pipeline":                "network_org_processing",
+				"pipeline":                "network_org_missing_processing",
 				"question_runs_processed": questionCount,
 				"completed_at":            time.Now().UTC(),
 			}
 
-			fmt.Printf("[ProcessNetworkOrg] ✅ COMPLETED: Network org processing for org %s\n", orgID)
-			fmt.Printf("[ProcessNetworkOrg] 📊 Data stored: network_org_evals, network_org_competitors, network_org_citations\n")
+			fmt.Printf("[ProcessNetworkOrgMissing] ✅ COMPLETED: Network org missing evaluation processing for org %s\n", orgID)
+			fmt.Printf("[ProcessNetworkOrgMissing] 📊 Data stored: %d missing evaluations processed\n", questionCount)
+			fmt.Printf("[ProcessNetworkOrgMissing] 📊 Tables updated: network_org_evals, network_org_competitors, network_org_citations\n")
 
 			return finalResult, nil
 		},
 	)
 	if err != nil {
-		panic(fmt.Errorf("failed to create ProcessNetworkOrg function: %w", err))
+		panic(fmt.Errorf("failed to create ProcessNetworkOrgMissing function: %w", err))
 	}
 	return fn
 }
 
 // Event types
-type NetworkOrgProcessEvent struct {
+type NetworkOrgMissingProcessEvent struct {
 	OrgID       string `json:"org_id"`
 	TriggeredBy string `json:"triggered_by"`
 	UserID      string `json:"user_id,omitempty"`

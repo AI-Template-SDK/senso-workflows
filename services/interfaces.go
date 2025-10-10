@@ -73,6 +73,14 @@ type RealOrgDetails struct {
 	Websites      []string // Organization website URLs for citation classification
 }
 
+// NetworkDetails contains complete network data from database
+type NetworkDetails struct {
+	Network   *models.Network
+	Models    []*models.GeoModel
+	Locations []*models.OrgLocation // Networks can use same location structure as orgs
+	Questions []interfaces.GeoQuestionWithTags
+}
+
 // CompetitiveMetrics contains calculated competitive intelligence metrics
 type CompetitiveMetrics struct {
 	TargetMentioned bool
@@ -92,15 +100,21 @@ type ExtractedData struct {
 type AIProvider interface {
 	RunQuestion(ctx context.Context, query string, websearch bool, location *workflowModels.Location) (*AIResponse, error)
 	RunQuestionWebSearch(ctx context.Context, query string) (*AIResponse, error)
+
+	// Batch processing support
+	SupportsBatching() bool
+	GetMaxBatchSize() int
+	RunQuestionBatch(ctx context.Context, queries []string, websearch bool, location *workflowModels.Location) ([]*AIResponse, error)
 }
 
 // AIResponse contains the response from an AI provider
 type AIResponse struct {
-	Response     string
-	InputTokens  int
-	OutputTokens int
-	Cost         float64
-	Citations    []string
+	Response                string
+	InputTokens             int
+	OutputTokens            int
+	Cost                    float64
+	Citations               []string
+	ShouldProcessEvaluation bool
 }
 
 // NetworkOrgProcessingResult represents the result of processing network org data
@@ -150,8 +164,18 @@ type QuestionRunnerService interface {
 	GetOrgDetailsForNetworkProcessing(ctx context.Context, orgID string) (*OrgDetailsForNetworkProcessing, error)
 	GetLatestNetworkQuestionRuns(ctx context.Context, networkID string) ([]map[string]interface{}, error)
 	GetAllNetworkQuestionRuns(ctx context.Context, networkID string) ([]map[string]interface{}, error)
+	GetMissingNetworkOrgQuestionRuns(ctx context.Context, networkID string, orgID string) ([]map[string]interface{}, error)
 	ProcessNetworkOrgQuestionRun(ctx context.Context, questionRunID uuid.UUID, orgID uuid.UUID, orgName string, orgWebsites []string, questionText string, responseText string) (*NetworkOrgExtractionResult, error)
 	ProcessNetworkOrgQuestionRunWithCleanup(ctx context.Context, questionRunID uuid.UUID, orgID uuid.UUID, orgName string, orgWebsites []string, questionText string, responseText string) (*NetworkOrgExtractionResult, error)
+
+	// Network batch processing with multi-model/location support
+	GetNetworkDetails(ctx context.Context, networkID string) (*NetworkDetails, error)
+	RunNetworkQuestionMatrix(ctx context.Context, networkDetails *NetworkDetails, batchID uuid.UUID) (*NetworkProcessingSummary, error)
+	GetOrCreateNetworkBatch(ctx context.Context, networkID uuid.UUID, totalQuestions int) (*models.QuestionRunBatch, bool, error)
+	StartNetworkBatch(ctx context.Context, batchID uuid.UUID) error
+	UpdateNetworkBatchProgress(ctx context.Context, batchID uuid.UUID, completedCount, failedCount int) error
+	CompleteNetworkBatch(ctx context.Context, batchID uuid.UUID, totalProcessed int, totalFailed int) error
+	CheckQuestionRunExists(ctx context.Context, questionID uuid.UUID, modelName, countryCode string, batchID uuid.UUID) (*models.QuestionRun, error)
 }
 
 // New DataExtractionService interface for parsing AI responses
@@ -186,6 +210,7 @@ type OrgEvaluationService interface {
 	ProcessOrgQuestionRuns(ctx context.Context, orgID uuid.UUID, orgName string, orgWebsites []string, questionRuns []*models.QuestionRun) (*OrgEvaluationSummary, error)
 	RunQuestionMatrixWithOrgEvaluation(ctx context.Context, orgDetails *RealOrgDetails, batchID uuid.UUID) (*OrgEvaluationSummary, error)
 	// Batch management methods
+	GetOrCreateTodaysBatch(ctx context.Context, orgID uuid.UUID, totalQuestions int) (*models.QuestionRunBatch, bool, error)
 	CreateBatch(ctx context.Context, batch *models.QuestionRunBatch) error
 	StartBatch(ctx context.Context, batchID uuid.UUID) error
 	CompleteBatch(ctx context.Context, batchID uuid.UUID) error
@@ -230,6 +255,13 @@ type OrgEvaluationSummary struct {
 	TotalEvaluations int
 	TotalCitations   int
 	TotalCompetitors int
+	TotalCost        float64
+	ProcessingErrors []string
+}
+
+// NetworkProcessingSummary represents the summary of network question processing
+type NetworkProcessingSummary struct {
+	TotalProcessed   int
 	TotalCost        float64
 	ProcessingErrors []string
 }

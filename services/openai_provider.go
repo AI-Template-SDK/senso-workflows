@@ -212,10 +212,11 @@ func (p *openAIProvider) RunQuestion(ctx context.Context, query string, websearc
 	}
 
 	result := &AIResponse{
-		Response:     responseContent,
-		InputTokens:  int(response.Usage.PromptTokens),
-		OutputTokens: int(response.Usage.CompletionTokens),
-		Cost:         p.costService.CalculateCost(p.GetProviderName(), p.model, int(response.Usage.PromptTokens), int(response.Usage.CompletionTokens), false),
+		Response:                responseContent,
+		InputTokens:             int(response.Usage.PromptTokens),
+		OutputTokens:            int(response.Usage.CompletionTokens),
+		Cost:                    p.costService.CalculateCost(p.GetProviderName(), p.model, int(response.Usage.PromptTokens), int(response.Usage.CompletionTokens), false),
+		ShouldProcessEvaluation: true,
 	}
 
 	return result, nil
@@ -299,10 +300,11 @@ func (p *openAIProvider) runWebSearch(ctx context.Context, query string, locatio
 	}
 
 	result := &AIResponse{
-		Response:     responseText,
-		InputTokens:  webSearchResp.Usage.InputTokens,
-		OutputTokens: webSearchResp.Usage.OutputTokens,
-		Cost:         p.costService.CalculateCost(p.GetProviderName(), p.model, webSearchResp.Usage.InputTokens, webSearchResp.Usage.OutputTokens, true),
+		Response:                responseText,
+		InputTokens:             webSearchResp.Usage.InputTokens,
+		OutputTokens:            webSearchResp.Usage.OutputTokens,
+		Cost:                    p.costService.CalculateCost(p.GetProviderName(), p.model, webSearchResp.Usage.InputTokens, webSearchResp.Usage.OutputTokens, true),
+		ShouldProcessEvaluation: true,
 	}
 
 	return result, nil
@@ -373,4 +375,30 @@ func (p *openAIProvider) RunQuestionWebSearch(ctx context.Context, query string)
 
 	// Use the existing web search method with neutral location
 	return p.runWebSearch(ctx, query, neutralLocation)
+}
+
+// SupportsBatching returns false for OpenAI (no native batching support)
+func (p *openAIProvider) SupportsBatching() bool {
+	return false
+}
+
+// GetMaxBatchSize returns 1 for OpenAI (no batching)
+func (p *openAIProvider) GetMaxBatchSize() int {
+	return 1
+}
+
+// RunQuestionBatch processes questions sequentially for OpenAI (no batching support)
+func (p *openAIProvider) RunQuestionBatch(ctx context.Context, queries []string, websearch bool, location *models.Location) ([]*AIResponse, error) {
+	fmt.Printf("[OpenAIProvider] 🔄 Processing %d questions sequentially (no batching support)\n", len(queries))
+
+	responses := make([]*AIResponse, len(queries))
+	for i, query := range queries {
+		response, err := p.RunQuestion(ctx, query, websearch, location)
+		if err != nil {
+			return nil, fmt.Errorf("failed to process question %d: %w", i+1, err)
+		}
+		responses[i] = response
+	}
+
+	return responses, nil
 }

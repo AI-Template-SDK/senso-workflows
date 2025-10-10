@@ -436,8 +436,8 @@ func (s *orgEvaluationService) ExtractCompetitors(ctx context.Context, questionR
 func (s *orgEvaluationService) ExtractCitations(ctx context.Context, questionRunID, orgID uuid.UUID, responseText string, orgWebsites []string) (*CitationExtractionResult, error) {
 	fmt.Printf("[ExtractCitations] 🔍 Processing citations for question run %s, org %s\n", questionRunID, orgID)
 
-	// Use xurls strict mode to find all URLs in the text
-	matches := xurls.Strict().FindAllString(responseText, -1)
+	// Use xurls relaxed mode to find all URLs in the text
+	matches := xurls.Relaxed().FindAllString(responseText, -1)
 
 	var citations []*models.OrgCitation
 	seenURLs := make(map[string]bool)
@@ -594,7 +594,7 @@ func (s *orgEvaluationService) RunQuestionMatrixWithOrgEvaluation(ctx context.Co
 		ProcessingErrors: make([]string, 0),
 	}
 
-	// Step 1: Generate name variations ONCE for the entire org (not per question)
+	// PHASE 1: Generate name variations ONCE for the entire org
 	fmt.Printf("[RunQuestionMatrixWithOrgEvaluation] 🔍 Generating name variations for org: %s\n", orgDetails.Org.Name)
 	nameVariations, err := s.GenerateNameVariations(ctx, orgDetails.Org.Name, orgDetails.Websites)
 	if err != nil {
@@ -602,98 +602,369 @@ func (s *orgEvaluationService) RunQuestionMatrixWithOrgEvaluation(ctx context.Co
 	}
 	fmt.Printf("[RunQuestionMatrixWithOrgEvaluation] ✅ Generated %d name variations for org\n", len(nameVariations))
 
-	// Track all created question runs for is_latest flag management
-	var allRuns []*models.QuestionRun
+	// PHASE 2: Execute all questions grouped by Model-Location pairs
+	fmt.Printf("[RunQuestionMatrixWithOrgEvaluation] 🚀 PHASE 2: Executing questions (batched by model-location)\n")
+	allQuestionRuns, err := s.executeAllQuestions(ctx, orgDetails, batchID, summary)
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute questions: %w", err)
+	}
+	fmt.Printf("[RunQuestionMatrixWithOrgEvaluation] ✅ Completed question execution: %d question runs created\n", len(allQuestionRuns))
 
-	// Process each question across all model×location combinations
-	// NOTE: orgDetails.Questions contains ONLY questions belonging to this specific org
-	// (filtered by GeoQuestionRepo.GetByOrgWithTags() in OrgService.GetOrgDetails())
-	for i, questionWithTags := range orgDetails.Questions {
-		question := questionWithTags.Question
-		fmt.Printf("[RunQuestionMatrixWithOrgEvaluation] 📝 Question %d/%d: %s (ID: %s)\n",
-			i+1, len(orgDetails.Questions), question.QuestionText, question.GeoQuestionID)
-
-		// Process across all model×location combinations for this question
-		for _, model := range orgDetails.Models {
-			for _, location := range orgDetails.Locations {
-				fmt.Printf("[RunQuestionMatrixWithOrgEvaluation] 🔄 Processing question %s with model %s at location %s\n",
-					question.GeoQuestionID, model.Name, location.CountryCode)
-
-				// Execute AI call to get response
-				aiResponse, err := s.executeAICall(ctx, question.QuestionText, model.Name, location)
-				if err != nil {
-					summary.ProcessingErrors = append(summary.ProcessingErrors,
-						fmt.Sprintf("Failed to execute AI call for question %s with model %s: %v", question.GeoQuestionID, model.Name, err))
-					continue
-				}
-
-				// Create question run record
-				questionRun := &models.QuestionRun{
-					QuestionRunID: uuid.New(),
-					GeoQuestionID: question.GeoQuestionID,
-					ModelID:       &model.GeoModelID,
-					LocationID:    &location.OrgLocationID,
-					ResponseText:  &aiResponse.Response,
-					InputTokens:   &aiResponse.InputTokens,
-					OutputTokens:  &aiResponse.OutputTokens,
-					TotalCost:     &aiResponse.Cost,
-					BatchID:       &batchID,              // Link to batch
-					RunModel:      &model.Name,           // Model name string
-					RunCountry:    &location.CountryCode, // Country code string
-					RunRegion:     &location.RegionName,  // Region name string
-					IsLatest:      true,                  // Mark as latest for now
-					CreatedAt:     time.Now(),
-					UpdatedAt:     time.Now(),
-				}
-
-				// Store question run in database
-				if err := s.repos.QuestionRunRepo.Create(ctx, questionRun); err != nil {
-					summary.ProcessingErrors = append(summary.ProcessingErrors,
-						fmt.Sprintf("Failed to store question run for question %s: %v", question.GeoQuestionID, err))
-					continue
-				}
-
-				// Track this run for is_latest flag management
-				allRuns = append(allRuns, questionRun)
-
-				fmt.Printf("[RunQuestionMatrixWithOrgEvaluation] ✅ Stored question run %s for org %s\n",
-					questionRun.QuestionRunID, orgDetails.Org.OrgID)
-				summary.TotalProcessed++
-
-				// Now process with org evaluation methodology using pre-generated name variations
-				err = s.processQuestionRunWithOrgEvaluation(ctx, questionRun, orgDetails.Org.OrgID, orgDetails.Org.Name, orgDetails.Websites, nameVariations, summary)
-				if err != nil {
-					summary.ProcessingErrors = append(summary.ProcessingErrors,
-						fmt.Sprintf("Failed to process org evaluation for question run %s: %v", questionRun.QuestionRunID, err))
-					// Update batch with failed question
-					if updateErr := s.UpdateBatchProgress(ctx, batchID, 0, 1); updateErr != nil {
-						fmt.Printf("[RunQuestionMatrixWithOrgEvaluation] Warning: Failed to update batch progress: %v\n", updateErr)
-					}
-				} else {
-					// Update batch with completed question
-					if updateErr := s.UpdateBatchProgress(ctx, batchID, 1, 0); updateErr != nil {
-						fmt.Printf("[RunQuestionMatrixWithOrgEvaluation] Warning: Failed to update batch progress: %v\n", updateErr)
-					}
-				}
-
-				fmt.Printf("[RunQuestionMatrixWithOrgEvaluation] ✅ Completed processing for question %s with model %s\n",
-					question.GeoQuestionID, model.Name)
-			}
-		}
+	// PHASE 3: Process extractions for all completed question runs
+	fmt.Printf("[RunQuestionMatrixWithOrgEvaluation] 🔍 PHASE 3: Processing extractions for %d question runs\n", len(allQuestionRuns))
+	err = s.processAllExtractions(ctx, allQuestionRuns, orgDetails.Org.OrgID, orgDetails.Org.Name, orgDetails.Websites, nameVariations, batchID, summary)
+	if err != nil {
+		return nil, fmt.Errorf("failed to process extractions: %w", err)
 	}
 
 	fmt.Printf("[RunQuestionMatrixWithOrgEvaluation] 🎉 Question matrix completed: %d processed, %d evaluations, %d citations, %d competitors, $%.6f total cost\n",
 		summary.TotalProcessed, summary.TotalEvaluations, summary.TotalCitations, summary.TotalCompetitors, summary.TotalCost)
 
 	// Update is_latest flags for all created question runs
-	if len(allRuns) > 0 {
-		if err := s.updateLatestFlags(ctx, orgDetails.Questions, allRuns); err != nil {
+	if len(allQuestionRuns) > 0 {
+		if err := s.updateLatestFlags(ctx, orgDetails.Questions, allQuestionRuns); err != nil {
 			return nil, fmt.Errorf("failed to update latest flags: %w", err)
 		}
-		fmt.Printf("[RunQuestionMatrixWithOrgEvaluation] ✅ Updated is_latest flags for %d question runs\n", len(allRuns))
+		fmt.Printf("[RunQuestionMatrixWithOrgEvaluation] ✅ Updated is_latest flags for %d question runs\n", len(allQuestionRuns))
 	}
 
 	return summary, nil
+}
+
+// ModelLocationPair represents a unique combination of model and location
+type ModelLocationPair struct {
+	Model    *models.GeoModel
+	Location *models.OrgLocation
+}
+
+// executeAllQuestions executes all questions grouped by model-location pairs (PHASE 2)
+func (s *orgEvaluationService) executeAllQuestions(ctx context.Context, orgDetails *RealOrgDetails, batchID uuid.UUID, summary *OrgEvaluationSummary) ([]*models.QuestionRun, error) {
+	var allQuestionRuns []*models.QuestionRun
+
+	// Create model-location pairs
+	pairs := s.createModelLocationPairs(orgDetails.Models, orgDetails.Locations)
+	fmt.Printf("[executeAllQuestions] Created %d model-location pairs\n", len(pairs))
+
+	// Process each model-location pair
+	for pairIdx, pair := range pairs {
+		fmt.Printf("[executeAllQuestions] 📦 Processing pair %d/%d: model=%s, location=%s\n",
+			pairIdx+1, len(pairs), pair.Model.Name, pair.Location.CountryCode)
+
+		// Get provider for this model
+		provider, err := s.getProvider(pair.Model.Name)
+		if err != nil {
+			summary.ProcessingErrors = append(summary.ProcessingErrors,
+				fmt.Sprintf("Failed to get provider for model %s: %v", pair.Model.Name, err))
+			continue
+		}
+
+		// Execute questions for this pair (batched or sequential)
+		questionRuns, err := s.executeQuestionsForPair(ctx, orgDetails.Questions, pair, provider, batchID, summary)
+		if err != nil {
+			summary.ProcessingErrors = append(summary.ProcessingErrors,
+				fmt.Sprintf("Failed to execute questions for model %s, location %s: %v", pair.Model.Name, pair.Location.CountryCode, err))
+			continue
+		}
+
+		allQuestionRuns = append(allQuestionRuns, questionRuns...)
+		fmt.Printf("[executeAllQuestions] ✅ Completed pair %d/%d: created %d question runs\n",
+			pairIdx+1, len(pairs), len(questionRuns))
+	}
+
+	return allQuestionRuns, nil
+}
+
+// createModelLocationPairs creates all unique combinations of models and locations
+func (s *orgEvaluationService) createModelLocationPairs(models []*models.GeoModel, locations []*models.OrgLocation) []ModelLocationPair {
+	pairs := make([]ModelLocationPair, 0, len(models)*len(locations))
+	for _, model := range models {
+		for _, location := range locations {
+			pairs = append(pairs, ModelLocationPair{
+				Model:    model,
+				Location: location,
+			})
+		}
+	}
+	return pairs
+}
+
+// executeQuestionsForPair executes all questions for a specific model-location pair
+func (s *orgEvaluationService) executeQuestionsForPair(
+	ctx context.Context,
+	questions []interfaces.GeoQuestionWithTags,
+	pair ModelLocationPair,
+	provider AIProvider,
+	batchID uuid.UUID,
+	summary *OrgEvaluationSummary,
+) ([]*models.QuestionRun, error) {
+	var questionRuns []*models.QuestionRun
+
+	// Convert location to workflow model format
+	workflowLocation := &workflowModels.Location{
+		Country: pair.Location.CountryCode,
+		Region:  pair.Location.RegionName,
+	}
+
+	if provider.SupportsBatching() {
+		// Batch processing for BrightData/Perplexity
+		maxBatchSize := provider.GetMaxBatchSize()
+		fmt.Printf("[executeQuestionsForPair] 🔄 Provider supports batching (max size: %d)\n", maxBatchSize)
+
+		// Process questions in batches
+		for i := 0; i < len(questions); i += maxBatchSize {
+			end := i + maxBatchSize
+			if end > len(questions) {
+				end = len(questions)
+			}
+			batch := questions[i:end]
+
+			fmt.Printf("[executeQuestionsForPair] 📦 Processing batch %d-%d of %d questions\n", i+1, end, len(questions))
+
+			// Execute batch
+			runs, err := s.executeBatch(ctx, batch, pair, provider, workflowLocation, batchID, summary)
+			if err != nil {
+				// Log error but continue with next batch instead of failing entirely
+				errMsg := fmt.Sprintf("Failed to execute batch %d-%d for model %s, location %s: %v", i+1, end, pair.Model.Name, pair.Location.CountryCode, err)
+				fmt.Printf("[executeQuestionsForPair] ❌ %s\n", errMsg)
+				summary.ProcessingErrors = append(summary.ProcessingErrors, errMsg)
+				continue // Continue with next batch
+			}
+
+			questionRuns = append(questionRuns, runs...)
+		}
+	} else {
+		// Sequential processing for OpenAI/Anthropic
+		fmt.Printf("[executeQuestionsForPair] 🔄 Provider does not support batching, processing sequentially\n")
+
+		for idx, questionWithTags := range questions {
+			question := questionWithTags.Question
+			fmt.Printf("[executeQuestionsForPair] 📝 Processing question %d/%d: %s\n",
+				idx+1, len(questions), question.QuestionText)
+
+			// Execute single question
+			run, err := s.executeSingleQuestion(ctx, question, pair, provider, workflowLocation, batchID, summary)
+			if err != nil {
+				summary.ProcessingErrors = append(summary.ProcessingErrors,
+					fmt.Sprintf("Failed to execute question %s: %v", question.GeoQuestionID, err))
+				continue
+			}
+
+			questionRuns = append(questionRuns, run)
+		}
+	}
+
+	return questionRuns, nil
+}
+
+// executeBatch executes a batch of questions using the provider's batch API
+func (s *orgEvaluationService) executeBatch(
+	ctx context.Context,
+	batch []interfaces.GeoQuestionWithTags,
+	pair ModelLocationPair,
+	provider AIProvider,
+	workflowLocation *workflowModels.Location,
+	batchID uuid.UUID,
+	summary *OrgEvaluationSummary,
+) ([]*models.QuestionRun, error) {
+	// Check which questions need to be executed (filter out existing ones)
+	questionsToExecute := make([]interfaces.GeoQuestionWithTags, 0)
+	existingRuns := make([]*models.QuestionRun, 0)
+
+	for _, questionWithTags := range batch {
+		question := questionWithTags.Question
+
+		// Check if question run already exists
+		existingRun, err := s.CheckQuestionRunExists(ctx, question.GeoQuestionID, pair.Model.GeoModelID, pair.Location.OrgLocationID, batchID)
+		if err != nil {
+			fmt.Printf("[executeBatch] Warning: Failed to check for existing run: %v\n", err)
+			questionsToExecute = append(questionsToExecute, questionWithTags)
+			continue
+		}
+
+		if existingRun != nil {
+			fmt.Printf("[executeBatch] ✓ Skipping question %s - already executed\n", question.GeoQuestionID)
+			existingRuns = append(existingRuns, existingRun)
+		} else {
+			questionsToExecute = append(questionsToExecute, questionWithTags)
+		}
+	}
+
+	// If all questions already exist, return existing runs
+	if len(questionsToExecute) == 0 {
+		fmt.Printf("[executeBatch] All %d questions already executed, skipping batch API call\n", len(batch))
+		return existingRuns, nil
+	}
+
+	fmt.Printf("[executeBatch] Executing %d new questions (skipped %d existing)\n", len(questionsToExecute), len(existingRuns))
+
+	// Extract query strings from questions that need execution
+	queries := make([]string, len(questionsToExecute))
+	for i, q := range questionsToExecute {
+		queries[i] = q.Question.QuestionText
+	}
+
+	fmt.Printf("[executeBatch] 🚀 Calling provider.RunQuestionBatch with %d queries\n", len(queries))
+
+	// Execute batch API call
+	responses, err := provider.RunQuestionBatch(ctx, queries, true, workflowLocation)
+	if err != nil {
+		fmt.Printf("[executeBatch] ❌ Batch API call failed: %v\n", err)
+		return nil, fmt.Errorf("batch API call failed: %w", err)
+	}
+
+	fmt.Printf("[executeBatch] ✅ Batch API call succeeded, got %d responses\n", len(responses))
+
+	if len(responses) != len(questionsToExecute) {
+		errMsg := fmt.Sprintf("batch returned %d responses but expected %d", len(responses), len(questionsToExecute))
+		fmt.Printf("[executeBatch] ❌ %s\n", errMsg)
+		return nil, fmt.Errorf("%s", errMsg)
+	}
+
+	// Create and store new question runs
+	newQuestionRuns := make([]*models.QuestionRun, len(questionsToExecute))
+	for i, questionWithTags := range questionsToExecute {
+		question := questionWithTags.Question
+		aiResponse := responses[i]
+
+		questionRun := &models.QuestionRun{
+			QuestionRunID: uuid.New(),
+			GeoQuestionID: question.GeoQuestionID,
+			ModelID:       &pair.Model.GeoModelID,
+			LocationID:    &pair.Location.OrgLocationID,
+			ResponseText:  &aiResponse.Response,
+			InputTokens:   &aiResponse.InputTokens,
+			OutputTokens:  &aiResponse.OutputTokens,
+			TotalCost:     &aiResponse.Cost,
+			BatchID:       &batchID,
+			RunModel:      &pair.Model.Name,
+			RunCountry:    &pair.Location.CountryCode,
+			RunRegion:     pair.Location.RegionName,
+			IsLatest:      true,
+			CreatedAt:     time.Now(),
+			UpdatedAt:     time.Now(),
+		}
+
+		// Store in database
+		if err := s.repos.QuestionRunRepo.Create(ctx, questionRun); err != nil {
+			return nil, fmt.Errorf("failed to store question run: %w", err)
+		}
+
+		newQuestionRuns[i] = questionRun
+		summary.TotalProcessed++
+	}
+
+	// Combine existing and new question runs
+	allQuestionRuns := append(existingRuns, newQuestionRuns...)
+	fmt.Printf("[executeBatch] ✅ Successfully created %d new question runs, returning %d total runs\n", len(newQuestionRuns), len(allQuestionRuns))
+	return allQuestionRuns, nil
+}
+
+// executeSingleQuestion executes a single question (for non-batching providers)
+func (s *orgEvaluationService) executeSingleQuestion(
+	ctx context.Context,
+	question *models.GeoQuestion,
+	pair ModelLocationPair,
+	provider AIProvider,
+	workflowLocation *workflowModels.Location,
+	batchID uuid.UUID,
+	summary *OrgEvaluationSummary,
+) (*models.QuestionRun, error) {
+	// Check if question run already exists
+	existingRun, err := s.CheckQuestionRunExists(ctx, question.GeoQuestionID, pair.Model.GeoModelID, pair.Location.OrgLocationID, batchID)
+	if err != nil {
+		fmt.Printf("[executeSingleQuestion] Warning: Failed to check for existing run: %v\n", err)
+		// Continue with execution if check fails
+	}
+
+	if existingRun != nil {
+		fmt.Printf("[executeSingleQuestion] ✓ Skipping question %s - already executed\n", question.GeoQuestionID)
+		return existingRun, nil
+	}
+
+	// Execute AI call
+	aiResponse, err := provider.RunQuestion(ctx, question.QuestionText, true, workflowLocation)
+	if err != nil {
+		return nil, fmt.Errorf("AI call failed: %w", err)
+	}
+
+	// Create question run record
+	questionRun := &models.QuestionRun{
+		QuestionRunID: uuid.New(),
+		GeoQuestionID: question.GeoQuestionID,
+		ModelID:       &pair.Model.GeoModelID,
+		LocationID:    &pair.Location.OrgLocationID,
+		ResponseText:  &aiResponse.Response,
+		InputTokens:   &aiResponse.InputTokens,
+		OutputTokens:  &aiResponse.OutputTokens,
+		TotalCost:     &aiResponse.Cost,
+		BatchID:       &batchID,
+		RunModel:      &pair.Model.Name,
+		RunCountry:    &pair.Location.CountryCode,
+		RunRegion:     pair.Location.RegionName,
+		IsLatest:      true,
+		CreatedAt:     time.Now(),
+		UpdatedAt:     time.Now(),
+	}
+
+	// Store in database
+	if err := s.repos.QuestionRunRepo.Create(ctx, questionRun); err != nil {
+		return nil, fmt.Errorf("failed to store question run: %w", err)
+	}
+
+	summary.TotalProcessed++
+	return questionRun, nil
+}
+
+// processAllExtractions processes extractions for all question runs (PHASE 3)
+func (s *orgEvaluationService) processAllExtractions(
+	ctx context.Context,
+	questionRuns []*models.QuestionRun,
+	orgID uuid.UUID,
+	orgName string,
+	websites []string,
+	nameVariations []string,
+	batchID uuid.UUID,
+	summary *OrgEvaluationSummary,
+) error {
+	fmt.Printf("[processAllExtractions] Processing extractions for %d question runs\n", len(questionRuns))
+
+	for idx, questionRun := range questionRuns {
+		fmt.Printf("[processAllExtractions] 🔍 Processing extraction %d/%d for question run %s\n",
+			idx+1, len(questionRuns), questionRun.QuestionRunID)
+
+		// Check if extractions already exist
+		// If org_eval exists, skip extraction entirely (even if citations/competitors are missing)
+		hasEval, hasCitations, hasCompetitors, err := s.CheckExtractionsExist(ctx, questionRun.QuestionRunID, orgID)
+		if err != nil {
+			fmt.Printf("[processAllExtractions] Warning: Failed to check for existing extractions: %v\n", err)
+			// Continue with extraction if check fails
+		} else if hasEval {
+			fmt.Printf("[processAllExtractions] ✓ Skipping extraction for question run %s - org_eval already exists (citations:%t competitors:%t)\n",
+				questionRun.QuestionRunID, hasCitations, hasCompetitors)
+			// Update batch as completed (since extraction was already done)
+			if updateErr := s.UpdateBatchProgress(ctx, batchID, 1, 0); updateErr != nil {
+				fmt.Printf("[processAllExtractions] Warning: Failed to update batch progress: %v\n", updateErr)
+			}
+			continue
+		}
+
+		err = s.processQuestionRunWithOrgEvaluation(ctx, questionRun, orgID, orgName, websites, nameVariations, summary)
+		if err != nil {
+			summary.ProcessingErrors = append(summary.ProcessingErrors,
+				fmt.Sprintf("Failed to process org evaluation for question run %s: %v", questionRun.QuestionRunID, err))
+			// Update batch with failed question
+			if updateErr := s.UpdateBatchProgress(ctx, batchID, 0, 1); updateErr != nil {
+				fmt.Printf("[processAllExtractions] Warning: Failed to update batch progress: %v\n", updateErr)
+			}
+		} else {
+			// Update batch with completed question
+			if updateErr := s.UpdateBatchProgress(ctx, batchID, 1, 0); updateErr != nil {
+				fmt.Printf("[processAllExtractions] Warning: Failed to update batch progress: %v\n", updateErr)
+			}
+		}
+	}
+
+	return nil
 }
 
 // executeAICall performs the actual AI model call using the proper AIProvider system with web search
@@ -703,7 +974,7 @@ func (s *orgEvaluationService) executeAICall(ctx context.Context, questionText, 
 	// Convert location to workflow model format
 	workflowLocation := &workflowModels.Location{
 		Country: location.CountryCode,
-		Region:  &location.RegionName,
+		Region:  location.RegionName,
 	}
 
 	// Get the appropriate AI provider (same logic as QuestionRunnerService)
@@ -737,16 +1008,36 @@ func (s *orgEvaluationService) getProvider(model string) (AIProvider, error) {
 	// Debug the config
 	if s.cfg == nil {
 		return nil, fmt.Errorf("config is nil")
-	} else if s.cfg.OpenAIAPIKey == "" {
-		return nil, fmt.Errorf("OpenAI API key is empty in config")
 	}
 
-	// Determine provider based on model name
+	// BrightData ChatGPT provider
+	if strings.Contains(modelLower, "chatgpt") {
+		fmt.Printf("[getProvider] 🎯 Selected BrightData ChatGPT provider for model: %s\n", model)
+		return NewBrightDataProvider(s.cfg, model, s.costService), nil
+	}
+
+	// Perplexity provider (via BrightData)
+	if strings.Contains(modelLower, "perplexity") {
+		fmt.Printf("[getProvider] 🎯 Selected Perplexity provider for model: %s\n", model)
+		return NewPerplexityProvider(s.cfg, model, s.costService), nil
+	}
+
+	// Gemini provider (via BrightData)
+	if strings.Contains(modelLower, "gemini") {
+		fmt.Printf("[getProvider] 🎯 Selected Gemini provider for model: %s\n", model)
+		return NewGeminiProvider(s.cfg, model, s.costService), nil
+	}
+
+	// OpenAI provider (gpt-4.1, etc.)
 	if strings.Contains(modelLower, "gpt") || strings.Contains(modelLower, "4.1") {
+		if s.cfg.OpenAIAPIKey == "" {
+			return nil, fmt.Errorf("OpenAI API key is empty in config")
+		}
 		fmt.Printf("[getProvider] 🎯 Selected OpenAI provider for model: %s\n", model)
 		return NewOpenAIProvider(s.cfg, model, s.costService), nil
 	}
 
+	// Anthropic provider
 	if strings.Contains(modelLower, "claude") || strings.Contains(modelLower, "sonnet") || strings.Contains(modelLower, "opus") || strings.Contains(modelLower, "haiku") {
 		fmt.Printf("[getProvider] 🎯 Selected Anthropic provider for model: %s\n", model)
 		return NewAnthropicProvider(s.cfg, model, s.costService), nil
@@ -755,34 +1046,66 @@ func (s *orgEvaluationService) getProvider(model string) (AIProvider, error) {
 	return nil, fmt.Errorf("unsupported model: %s", model)
 }
 
-// updateLatestFlags manages the is_latest and is_second_latest flags
+// updateLatestFlags manages the is_latest flags for batch processing
+// For org evaluation batches, we need to mark ALL runs in the new batch as is_latest=true
+// because each represents a unique (question, model, location) combination
 func (s *orgEvaluationService) updateLatestFlags(ctx context.Context, questions []interfaces.GeoQuestionWithTags, newRuns []*models.QuestionRun) error {
-	// Group runs by question
-	runsByQuestion := make(map[uuid.UUID][]*models.QuestionRun)
-	for _, run := range newRuns {
-		runsByQuestion[run.GeoQuestionID] = append(runsByQuestion[run.GeoQuestionID], run)
+	if len(newRuns) == 0 {
+		return nil
 	}
 
-	// Update latest flags for each question
-	for questionID, runs := range runsByQuestion {
-		if len(runs) == 0 {
+	// Get the batch ID from the first run (all runs should have the same batch ID)
+	batchID := newRuns[0].BatchID
+	if batchID == nil {
+		return fmt.Errorf("question runs missing batch ID")
+	}
+
+	fmt.Printf("[updateLatestFlags] Updating is_latest flags for batch %s with %d question runs\n", batchID, len(newRuns))
+
+	// Step 1: Mark all old question runs (from previous batches) as is_latest=false for this org
+	// We need to get all question IDs that were processed in this batch
+	questionIDMap := make(map[uuid.UUID]bool)
+	for _, run := range newRuns {
+		questionIDMap[run.GeoQuestionID] = true
+	}
+
+	questionIDs := make([]uuid.UUID, 0, len(questionIDMap))
+	for qID := range questionIDMap {
+		questionIDs = append(questionIDs, qID)
+	}
+
+	// Step 1: Mark old question runs as is_latest=false
+	// For each question in this batch, get all old runs and mark them as not latest
+	for questionID := range questionIDMap {
+		// Get all runs for this question (to find old ones)
+		allRuns, err := s.repos.QuestionRunRepo.GetByQuestion(ctx, questionID)
+		if err != nil {
+			fmt.Printf("[updateLatestFlags] Warning: Failed to get runs for question %s: %v\n", questionID, err)
 			continue
 		}
 
-		// Find the latest run (most recent timestamp)
-		var latestRun *models.QuestionRun
-		for _, run := range runs {
-			if latestRun == nil || run.CreatedAt.After(latestRun.CreatedAt) {
-				latestRun = run
+		// Mark all old runs (not in current batch) as is_latest=false
+		for _, oldRun := range allRuns {
+			if oldRun.BatchID == nil || *oldRun.BatchID != *batchID {
+				oldRun.IsLatest = false
+				oldRun.UpdatedAt = time.Now()
+				if err := s.repos.QuestionRunRepo.Update(ctx, oldRun); err != nil {
+					fmt.Printf("[updateLatestFlags] Warning: Failed to mark old run %s as not latest: %v\n", oldRun.QuestionRunID, err)
+				}
 			}
-		}
-
-		// Update flags in database
-		if err := s.repos.QuestionRunRepo.UpdateLatestFlags(ctx, questionID, latestRun.QuestionRunID); err != nil {
-			return fmt.Errorf("failed to update latest flags for question %s: %w", questionID, err)
 		}
 	}
 
+	// Step 2: Mark all question runs in the NEW batch as is_latest=true
+	for _, run := range newRuns {
+		run.IsLatest = true
+		run.UpdatedAt = time.Now()
+		if err := s.repos.QuestionRunRepo.Update(ctx, run); err != nil {
+			fmt.Printf("[updateLatestFlags] Warning: Failed to mark run %s as latest: %v\n", run.QuestionRunID, err)
+		}
+	}
+
+	fmt.Printf("[updateLatestFlags] ✅ Successfully updated is_latest flags for %d question runs in batch %s\n", len(newRuns), batchID)
 	return nil
 }
 
@@ -816,12 +1139,31 @@ func (s *orgEvaluationService) CompleteBatch(ctx context.Context, batchID uuid.U
 	batch.Status = "completed"
 	batch.CompletedAt = &now
 
-	if err := s.repos.QuestionRunBatchRepo.Update(ctx, batch); err != nil {
-		return fmt.Errorf("failed to update batch: %w", err)
+	// Step 1: Mark all old batches for this org as is_latest=false
+	if batch.OrgID != nil {
+		// Get all batches for this org
+		allBatches, err := s.repos.QuestionRunBatchRepo.GetByOrg(ctx, *batch.OrgID)
+		if err != nil {
+			fmt.Printf("[CompleteBatch] Warning: Failed to get org batches: %v\n", err)
+		} else {
+			// Mark all old batches (except current) as is_latest=false
+			for _, oldBatch := range allBatches {
+				if oldBatch.BatchID != batchID && oldBatch.IsLatest {
+					oldBatch.IsLatest = false
+					oldBatch.UpdatedAt = time.Now()
+					if err := s.repos.QuestionRunBatchRepo.Update(ctx, oldBatch); err != nil {
+						fmt.Printf("[CompleteBatch] Warning: Failed to mark old batch %s as not latest: %v\n", oldBatch.BatchID, err)
+					}
+				}
+			}
+			fmt.Printf("[CompleteBatch] ✅ Marked %d old batches as is_latest=false\n", len(allBatches)-1)
+		}
 	}
 
-	// Update latest flags for batches
-	return s.repos.QuestionRunBatchRepo.UpdateLatestFlags(ctx, batch.Scope, batch.OrgID, batch.NetworkID, batch.BatchType, batchID)
+	// Step 2: Mark current batch as is_latest=true
+	batch.IsLatest = true
+
+	return s.repos.QuestionRunBatchRepo.Update(ctx, batch)
 }
 
 // FailBatch updates a batch to failed status
@@ -861,6 +1203,12 @@ func (s *orgEvaluationService) CalculateQuestionMatrix(ctx context.Context, orgD
 		question := questionWithTags.Question
 		for _, model := range orgDetails.Models {
 			for _, location := range orgDetails.Locations {
+				// Dereference RegionName pointer for string field
+				locationName := ""
+				if location.RegionName != nil {
+					locationName = *location.RegionName
+				}
+
 				job := &QuestionJob{
 					QuestionID:   question.GeoQuestionID,
 					ModelID:      model.GeoModelID,
@@ -868,7 +1216,7 @@ func (s *orgEvaluationService) CalculateQuestionMatrix(ctx context.Context, orgD
 					QuestionText: question.QuestionText,
 					ModelName:    model.Name,
 					LocationCode: location.CountryCode,
-					LocationName: location.RegionName,
+					LocationName: locationName,
 					JobIndex:     jobIndex,
 					TotalJobs:    totalJobs,
 				}
@@ -893,10 +1241,16 @@ func (s *orgEvaluationService) ProcessSingleQuestionJob(ctx context.Context, job
 	}
 
 	// Create location struct for AI call
+	// Convert string LocationName back to pointer for RegionName field
+	var regionNamePtr *string
+	if job.LocationName != "" {
+		regionNamePtr = &job.LocationName
+	}
+
 	location := &models.OrgLocation{
 		OrgLocationID: job.LocationID,
 		CountryCode:   job.LocationCode,
-		RegionName:    job.LocationName,
+		RegionName:    regionNamePtr,
 	}
 
 	// Execute AI call to get response
@@ -1310,6 +1664,28 @@ func (s *orgEvaluationService) processQuestionRunWithOrgEvaluation(ctx context.C
 
 	responseText := *questionRun.ResponseText
 
+	// Skip extraction if this was a failed question run
+	// Failed runs have the placeholder text from the provider
+	if responseText == "Question run failed for this model and location" {
+		fmt.Printf("[processQuestionRunWithOrgEvaluation] ⚠️ Skipping extraction for failed question run %s\n", questionRun.QuestionRunID)
+		// Create a minimal evaluation record to mark it as processed
+		now := time.Now()
+		orgEval := &models.OrgEval{
+			OrgEvalID:     uuid.New(),
+			QuestionRunID: questionRun.QuestionRunID,
+			OrgID:         orgID,
+			Mentioned:     false,
+			Citation:      false,
+			CreatedAt:     now,
+			UpdatedAt:     now,
+		}
+		if err := s.repos.OrgEvalRepo.Create(ctx, orgEval); err != nil {
+			return fmt.Errorf("failed to store minimal evaluation for failed run: %w", err)
+		}
+		summary.TotalEvaluations++
+		return nil // Successfully handled (by skipping)
+	}
+
 	// Step 1: Check if organization is mentioned using pre-generated name variations
 	mentioned := false
 	responseTextLower := strings.ToLower(responseText)
@@ -1478,4 +1854,132 @@ func isPrimaryDomain(citationURL string, orgDomains []string) bool {
 		}
 	}
 	return false
+}
+
+// GetOrCreateTodaysBatch checks if a batch exists for today, returns it if so, creates new one if not
+func (s *orgEvaluationService) GetOrCreateTodaysBatch(ctx context.Context, orgID uuid.UUID, totalQuestions int) (*models.QuestionRunBatch, bool, error) {
+	fmt.Printf("[GetOrCreateTodaysBatch] Checking for existing batch for org: %s\n", orgID)
+
+	// Try to find an existing batch from today that's not completed
+	today := time.Now().UTC()
+	todayStart := time.Date(today.Year(), today.Month(), today.Day(), 0, 0, 0, 0, time.UTC)
+
+	// Get all org questions and check their batches
+	questions, err := s.repos.GeoQuestionRepo.GetByOrgWithTags(ctx, orgID)
+	if err != nil {
+		fmt.Printf("[GetOrCreateTodaysBatch] Warning: Failed to get org questions: %v\n", err)
+	} else if len(questions) > 0 {
+		// Check ALL questions' runs to find batches (not just first question)
+		seenBatches := make(map[uuid.UUID]bool)
+		for _, questionWithTags := range questions {
+			runs, err := s.repos.QuestionRunRepo.GetByQuestion(ctx, questionWithTags.Question.GeoQuestionID)
+			if err != nil {
+				continue
+			}
+
+			// Check batches from these runs
+			for _, run := range runs {
+				if run.BatchID != nil && !seenBatches[*run.BatchID] {
+					seenBatches[*run.BatchID] = true
+					batch, err := s.repos.QuestionRunBatchRepo.GetByID(ctx, *run.BatchID)
+					if err != nil {
+						fmt.Printf("[GetOrCreateTodaysBatch] ⚠️  Skipping batch %s - failed to fetch from database: %v\n", *run.BatchID, err)
+						continue
+					}
+
+					// Verify batch still exists and is valid
+					if batch == nil {
+						fmt.Printf("[GetOrCreateTodaysBatch] ⚠️  Skipping batch %s - batch is nil\n", *run.BatchID)
+						continue
+					}
+
+					// Check if this is an org batch from today for THIS org
+					// Return ANY batch from today (even completed) to avoid duplicates
+					if batch.OrgID != nil && *batch.OrgID == orgID &&
+						batch.CreatedAt.After(todayStart) {
+						// Double-check: verify batch actually exists in database with a fresh query
+						verifyBatch, verifyErr := s.repos.QuestionRunBatchRepo.GetByID(ctx, batch.BatchID)
+						if verifyErr != nil || verifyBatch == nil {
+							fmt.Printf("[GetOrCreateTodaysBatch] ⚠️  Batch %s found in question runs but doesn't exist in database, skipping\n", batch.BatchID)
+							continue
+						}
+
+						fmt.Printf("[GetOrCreateTodaysBatch] ✅ Found existing batch %s from today (status: %s, completed: %d/%d)\n",
+							batch.BatchID, batch.Status, batch.CompletedQuestions, batch.TotalQuestions)
+						return batch, true, nil
+					}
+				}
+			}
+		}
+		fmt.Printf("[GetOrCreateTodaysBatch] Checked %d questions and %d unique batches, none found from today\n", len(questions), len(seenBatches))
+	}
+
+	// No existing batch found, create new one
+	fmt.Printf("[GetOrCreateTodaysBatch] No existing batch found, creating new one\n")
+	batch := &models.QuestionRunBatch{
+		BatchID:            uuid.New(),
+		Scope:              "org",
+		OrgID:              &orgID,
+		BatchType:          "manual",
+		Status:             "pending",
+		TotalQuestions:     totalQuestions,
+		CompletedQuestions: 0,
+		FailedQuestions:    0,
+		IsLatest:           true,
+	}
+
+	if err := s.repos.QuestionRunBatchRepo.Create(ctx, batch); err != nil {
+		return nil, false, fmt.Errorf("failed to create batch: %w", err)
+	}
+
+	fmt.Printf("[GetOrCreateTodaysBatch] Created new batch %s with %d total questions\n", batch.BatchID, totalQuestions)
+	return batch, false, nil
+}
+
+// CheckQuestionRunExists checks if a question run already exists for the given question/model/location/batch
+func (s *orgEvaluationService) CheckQuestionRunExists(ctx context.Context, questionID, modelID, locationID, batchID uuid.UUID) (*models.QuestionRun, error) {
+	// Get all runs for this question
+	runs, err := s.repos.QuestionRunRepo.GetByQuestion(ctx, questionID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get question runs: %w", err)
+	}
+
+	// Look for a run that matches this batch AND model AND location
+	// For org questions: check model_id and location_id (UUID fields, not NULL)
+	for _, run := range runs {
+		if run.BatchID != nil && *run.BatchID == batchID &&
+			run.ModelID != nil && *run.ModelID == modelID &&
+			run.LocationID != nil && *run.LocationID == locationID {
+			// Found exact match: same batch, same model, same location
+			return run, nil
+		}
+	}
+
+	return nil, nil
+}
+
+// CheckExtractionsExist checks if org evaluations/citations/competitors have been extracted for a question run
+func (s *orgEvaluationService) CheckExtractionsExist(ctx context.Context, questionRunID, orgID uuid.UUID) (bool, bool, bool, error) {
+	// Check org_eval
+	eval, err := s.repos.OrgEvalRepo.GetByQuestionRunAndOrg(ctx, questionRunID, orgID)
+	if err != nil {
+		return false, false, false, fmt.Errorf("failed to check org eval: %w", err)
+	}
+	hasEval := eval != nil
+
+	// Check org_citations (check if any exist)
+	citations, err := s.repos.OrgCitationRepo.GetByQuestionRunAndOrg(ctx, questionRunID, orgID)
+	if err != nil {
+		return false, false, false, fmt.Errorf("failed to check citations: %w", err)
+	}
+	hasCitations := len(citations) > 0
+
+	// Check org_competitors (check if any exist)
+	competitors, err := s.repos.OrgCompetitorRepo.GetByQuestionRunAndOrg(ctx, questionRunID, orgID)
+	if err != nil {
+		return false, false, false, fmt.Errorf("failed to check competitors: %w", err)
+	}
+	hasCompetitors := len(competitors) > 0
+
+	return hasEval, hasCitations, hasCompetitors, nil
 }
