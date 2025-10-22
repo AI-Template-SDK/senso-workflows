@@ -191,6 +191,10 @@ func (p *NetworkOrgMissingProcessor) ProcessNetworkOrgMissing() inngestgo.Servab
 				})
 			}
 
+			// SEBASTIAN HERE
+			// TODO: Determine how many questions we run in this batch for this org/networkthen create a usage record for each question run and tie the metadata to the
+			// specific question run. Ensure idempotency of the usage record creation so we don't create duplicate usage records.
+
 			// Final Result Summary
 			finalResult := map[string]interface{}{
 				"org_id":                  orgID,
