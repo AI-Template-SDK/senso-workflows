@@ -1,1 +1,0 @@
-{"status":"building","message":"Snapshot is building, try again in 30s"}
