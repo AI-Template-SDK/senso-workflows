@@ -144,9 +144,16 @@ The brand name is %s
 Associated websites:
 %s`, "`"+orgName+"`", websitesFormatted)
 
-	// ALWAYS use Azure SDK with gpt-4.1-mini for name variations
-	model := openai.ChatModel("gpt-4.1-mini")
-	fmt.Printf("[GenerateNameVariations] 🎯 Using Azure SDK with model: %s", model)
+	// Use gpt-4.1-mini for name variations
+	var model openai.ChatModel
+	if s.cfg.AzureOpenAIDeploymentName != "" {
+		// Use Azure with mini model
+		model = openai.ChatModel("gpt-4.1-mini")
+		fmt.Printf("[GenerateNameVariations] 🎯 Using Azure SDK with model: gpt-4.1-mini\n")
+	} else {
+		model = openai.ChatModel("gpt-4.1-mini")
+		fmt.Printf("[GenerateNameVariations] 🎯 Using Standard OpenAI model: gpt-4.1-mini\n")
+	}
 
 	schemaParam := openai.ResponseFormatJSONSchemaJSONSchemaParam{
 		Name:        "name_variations_extraction",
@@ -252,9 +259,15 @@ Analyze the overall sentiment toward the target organization across all mentions
 - mention_text: ALL extracted text with perfect formatting, separated by " || "
 - sentiment: exactly one of "positive", "negative", or "neutral" (lowercase)`, "`"+orgName+"`", nameVariationsStr, responseText)
 
-	// ALWAYS use Azure SDK with gpt-4.1 for org evaluation
-	model := openai.ChatModel("gpt-4.1")
-	fmt.Printf("[ExtractOrgEvaluation] 🎯 Using Azure SDK with model: %s", model)
+	// Use Azure or standard OpenAI with gpt-4.1 for org evaluation
+	var model openai.ChatModel
+	if s.cfg.AzureOpenAIDeploymentName != "" {
+		model = openai.ChatModel(s.cfg.AzureOpenAIDeploymentName)
+		fmt.Printf("[ExtractOrgEvaluation] 🎯 Using Azure OpenAI deployment: %s\n", s.cfg.AzureOpenAIDeploymentName)
+	} else {
+		model = openai.ChatModelGPT4_1
+		fmt.Printf("[ExtractOrgEvaluation] 🎯 Using Standard OpenAI model: %s\n", model)
+	}
 
 	schemaParam := openai.ResponseFormatJSONSchemaJSONSchemaParam{
 		Name:        "org_evaluation_extraction",
@@ -347,9 +360,16 @@ func (s *orgEvaluationService) ExtractCompetitors(ctx context.Context, questionR
 
 	prompt := fmt.Sprintf("You are an expert in competitive analysis and brand identification. Your task is to identify ALL competitor brands, companies, products, or services mentioned in the response text that are NOT the target organization.\n\n**TARGET ORGANIZATION:** %s\n\n**COMPETITOR IDENTIFICATION RULES:**\n\n1. **What to Include:**\n   - Company names (e.g., \"Microsoft\", \"Google\", \"Apple\")\n   - Product names (e.g., \"ChatGPT\", \"Claude\", \"Gemini\", \"Perplexity\")\n   - Service names (e.g., \"Ahrefs Brand Radar\", \"Surfer SEO AI Tracker\")\n   - Platform names (e.g., \"LinkedIn\", \"Facebook\", \"Twitter\")\n   - Tool names (e.g., \"Profound\", \"Promptmonitor\", \"Writesonic GEO Platform\")\n   - Any branded entity that could be considered competition or alternative\n\n2. **What to Exclude:**\n   - The target organization itself and its variations\n   - Generic terms (e.g., \"AI tools\", \"analytics platforms\", \"search engines\")\n   - Non-competitive entities (e.g., \"users\", \"customers\", \"developers\")\n   - Technical terms or concepts (e.g., \"machine learning\", \"natural language processing\")\n   - Industry terms (e.g., \"credit unions\", \"financial services\")\n\n3. **Extraction Guidelines:**\n   - Extract the most commonly used or official name for each competitor\n   - If a company has multiple products mentioned, list each product separately\n   - Remove duplicates and variations of the same entity\n   - Focus on entities that could be considered alternatives or competitors\n   - Include both direct competitors and indirect competitors mentioned\n\n**EXAMPLES:**\n\nExample 1: \"Leading AI tools include ChatGPT, Claude, Gemini, and Senso.ai for content optimization.\"\n→ Extract: [\"ChatGPT\", \"Claude\", \"Gemini\"] (exclude Senso.ai as it's the target)\n\nExample 2: \"Microsoft's Azure competes with Google Cloud and Amazon Web Services in the enterprise market.\"\n→ Extract: [\"Microsoft\", \"Azure\", \"Google Cloud\", \"Amazon Web Services\"]\n\nExample 3: \"Popular analytics platforms like Google Analytics, Adobe Analytics, and Mixpanel offer similar features.\"\n→ Extract: [\"Google Analytics\", \"Adobe Analytics\", \"Mixpanel\"]\n\n**RESPONSE TO ANALYZE:**\n```\n%s\n```\n\n**INSTRUCTIONS:**\n- Return only the list of competitor names\n- Use the most recognizable/official name for each competitor\n- Remove any duplicates or very similar variations\n- If no competitors are mentioned, return an empty list\n- Do not include the target organization or generic terms", "`"+orgName+"`", responseText)
 
-	// ALWAYS use Azure SDK with gpt-4.1-mini for competitors
-	model := openai.ChatModel("gpt-4.1-mini")
-	fmt.Printf("[ExtractCompetitors] 🎯 Using Azure SDK with model: %s", model)
+	// Use gpt-4.1-mini for competitors
+	var model openai.ChatModel
+	if s.cfg.AzureOpenAIDeploymentName != "" {
+		// Use Azure with mini model
+		model = openai.ChatModel("gpt-4.1-mini")
+		fmt.Printf("[ExtractCompetitors] 🎯 Using Azure SDK with model: gpt-4.1-mini\n")
+	} else {
+		model = openai.ChatModel("gpt-4.1-mini")
+		fmt.Printf("[ExtractCompetitors] 🎯 Using Standard OpenAI model: gpt-4.1-mini\n")
+	}
 
 	schemaParam := openai.ResponseFormatJSONSchemaJSONSchemaParam{
 		Name:        "competitor_extraction",
@@ -1608,11 +1628,11 @@ func (s *orgEvaluationService) ProcessNetworkOrgQuestionRunReeval(ctx context.Co
 		result.HasEvaluation = true
 		result.CompetitorCount = len(extractionResult.Competitors)
 		result.CitationCount = len(extractionResult.Citations)
-		// Note: NetworkOrgExtractionResult doesn't have cost tracking, so we'll set it to 0
-		result.TotalCost = 0.0
+		// Use actual cost tracking from NetworkOrgExtractionResult
+		result.TotalCost = extractionResult.TotalCost
 
-		fmt.Printf("[ProcessNetworkOrgQuestionRunReeval] ✅ Network org evaluation completed and stored: 1 eval, %d competitors, %d citations\n",
-			result.CompetitorCount, result.CitationCount)
+		fmt.Printf("[ProcessNetworkOrgQuestionRunReeval] ✅ Network org evaluation completed and stored: 1 eval, %d competitors, %d citations, $%.6f cost\n",
+			result.CompetitorCount, result.CitationCount, result.TotalCost)
 	} else {
 		// Create minimal network org eval record indicating no mention
 		networkOrgEval := &models.NetworkOrgEval{

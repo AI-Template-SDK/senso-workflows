@@ -14,6 +14,7 @@ import (
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/azure"
 	"github.com/openai/openai-go/option"
+	"mvdan.cc/xurls/v2"
 )
 
 type dataExtractionService struct {
@@ -325,11 +326,11 @@ func (s *dataExtractionService) CalculateMetrics(ctx context.Context, mentions [
 	return metrics, nil
 }
 
-// ExtractNetworkOrgData extracts organization-specific data from network question responses
-func (s *dataExtractionService) ExtractNetworkOrgData(ctx context.Context, questionRunID uuid.UUID, orgID uuid.UUID, orgName string, orgWebsites []string, questionText string, responseText string) (*NetworkOrgExtractionResult, error) {
-	fmt.Printf("[ExtractNetworkOrgData] 🔍 Processing network org data for question run %s, org %s\n", questionRunID, orgName)
+// ExtractNetworkOrgEvaluation extracts network org evaluation data (similar to ExtractOrgEvaluation but for network tables)
+func (s *dataExtractionService) ExtractNetworkOrgEvaluation(ctx context.Context, questionRunID uuid.UUID, orgID uuid.UUID, orgName string, orgWebsites []string, nameVariations []string, questionText string, responseText string) (*NetworkOrgEvaluationResult, error) {
+	fmt.Printf("[ExtractNetworkOrgEvaluation] 🔍 Processing network org evaluation for question run %s, org %s\n", questionRunID, orgName)
 
-	// Prepare the prompt with org context
+	nameVariationsStr := strings.Join(nameVariations, ", ")
 	websitesList := ""
 	if len(orgWebsites) > 0 {
 		websitesList = "\n## ORGANIZATION DOMAINS (SUPPORTING SIGNALS):\n"
@@ -339,141 +340,102 @@ func (s *dataExtractionService) ExtractNetworkOrgData(ctx context.Context, quest
 		websitesList += "\n"
 	}
 
-	prompt := fmt.Sprintf(`You are analyzing a network question response to extract organization-specific data.
+	prompt := fmt.Sprintf(`You are an expert text extraction specialist. The target organization IS MENTIONED in this text. Your task is to extract ALL text that mentions the organization and determine the overall sentiment.
 
-TARGET ORGANIZATION: %s
-ORGANIZATION DOMAINS: %s
-QUESTION: %s
+**TARGET ORGANIZATION:** %s
+**Organization name variations:** %s
+%s
+**QUESTION:** %s
 
-CRITICAL RULES:
+**TASK 1: EXTRACT MENTION TEXT**
 
-1. MENTIONED - Set to TRUE only if the EXACT organization name appears in the response
-   - Generic phrases like "local credit union", "your bank", "financial institution" are NOT mentions
-   - Only specific names like "TechFlow Bank", "Mountain Credit Union" count
-   - Match common name variants, abbreviations, and brand/product names
-   - If not mentioned by name, set mentioned=false
+Find EVERY occurrence where the target organization is mentioned by name (including variations) and extract the text with perfect formatting preservation.
 
-2. CITATION - Set to TRUE only if URLs relate to this specific organization
-   - Primary citations: URLs from the organization's domains (must match domains listed above)
-   - Secondary citations: External URLs that mention this organization by name
-   - If no relevant URLs found, set citation=false
+**EXTRACTION RULES:**
+- **PRESERVE EXACT FORMATTING**: Copy text character-for-character including:
+  - All punctuation marks (periods, commas, colons, semicolons, etc.)
+  - All markdown formatting (**, *, ##, [], (), etc.)
+  - All spacing, line breaks, and indentation
+  - All special characters and symbols
+- **INCLUDE CITATIONS**: Always include URLs, links, and citation references that appear with mentions
+- **ALL FORMATS**: Extract from paragraphs, lists, tables, headers, footnotes, structured data
+- **COMPLETE CONTEXT**: Extract the full sentence/paragraph/section that contains the mention
 
-3. SENTIMENT - positive/negative/neutral based on tone toward this organization
+**SPAN DEFINITION:**
+- **Single occurrence** = Complete sentence, bullet point, table row, or logical text unit that mentions the organization
+- **Adjacent context** = If consecutive sentences form one continuous thought about the organization, keep them together
+- **Aggregation** = Use exact delimiter " || " (space-pipe-pipe-space) between separate occurrences
 
-4. MENTION_TEXT - CRITICAL: Extract ALL text that mentions the organization by name
-   - SPAN DEFINITION: An occurrence = the full sentence or bullet line that explicitly mentions the company, or a directly adjacent sentence that clearly continues the same thought
-   - If consecutive sentences reference the company as one continuous thought, keep them together as ONE occurrence
-   - Do not include unrelated surrounding text
-   - AGGREGATION: If the target organization appears multiple times, collect EVERY occurrence
-   - Output ONE "mention_text" string that concatenates ALL distinct occurrences in order of appearance
-   - Use the exact delimiter: " || " (space, two pipes, space) between occurrences
-   - Example: "American Airlines offers premium service. || American Airlines has the best rewards program. || Call American Airlines at 1-800-433-7300."
-   - Copy text exactly as written, preserve all punctuation and formatting
-   - Leave empty if not mentioned
-   - QUALITY GOAL: Prefer including more valid occurrences over missing any. Do not omit valid target mentions.
+**TASK 2: DETERMINE SENTIMENT**
 
-5. MENTION_RANK - Prominence ranking (1=most prominent, 0=not mentioned)
+Analyze the overall sentiment toward the target organization across all mentions:
+- **positive**: Favorable language, praise, recommendations ("excellent", "best", "recommended", "leading")
+- **negative**: Critical language, problems, warnings ("poor", "issues", "avoid", "problematic")
+- **neutral**: Factual, descriptive, balanced content without clear bias
 
-6. COMPETITORS - List only direct competitors mentioned in the response
-   - Must be competing in same market/service area
-   - Do NOT include partners, vendors, or technology providers
+**TASK 3: CITATION CHECK**
 
-7. CITATIONS - Extract URLs exactly as they appear
-   - Type "primary" if URL domain matches organization domains above
-   - Type "secondary" if external URL mentions the organization
-   - Only include URLs relevant to the target organization
+Determine if the response contains URLs that relate to this specific organization:
+- Set citation=true if URLs from organization's domains are present OR if external URLs mention the organization
+- Set citation=false if no relevant URLs found
 
-EXAMPLE:
-Response: "TechFlow Bank offers 4.5%% rates, higher than Regional Credit Union's 4.0%%. TechFlow Bank also provides excellent customer service. Learn more at https://techflow.com/rates."
-Target: "TechFlow Bank" with domains: ["techflow.com"]
+**TASK 4: MENTION RANK**
 
-Output:
-{
-  "org_evaluation": {
-    "mentioned": true,
-    "citation": true, 
-    "sentiment": "positive",
-    "mention_text": "TechFlow Bank offers 4.5%% rates, higher than Regional Credit Union's 4.0%%. || TechFlow Bank also provides excellent customer service.",
-    "mention_rank": 1
-  },
-  "competitors": [{"name": "Regional Credit Union"}],
-  "citations": [{"url": "https://techflow.com/rates", "type": "primary"}]
-}
+Assign prominence ranking (1=most prominent, higher numbers=less prominent, 0=not mentioned)
 
-WHAT IS NOT A MENTION:
-- "discuss with a local credit union" → NOT a mention
-- "contact your bank" → NOT a mention  
-- "financial institutions offer services" → NOT a mention
+**RESPONSE TO ANALYZE:**
+`+"`"+`
+%s
+`+"`"+`
 
-CHECKLIST BEFORE FINALIZING:
-- Did you search the entire RESPONSE TEXT for EVERY target occurrence?
-- Is each occurrence a full sentence/bullet or continuous thought?
-- Did you use " || " exactly as the delimiter between multiple occurrences?
-- Did you avoid adding any text not present in the RESPONSE TEXT?
-- Did you include ALL sentences that mention the target organization by name?
+**OUTPUT REQUIREMENTS:**
+- mentioned: true (we already confirmed it's mentioned)
+- mention_text: ALL extracted text with perfect formatting, separated by " || "
+- sentiment: exactly one of "positive", "negative", or "neutral" (lowercase)
+- citation: true or false
+- mention_rank: integer (1 for most prominent)`, "`"+orgName+"`", nameVariationsStr, websitesList, questionText, responseText)
 
-ANALYZE THIS RESPONSE:
-%s`, orgName, websitesList, questionText, responseText)
-
-	// Use a model that supports structured outputs
+	// Use Azure or standard OpenAI with gpt-4.1
 	var model openai.ChatModel
 	if s.cfg.AzureOpenAIDeploymentName != "" {
-		// Use Azure deployment name
 		model = openai.ChatModel(s.cfg.AzureOpenAIDeploymentName)
-		fmt.Printf("[ExtractNetworkOrgData] 🎯 Using Azure OpenAI deployment: %s\n", s.cfg.AzureOpenAIDeploymentName)
+		fmt.Printf("[ExtractNetworkOrgEvaluation] 🎯 Using Azure OpenAI deployment: %s\n", s.cfg.AzureOpenAIDeploymentName)
 	} else {
-		// Use standard OpenAI model
 		model = openai.ChatModelGPT4_1
-		fmt.Printf("[ExtractNetworkOrgData] 🎯 Using Standard OpenAI model: %s\n", model)
-	}
-
-	// Define the structured output schema
-	type NetworkOrgExtractionResponse struct {
-		OrgEvaluation struct {
-			Mentioned   bool   `json:"mentioned"`
-			Citation    bool   `json:"citation"`
-			Sentiment   string `json:"sentiment"`
-			MentionText string `json:"mention_text"`
-			MentionRank int    `json:"mention_rank"`
-		} `json:"org_evaluation"`
-		Competitors []struct {
-			Name string `json:"name"`
-		} `json:"competitors"`
-		Citations []struct {
-			URL  string `json:"url"`
-			Type string `json:"type"`
-		} `json:"citations"`
+		fmt.Printf("[ExtractNetworkOrgEvaluation] 🎯 Using Standard OpenAI model: %s\n", model)
 	}
 
 	schemaParam := openai.ResponseFormatJSONSchemaJSONSchemaParam{
-		Name:        "network_org_extraction",
-		Description: openai.String("Extract organization-specific data from network question responses"),
-		Schema:      GenerateSchema[NetworkOrgExtractionResponse](),
+		Name:        "network_org_evaluation_extraction",
+		Description: openai.String("Extract network organization evaluation data from AI response"),
+		Schema:      GenerateSchema[NetworkOrgEvaluationResponse](),
 		Strict:      openai.Bool(true),
 	}
 
-	fmt.Printf("[ExtractNetworkOrgData] 🚀 Making AI call for network org data extraction...\n")
+	fmt.Printf("[ExtractNetworkOrgEvaluation] 🚀 Making AI call for network org evaluation...\n")
 
 	// Create the extraction request with structured output
 	chatResponse, err := s.openAIClient.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
 		Messages: []openai.ChatCompletionMessageParamUnion{
-			openai.SystemMessage("You are an expert analyst specializing in extracting organization-specific data from network question responses."),
+			openai.SystemMessage("You are an expert text extraction specialist. Extract mention text with perfect formatting and determine sentiment. The organization is already confirmed to be mentioned."),
 			openai.UserMessage(prompt),
 		},
 		Model: model,
 		ResponseFormat: openai.ChatCompletionNewParamsResponseFormatUnion{
 			OfJSONSchema: &openai.ResponseFormatJSONSchemaParam{JSONSchema: schemaParam},
 		},
+		Temperature: openai.Float(0.1), // Low temperature for consistent extraction
 	})
+
 	if err != nil {
-		return nil, fmt.Errorf("AI call failed: %w", err)
+		return nil, fmt.Errorf("failed to extract network org evaluation: %w", err)
 	}
 
-	fmt.Printf("[ExtractNetworkOrgData] ✅ AI call completed successfully\n")
-	fmt.Printf("[ExtractNetworkOrgData]   - Input tokens: %d\n", chatResponse.Usage.PromptTokens)
-	fmt.Printf("[ExtractNetworkOrgData]   - Output tokens: %d\n", chatResponse.Usage.CompletionTokens)
+	fmt.Printf("[ExtractNetworkOrgEvaluation] ✅ AI call completed successfully\n")
+	fmt.Printf("[ExtractNetworkOrgEvaluation]   - Input tokens: %d\n", chatResponse.Usage.PromptTokens)
+	fmt.Printf("[ExtractNetworkOrgEvaluation]   - Output tokens: %d\n", chatResponse.Usage.CompletionTokens)
 
-	// Parse the structured response
+	// Parse the response
 	if len(chatResponse.Choices) == 0 {
 		return nil, fmt.Errorf("no response choices returned from OpenAI")
 	}
@@ -481,9 +443,9 @@ ANALYZE THIS RESPONSE:
 	responseContent := chatResponse.Choices[0].Message.Content
 
 	// Parse the structured response
-	var extractedData NetworkOrgExtractionResponse
+	var extractedData NetworkOrgEvaluationResponse
 	if err := json.Unmarshal([]byte(responseContent), &extractedData); err != nil {
-		return nil, fmt.Errorf("failed to parse network org extraction response: %w", err)
+		return nil, fmt.Errorf("failed to parse network org evaluation response: %w", err)
 	}
 
 	// Capture token and cost data from the AI call
@@ -491,58 +453,308 @@ ANALYZE THIS RESPONSE:
 	outputTokens := int(chatResponse.Usage.CompletionTokens)
 	totalCost := s.costService.CalculateCost("openai", string(model), inputTokens, outputTokens, false)
 
-	// Create the evaluation
-	evaluation := &models.NetworkOrgEval{
+	// Create the network org evaluation model
+	now := time.Now()
+	networkOrgEval := &models.NetworkOrgEval{
 		NetworkOrgEvalID: uuid.New(),
 		QuestionRunID:    questionRunID,
 		OrgID:            orgID,
-		Mentioned:        extractedData.OrgEvaluation.Mentioned,
-		Citation:         extractedData.OrgEvaluation.Citation,
-		Sentiment:        stringPtr(extractedData.OrgEvaluation.Sentiment),
-		MentionText:      stringPtr(extractedData.OrgEvaluation.MentionText),
-		MentionRank:      intPtr(extractedData.OrgEvaluation.MentionRank),
+		Mentioned:        true, // We already know it's mentioned from pre-filtering
+		Citation:         extractedData.Citation,
+		Sentiment:        stringPtr(extractedData.Sentiment),
+		MentionText:      stringPtr(extractedData.MentionText),
+		MentionRank:      intPtr(extractedData.MentionRank),
 		InputTokens:      intPtr(inputTokens),
 		OutputTokens:     intPtr(outputTokens),
 		TotalCost:        float64Ptr(totalCost),
-		CreatedAt:        time.Now(),
-		UpdatedAt:        time.Now(),
+		CreatedAt:        now,
+		UpdatedAt:        now,
 	}
 
-	// Create competitors
+	fmt.Printf("[ExtractNetworkOrgEvaluation] ✅ Created network org evaluation: mentioned=true, sentiment=%s, citation=%t, mention_rank=%d\n",
+		extractedData.Sentiment, extractedData.Citation, extractedData.MentionRank)
+
+	return &NetworkOrgEvaluationResult{
+		Evaluation:   networkOrgEval,
+		InputTokens:  inputTokens,
+		OutputTokens: outputTokens,
+		TotalCost:    totalCost,
+	}, nil
+}
+
+// ExtractNetworkOrgCompetitors extracts competitors for network org processing (separate AI call with gpt-4.1-mini)
+func (s *dataExtractionService) ExtractNetworkOrgCompetitors(ctx context.Context, questionRunID uuid.UUID, orgID uuid.UUID, orgName string, responseText string) (*NetworkOrgCompetitorResult, error) {
+	fmt.Printf("[ExtractNetworkOrgCompetitors] 🔍 Processing competitors for network org question run %s, org %s\n", questionRunID, orgName)
+
+	prompt := fmt.Sprintf("You are an expert in competitive analysis and brand identification. Your task is to identify ALL competitor brands, companies, products, or services mentioned in the response text that are NOT the target organization.\n\n**TARGET ORGANIZATION:** %s\n\n**COMPETITOR IDENTIFICATION RULES:**\n\n1. **What to Include:**\n   - Company names (e.g., \"Microsoft\", \"Google\", \"Apple\")\n   - Product names (e.g., \"ChatGPT\", \"Claude\", \"Gemini\", \"Perplexity\")\n   - Service names (e.g., \"Ahrefs Brand Radar\", \"Surfer SEO AI Tracker\")\n   - Platform names (e.g., \"LinkedIn\", \"Facebook\", \"Twitter\")\n   - Tool names (e.g., \"Profound\", \"Promptmonitor\", \"Writesonic GEO Platform\")\n   - Any branded entity that could be considered competition or alternative\n\n2. **What to Exclude:**\n   - The target organization itself and its variations\n   - Generic terms (e.g., \"AI tools\", \"analytics platforms\", \"search engines\")\n   - Non-competitive entities (e.g., \"users\", \"customers\", \"developers\")\n   - Technical terms or concepts (e.g., \"machine learning\", \"natural language processing\")\n   - Industry terms (e.g., \"credit unions\", \"financial services\")\n\n3. **Extraction Guidelines:**\n   - Extract the most commonly used or official name for each competitor\n   - If a company has multiple products mentioned, list each product separately\n   - Remove duplicates and variations of the same entity\n   - Focus on entities that could be considered alternatives or competitors\n   - Include both direct competitors and indirect competitors mentioned\n\n**EXAMPLES:**\n\nExample 1: \"Leading AI tools include ChatGPT, Claude, Gemini, and Senso.ai for content optimization.\"\n→ Extract: [\"ChatGPT\", \"Claude\", \"Gemini\"] (exclude Senso.ai as it's the target)\n\nExample 2: \"Microsoft's Azure competes with Google Cloud and Amazon Web Services in the enterprise market.\"\n→ Extract: [\"Microsoft\", \"Azure\", \"Google Cloud\", \"Amazon Web Services\"]\n\nExample 3: \"Popular analytics platforms like Google Analytics, Adobe Analytics, and Mixpanel offer similar features.\"\n→ Extract: [\"Google Analytics\", \"Adobe Analytics\", \"Mixpanel\"]\n\n**RESPONSE TO ANALYZE:**\n```\n%s\n```\n\n**INSTRUCTIONS:**\n- Return only the list of competitor names\n- Use the most recognizable/official name for each competitor\n- Remove any duplicates or very similar variations\n- If no competitors are mentioned, return an empty list\n- Do not include the target organization or generic terms", "`"+orgName+"`", responseText)
+
+	// ALWAYS use gpt-4.1-mini for competitors (cost-effective)
+	var model openai.ChatModel
+	if s.cfg.AzureOpenAIDeploymentName != "" {
+		// Use Azure with mini model
+		model = openai.ChatModel("gpt-4.1-mini")
+		fmt.Printf("[ExtractNetworkOrgCompetitors] 🎯 Using Azure SDK with model: gpt-4.1-mini\n")
+	} else {
+		model = openai.ChatModel("gpt-4.1-mini")
+		fmt.Printf("[ExtractNetworkOrgCompetitors] 🎯 Using Standard OpenAI model: gpt-4.1-mini\n")
+	}
+
+	schemaParam := openai.ResponseFormatJSONSchemaJSONSchemaParam{
+		Name:        "network_org_competitor_extraction",
+		Description: openai.String("Extract competitor names from AI response for network org processing"),
+		Schema:      GenerateSchema[CompetitorListResponse](),
+		Strict:      openai.Bool(true),
+	}
+
+	fmt.Printf("[ExtractNetworkOrgCompetitors] 🚀 Making AI call for competitor extraction...\n")
+
+	// Create the extraction request with structured output
+	chatResponse, err := s.openAIClient.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
+		Messages: []openai.ChatCompletionMessageParamUnion{
+			openai.SystemMessage("You are an expert in competitive analysis and brand identification. Extract competitor names accurately and comprehensively."),
+			openai.UserMessage(prompt),
+		},
+		Model: model,
+		ResponseFormat: openai.ChatCompletionNewParamsResponseFormatUnion{
+			OfJSONSchema: &openai.ResponseFormatJSONSchemaParam{JSONSchema: schemaParam},
+		},
+		Temperature: openai.Float(0.1), // Low temperature for consistent extraction
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to extract network org competitors: %w", err)
+	}
+
+	fmt.Printf("[ExtractNetworkOrgCompetitors] ✅ AI call completed successfully\n")
+	fmt.Printf("[ExtractNetworkOrgCompetitors]   - Input tokens: %d\n", chatResponse.Usage.PromptTokens)
+	fmt.Printf("[ExtractNetworkOrgCompetitors]   - Output tokens: %d\n", chatResponse.Usage.CompletionTokens)
+
+	// Calculate cost
+	inputTokens := int(chatResponse.Usage.PromptTokens)
+	outputTokens := int(chatResponse.Usage.CompletionTokens)
+	totalCost := s.costService.CalculateCost("openai", string(model), inputTokens, outputTokens, false)
+
+	// Parse the response
+	if len(chatResponse.Choices) == 0 {
+		return nil, fmt.Errorf("no response choices returned from OpenAI")
+	}
+
+	responseContent := chatResponse.Choices[0].Message.Content
+
+	// Parse the structured response
+	var extractedData CompetitorListResponse
+	if err := json.Unmarshal([]byte(responseContent), &extractedData); err != nil {
+		return nil, fmt.Errorf("failed to parse competitors response: %w", err)
+	}
+
+	// Create competitor models with cost tracking
 	var competitors []*models.NetworkOrgCompetitor
-	for _, comp := range extractedData.Competitors {
+	now := time.Now()
+
+	for _, competitorName := range extractedData.Competitors {
+		if strings.TrimSpace(competitorName) == "" {
+			continue // Skip empty names
+		}
+
 		competitor := &models.NetworkOrgCompetitor{
 			NetworkOrgCompetitorID: uuid.New(),
 			QuestionRunID:          questionRunID,
 			OrgID:                  orgID,
-			Name:                   comp.Name,
-			CreatedAt:              time.Now(),
-			UpdatedAt:              time.Now(),
+			Name:                   strings.TrimSpace(competitorName),
+			InputTokens:            &inputTokens,
+			OutputTokens:           &outputTokens,
+			TotalCost:              &totalCost,
+			CreatedAt:              now,
+			UpdatedAt:              now,
 		}
+
 		competitors = append(competitors, competitor)
 	}
 
-	// Create citations
+	fmt.Printf("[ExtractNetworkOrgCompetitors] ✅ Extracted %d competitors (cost: $%.6f)\n", len(competitors), totalCost)
+	return &NetworkOrgCompetitorResult{
+		Competitors:  competitors,
+		InputTokens:  inputTokens,
+		OutputTokens: outputTokens,
+		TotalCost:    totalCost,
+	}, nil
+}
+
+// ExtractNetworkOrgCitations extracts citations using regex (no AI call, reliable URL extraction)
+func (s *dataExtractionService) ExtractNetworkOrgCitations(ctx context.Context, questionRunID uuid.UUID, orgID uuid.UUID, responseText string, orgWebsites []string) (*NetworkOrgCitationResult, error) {
+	fmt.Printf("[ExtractNetworkOrgCitations] 🔍 Processing citations for network org question run %s\n", questionRunID)
+
+	// Use xurls relaxed mode to find all URLs in the text (same as org evaluation)
+	matches := xurls.Relaxed().FindAllString(responseText, -1)
+
 	var citations []*models.NetworkOrgCitation
-	for _, cit := range extractedData.Citations {
+	seenURLs := make(map[string]bool)
+	now := time.Now()
+
+	for _, match := range matches {
+		// Clean up the match
+		url := strings.TrimSpace(match)
+
+		// Skip if empty or already seen
+		if url == "" || seenURLs[url] {
+			continue
+		}
+
+		// Normalize URL for comparison
+		normalizedURL := strings.ToLower(url)
+		if !strings.HasPrefix(normalizedURL, "http://") && !strings.HasPrefix(normalizedURL, "https://") {
+			normalizedURL = "https://" + normalizedURL
+		}
+
+		// Remove trailing slashes for comparison
+		normalizedURL = strings.TrimRight(normalizedURL, "/")
+
+		// Determine if this is a primary or secondary citation using proper domain parsing
+		citationType := "secondary" // Default to secondary
+		if isPrimaryDomain(normalizedURL, orgWebsites) {
+			citationType = "primary"
+		}
+
 		citation := &models.NetworkOrgCitation{
 			NetworkOrgCitationID: uuid.New(),
 			QuestionRunID:        questionRunID,
 			OrgID:                orgID,
-			URL:                  cit.URL,
-			Type:                 cit.Type,
-			CreatedAt:            time.Now(),
-			UpdatedAt:            time.Now(),
+			URL:                  url,
+			Type:                 citationType,
+			CreatedAt:            now,
+			UpdatedAt:            now,
 		}
+
 		citations = append(citations, citation)
+		seenURLs[url] = true
 	}
 
-	fmt.Printf("[ExtractNetworkOrgData] ✅ Successfully extracted network org data: 1 evaluation, %d competitors, %d citations\n", len(competitors), len(citations))
+	primaryCount := 0
+	secondaryCount := 0
+	for _, citation := range citations {
+		if citation.Type == "primary" {
+			primaryCount++
+		} else {
+			secondaryCount++
+		}
+	}
+
+	fmt.Printf("[ExtractNetworkOrgCitations] ✅ Extracted %d citations (%d primary, %d secondary) - REGEX-BASED\n",
+		len(citations), primaryCount, secondaryCount)
+
+	// Citations use regex (no AI cost)
+	return &NetworkOrgCitationResult{
+		Citations:    citations,
+		InputTokens:  0,
+		OutputTokens: 0,
+		TotalCost:    0.0,
+	}, nil
+}
+
+// ExtractNetworkOrgData is the main entry point that orchestrates the extraction process
+// This method has been UPDATED to use separate extraction methods like the org evaluation pipeline:
+// 1. Generate name variations (once)
+// 2. Check if organization is mentioned
+// 3. Extract evaluation: ONLY if mentioned (AI with gpt-4.1), otherwise create minimal record
+// 4. Extract competitors: ALWAYS (AI with gpt-4.1-mini) - regardless of mention status
+// 5. Extract citations: ALWAYS (regex-based) - regardless of mention status
+func (s *dataExtractionService) ExtractNetworkOrgData(ctx context.Context, questionRunID uuid.UUID, orgID uuid.UUID, orgName string, orgWebsites []string, questionText string, responseText string) (*NetworkOrgExtractionResult, error) {
+	fmt.Printf("[ExtractNetworkOrgData] 🔍 Processing network org data for question run %s, org %s\n", questionRunID, orgName)
+	fmt.Printf("[ExtractNetworkOrgData] 🎯 Using NEW THREE-METHOD APPROACH (like org evaluation pipeline)\n")
+
+	// Step 1: Generate name variations for mention detection
+	nameVariations, err := s.generateNameVariations(ctx, orgName, orgWebsites)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate name variations: %w", err)
+	}
+	fmt.Printf("[ExtractNetworkOrgData] ✅ Generated %d name variations\n", len(nameVariations))
+
+	// Step 2: Check if organization is mentioned (using name variations)
+	mentioned := false
+	responseTextLower := strings.ToLower(responseText)
+	for _, name := range nameVariations {
+		if strings.Contains(responseTextLower, strings.ToLower(name)) {
+			mentioned = true
+			break
+		}
+	}
+	fmt.Printf("[ExtractNetworkOrgData] Organization mentioned: %t\n", mentioned)
+
+	// Initialize cost tracking
+	totalInputTokens := 0
+	totalOutputTokens := 0
+	totalCost := 0.0
+
+	var evaluation *models.NetworkOrgEval
+	var competitors []*models.NetworkOrgCompetitor
+	var citations []*models.NetworkOrgCitation
+
+	// Step 3: Extract evaluation ONLY if mentioned (following org evaluation logic)
+	if mentioned {
+		fmt.Printf("[ExtractNetworkOrgData] 📊 Step 1/3: Extracting evaluation (AI call with gpt-4.1)...\n")
+		evalResult, err := s.ExtractNetworkOrgEvaluation(ctx, questionRunID, orgID, orgName, orgWebsites, nameVariations, questionText, responseText)
+		if err != nil {
+			return nil, fmt.Errorf("failed to extract network org evaluation: %w", err)
+		}
+		evaluation = evalResult.Evaluation
+		totalInputTokens += evalResult.InputTokens
+		totalOutputTokens += evalResult.OutputTokens
+		totalCost += evalResult.TotalCost
+		fmt.Printf("[ExtractNetworkOrgData] ✅ Evaluation extracted (cost: $%.6f)\n", evalResult.TotalCost)
+	} else {
+		// Create minimal evaluation for non-mentioned case
+		fmt.Printf("[ExtractNetworkOrgData] ⚪ Organization not mentioned - creating minimal evaluation\n")
+		now := time.Now()
+		evaluation = &models.NetworkOrgEval{
+			NetworkOrgEvalID: uuid.New(),
+			QuestionRunID:    questionRunID,
+			OrgID:            orgID,
+			Mentioned:        false,
+			Citation:         false, // Will be determined by citation extraction below
+			Sentiment:        nil,
+			MentionText:      nil,
+			MentionRank:      nil,
+			InputTokens:      nil,
+			OutputTokens:     nil,
+			TotalCost:        nil,
+			CreatedAt:        now,
+			UpdatedAt:        now,
+		}
+		fmt.Printf("[ExtractNetworkOrgData] ✅ Minimal evaluation created\n")
+	}
+
+	// Step 4: ALWAYS extract competitors (regardless of mention status - following org evaluation logic)
+	fmt.Printf("[ExtractNetworkOrgData] 🏢 Step 2/3: Extracting competitors (AI call with gpt-4.1-mini)...\n")
+	competitorResult, err := s.ExtractNetworkOrgCompetitors(ctx, questionRunID, orgID, orgName, responseText)
+	if err != nil {
+		return nil, fmt.Errorf("failed to extract network org competitors: %w", err)
+	}
+	competitors = competitorResult.Competitors
+	totalInputTokens += competitorResult.InputTokens
+	totalOutputTokens += competitorResult.OutputTokens
+	totalCost += competitorResult.TotalCost
+	fmt.Printf("[ExtractNetworkOrgData] ✅ %d competitors extracted (cost: $%.6f)\n", len(competitors), competitorResult.TotalCost)
+
+	// Step 5: ALWAYS extract citations (regardless of mention status - following org evaluation logic)
+	fmt.Printf("[ExtractNetworkOrgData] 🔗 Step 3/3: Extracting citations (regex-based, no AI cost)...\n")
+	citationResult, err := s.ExtractNetworkOrgCitations(ctx, questionRunID, orgID, responseText, orgWebsites)
+	if err != nil {
+		return nil, fmt.Errorf("failed to extract network org citations: %w", err)
+	}
+	citations = citationResult.Citations
+	// Citations have no cost (regex-based)
+	fmt.Printf("[ExtractNetworkOrgData] ✅ %d citations extracted (regex, $0.00 cost)\n", len(citations))
+
+	fmt.Printf("[ExtractNetworkOrgData] 🎉 COMPLETE: 1 evaluation, %d competitors, %d citations | Total cost: $%.6f\n",
+		len(competitors), len(citations), totalCost)
 
 	return &NetworkOrgExtractionResult{
-		Evaluation:  evaluation,
-		Competitors: competitors,
-		Citations:   citations,
+		Evaluation:   evaluation,
+		Competitors:  competitors,
+		Citations:    citations,
+		InputTokens:  totalInputTokens,
+		OutputTokens: totalOutputTokens,
+		TotalCost:    totalCost,
 	}, nil
 }
 
@@ -1078,6 +1290,134 @@ func (s *dataExtractionService) convertSentimentToFloat(sentiment string) float6
 		return 0.5 // Default to neutral
 	}
 }
+
+// generateNameVariations generates brand name variations for mention detection
+func (s *dataExtractionService) generateNameVariations(ctx context.Context, orgName string, websites []string) ([]string, error) {
+	fmt.Printf("[generateNameVariations] 🔍 Generating name variations for org: %s\n", orgName)
+
+	websitesFormatted := ""
+	for _, website := range websites {
+		websitesFormatted += fmt.Sprintf("- %s\n", website)
+	}
+
+	prompt := fmt.Sprintf(`You are an expert in brand name analysis and variation generation. Your task is to generate a comprehensive list of brand name variations that a company might realistically use across different platforms, documents, and contexts.
+
+Generate REALISTIC variations of this brand name that would actually be used by the company or found in business contexts. Focus on:
+
+1. **Exact matches**: The brand name as provided
+2. **Case variations**: lowercase, UPPERCASE, Title Case, camelCase
+3. **Spacing variations**: CRITICAL for compound words - always include both spaced and unspaced versions:
+   - Compound words: "SunLife" → "Sun Life", "TotalExpert" → "Total Expert"
+   - With spaces, without spaces, with hyphens, with underscores
+   - For ANY compound-looking word, generate the spaced version
+4. **Legal/formal variations**: Including "Inc", "LLC", "Ltd", "Corp", etc. (only if realistic for this type of company)
+5. **Natural shortened versions**: Logical shortened forms (e.g., "Senso.ai" → "Senso", "Microsoft Corporation" → "Microsoft")
+6. **Realistic acronyms**: Only create acronyms from multi-word names where it makes sense:
+   - "Bellweather Community Credit Union" → "BCCU"
+   - "American Express" → "AmEx" or "AE"
+   - Single word brands typically don't have meaningful acronyms
+7. **Domain-based variations**: Simple domain formats without full URLs (e.g., "senso" from "senso.ai")
+
+IMPORTANT CONSTRAINTS:
+- Do NOT include full email addresses (no @domain.com formats)
+- Do NOT include full website URLs (no http:// or www. formats)
+- Do NOT create arbitrary abbreviations or random letter combinations
+- Only create acronyms for multi-word brand names where each word contributes a letter
+- Only include variations that would realistically be used in professional business contexts
+- Focus on how the brand name would naturally be written, typed, or formatted
+
+**CRITICAL: For compound words, ALWAYS generate spaced versions**
+
+Examples:
+- "Senso.ai" → Good: Senso.ai, senso.ai, SENSO.AI, Senso, senso, SENSO, SensoAI, sensoai
+- "Senso.ai" → Bad: S.AI, SAI, support@senso.ai, www.senso.ai
+- "SunLife" → MUST include: SunLife, Sun Life, sunlife, sun life, SUNLIFE, SUN LIFE, Sun-Life, sun-life
+- "TotalExpert" → MUST include: TotalExpert, Total Expert, totalexpert, total expert, TOTALEXPERT, TOTAL EXPERT, Total-Expert, total-expert
+- "Tech Corp Solutions" → Good: TCS, Tech Corp, TechCorp, Tech Corp Solutions
+- "Apple" → Good: Apple, apple, APPLE (no meaningful acronym for single word)
+
+Instructions:
+- Include the original name exactly as provided
+- Generate 15-25 realistic variations (quality over quantity)
+- Each variation should have a clear reason for existing
+- For multi-word names, consider logical acronyms using first letters
+- For compound names or names with extensions (.ai, .com), consider the root word
+- **MANDATORY**: If the brand name looks like a compound word (two or more words joined together), generate the spaced version
+- Avoid nonsensical permutations or made-up abbreviations
+
+Return only the list of name variations, no explanations.
+
+The brand name is %s
+
+Associated websites:
+%s`, "`"+orgName+"`", websitesFormatted)
+
+	// Use gpt-4.1-mini for name variations (cost-effective)
+	var model openai.ChatModel
+	if s.cfg.AzureOpenAIDeploymentName != "" {
+		model = openai.ChatModel("gpt-4.1-mini")
+		fmt.Printf("[generateNameVariations] 🎯 Using Azure SDK with model: gpt-4.1-mini\n")
+	} else {
+		model = openai.ChatModel("gpt-4.1-mini")
+		fmt.Printf("[generateNameVariations] 🎯 Using Standard OpenAI model: gpt-4.1-mini\n")
+	}
+
+	schemaParam := openai.ResponseFormatJSONSchemaJSONSchemaParam{
+		Name:        "name_variations_extraction",
+		Description: openai.String("Generate realistic brand name variations"),
+		Schema:      GenerateSchema[NameListResponse](),
+		Strict:      openai.Bool(true),
+	}
+
+	fmt.Printf("[generateNameVariations] 🚀 Making AI call for name variations...\n")
+
+	// Create the extraction request with structured output
+	chatResponse, err := s.openAIClient.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
+		Messages: []openai.ChatCompletionMessageParamUnion{
+			openai.SystemMessage("You are an expert in brand name analysis and variation generation. Generate realistic brand name variations that would actually be used in business contexts."),
+			openai.UserMessage(prompt),
+		},
+		Model: model,
+		ResponseFormat: openai.ChatCompletionNewParamsResponseFormatUnion{
+			OfJSONSchema: &openai.ResponseFormatJSONSchemaParam{JSONSchema: schemaParam},
+		},
+		Temperature: openai.Float(0.3), // Low temperature for consistent variations
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate name variations: %w", err)
+	}
+
+	fmt.Printf("[generateNameVariations] ✅ AI call completed successfully\n")
+	fmt.Printf("[generateNameVariations]   - Input tokens: %d\n", chatResponse.Usage.PromptTokens)
+	fmt.Printf("[generateNameVariations]   - Output tokens: %d\n", chatResponse.Usage.CompletionTokens)
+
+	// Parse the response
+	if len(chatResponse.Choices) == 0 {
+		return nil, fmt.Errorf("no response choices returned from OpenAI")
+	}
+
+	responseContent := chatResponse.Choices[0].Message.Content
+
+	// Parse the structured response
+	var extractedData NameListResponse
+	if err := json.Unmarshal([]byte(responseContent), &extractedData); err != nil {
+		return nil, fmt.Errorf("failed to parse name variations response: %w", err)
+	}
+
+	fmt.Printf("[generateNameVariations] ✅ Generated %d name variations\n", len(extractedData.Names))
+	return extractedData.Names, nil
+}
+
+// Response types for network org extraction
+type NetworkOrgEvaluationResponse struct {
+	MentionText string `json:"mention_text"`
+	Sentiment   string `json:"sentiment"`
+	Citation    bool   `json:"citation"`
+	MentionRank int    `json:"mention_rank"`
+}
+
+// Note: NameListResponse and CompetitorListResponse are defined in org_evaluation_service.go
 
 // Helper functions for pointer types
 func stringPtr(s string) *string {

@@ -831,8 +831,8 @@ func (s *questionRunnerService) ProcessNetworkOrgQuestionRunWithCleanup(ctx cont
 		}
 	}
 
-	fmt.Printf("[ProcessNetworkOrgQuestionRunWithCleanup] Successfully processed question run %s: 1 evaluation, %d competitors, %d citations\n",
-		questionRunID, len(result.Competitors), len(result.Citations))
+	fmt.Printf("[ProcessNetworkOrgQuestionRunWithCleanup] Successfully processed question run %s: 1 evaluation, %d competitors, %d citations, $%.6f cost\n",
+		questionRunID, len(result.Competitors), len(result.Citations), result.TotalCost)
 
 	return result, nil
 }
@@ -863,7 +863,7 @@ func (s *questionRunnerService) GetNetworkDetails(ctx context.Context, networkID
 	// HARDCODED: Networks run on these 3 models (gpt-4.1, chatgpt, perplexity)
 	// Model IDs don't matter since they're stored as NULL in question_runs for network questions
 	hardcodedModels := []*models.GeoModel{
-		{GeoModelID: uuid.New(), Name: "gpt-4.1", CreatedAt: time.Now(), UpdatedAt: time.Now()},
+		///{GeoModelID: uuid.New(), Name: "gpt-4.1", CreatedAt: time.Now(), UpdatedAt: time.Now()},
 		{GeoModelID: uuid.New(), Name: "chatgpt", CreatedAt: time.Now(), UpdatedAt: time.Now()},
 		{GeoModelID: uuid.New(), Name: "perplexity", CreatedAt: time.Now(), UpdatedAt: time.Now()},
 		{GeoModelID: uuid.New(), Name: "gemini", CreatedAt: time.Now(), UpdatedAt: time.Now()},

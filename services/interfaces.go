@@ -129,11 +129,38 @@ type NetworkOrgProcessingResult struct {
 	Error        error
 }
 
-// NetworkOrgExtractionResult represents the extracted data for a network org
+// NetworkOrgExtractionResult represents the extracted data for a network org (with cost tracking)
 type NetworkOrgExtractionResult struct {
-	Evaluation  *models.NetworkOrgEval
-	Competitors []*models.NetworkOrgCompetitor
-	Citations   []*models.NetworkOrgCitation
+	Evaluation   *models.NetworkOrgEval
+	Competitors  []*models.NetworkOrgCompetitor
+	Citations    []*models.NetworkOrgCitation
+	InputTokens  int     // Total input tokens used (from all AI calls)
+	OutputTokens int     // Total output tokens used (from all AI calls)
+	TotalCost    float64 // Total cost of all AI calls
+}
+
+// NetworkOrgEvaluationResult represents the result of extracting network org evaluation
+type NetworkOrgEvaluationResult struct {
+	Evaluation   *models.NetworkOrgEval
+	InputTokens  int
+	OutputTokens int
+	TotalCost    float64
+}
+
+// NetworkOrgCompetitorResult represents the result of extracting network org competitors
+type NetworkOrgCompetitorResult struct {
+	Competitors  []*models.NetworkOrgCompetitor
+	InputTokens  int
+	OutputTokens int
+	TotalCost    float64
+}
+
+// NetworkOrgCitationResult represents the result of extracting network org citations
+type NetworkOrgCitationResult struct {
+	Citations    []*models.NetworkOrgCitation
+	InputTokens  int
+	OutputTokens int
+	TotalCost    float64
 }
 
 // OrgDetailsForNetworkProcessing contains org details needed for network processing

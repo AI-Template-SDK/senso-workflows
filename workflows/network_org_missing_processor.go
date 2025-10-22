@@ -121,6 +121,10 @@ func (p *NetworkOrgMissingProcessor) ProcessNetworkOrgMissing() inngestgo.Servab
 
 			// Step 3: Process each question run individually
 			var allResults []interface{}
+			totalCost := 0.0
+			totalCompetitors := 0
+			totalCitations := 0
+
 			for i, questionRunInterface := range questionRuns {
 				questionRun := questionRunInterface.(map[string]interface{})
 				questionRunID := questionRun["question_run_id"].(string)
@@ -129,7 +133,7 @@ func (p *NetworkOrgMissingProcessor) ProcessNetworkOrgMissing() inngestgo.Servab
 				questionIndex := i + 1
 				stepName := fmt.Sprintf("process-question-run-%d", questionIndex)
 
-				_, err := step.Run(ctx, stepName, func(ctx context.Context) (interface{}, error) {
+				stepResult, err := step.Run(ctx, stepName, func(ctx context.Context) (interface{}, error) {
 					fmt.Printf("[ProcessNetworkOrgMissing] Step %d: Processing question run %d/%d: %s\n",
 						questionIndex+2, questionIndex, questionCount, questionRunID)
 
@@ -149,14 +153,15 @@ func (p *NetworkOrgMissingProcessor) ProcessNetworkOrgMissing() inngestgo.Servab
 						return nil, fmt.Errorf("failed to process question run %s: %w", questionRunID, err)
 					}
 
-					fmt.Printf("[ProcessNetworkOrgMissing] Successfully processed question run %d/%d: %s\n",
-						questionIndex, questionCount, questionRunID)
+					fmt.Printf("[ProcessNetworkOrgMissing] Successfully processed question run %d/%d: %s (cost: $%.6f)\n",
+						questionIndex, questionCount, questionRunID, result.TotalCost)
 
 					return map[string]interface{}{
 						"question_run_id": questionRunID,
 						"evaluation_id":   result.Evaluation.NetworkOrgEvalID,
 						"competitors":     len(result.Competitors),
 						"citations":       len(result.Citations),
+						"total_cost":      result.TotalCost,
 						"status":          "completed",
 					}, nil
 				})
@@ -164,6 +169,19 @@ func (p *NetworkOrgMissingProcessor) ProcessNetworkOrgMissing() inngestgo.Servab
 					fmt.Printf("[ProcessNetworkOrgMissing] Warning: Failed to process question run %d/%d: %v\n",
 						questionIndex, questionCount, err)
 					continue
+				}
+
+				// Extract step result data and accumulate costs
+				if stepResultMap, ok := stepResult.(map[string]interface{}); ok {
+					if cost, ok := stepResultMap["total_cost"].(float64); ok {
+						totalCost += cost
+					}
+					if competitors, ok := stepResultMap["competitors"].(int); ok {
+						totalCompetitors += competitors
+					}
+					if citations, ok := stepResultMap["citations"].(int); ok {
+						totalCitations += citations
+					}
 				}
 
 				// Track that this question run was processed
@@ -181,11 +199,16 @@ func (p *NetworkOrgMissingProcessor) ProcessNetworkOrgMissing() inngestgo.Servab
 				"status":                  "completed",
 				"pipeline":                "network_org_missing_processing",
 				"question_runs_processed": questionCount,
+				"total_competitors":       totalCompetitors,
+				"total_citations":         totalCitations,
+				"total_cost":              totalCost,
 				"completed_at":            time.Now().UTC(),
 			}
 
 			fmt.Printf("[ProcessNetworkOrgMissing] ✅ COMPLETED: Network org missing evaluation processing for org %s\n", orgID)
 			fmt.Printf("[ProcessNetworkOrgMissing] 📊 Data stored: %d missing evaluations processed\n", questionCount)
+			fmt.Printf("[ProcessNetworkOrgMissing] 📊 Extractions: %d competitors, %d citations\n", totalCompetitors, totalCitations)
+			fmt.Printf("[ProcessNetworkOrgMissing] 💰 Total cost: $%.6f\n", totalCost)
 			fmt.Printf("[ProcessNetworkOrgMissing] 📊 Tables updated: network_org_evals, network_org_competitors, network_org_citations\n")
 
 			return finalResult, nil
