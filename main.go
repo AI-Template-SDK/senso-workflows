@@ -173,13 +173,13 @@ func main() {
 		questionRunnerService,
 		cfg,
 	)
-	orgEvaluationProcessor := workflows.NewOrgEvaluationProcessor(
+	orgEvaluationProcessor := workflows.NewOrgEvaluationProcessor( // ** THIS IS THE ORG QUESTION & EVAL RUNNER **
 		orgService,
 		orgEvaluationService,
 		cfg,
 	)
 	scheduledProcessor := workflows.NewScheduledProcessor(orgService)
-	networkProcessor := workflows.NewNetworkProcessor(
+	networkProcessor := workflows.NewNetworkProcessor( // ** THIS IS THE NETWORK QUESTION RUNNER **
 		questionRunnerService,
 		cfg,
 	)
@@ -199,7 +199,7 @@ func main() {
 	networkOrgReevalProcessor := workflows.NewNetworkOrgReevalProcessor(cfg, orgService, orgEvaluationService, questionRunnerService)
 
 	// Initialize network org missing processor
-	networkOrgMissingProcessor := workflows.NewNetworkOrgMissingProcessor(
+	networkOrgMissingProcessor := workflows.NewNetworkOrgMissingProcessor( // ** THIS IS THE NETWORK ORG RUNNER **
 		questionRunnerService,
 		cfg,
 	)
