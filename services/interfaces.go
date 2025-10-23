@@ -12,10 +12,12 @@ import (
 	workflowModels "github.com/AI-Template-SDK/senso-workflows/internal/models"
 	"github.com/google/uuid"
 	"github.com/invopop/jsonschema"
+	"github.com/jmoiron/sqlx"
 )
 
 // RepositoryManager manages all database repositories
 type RepositoryManager struct {
+	db                       *database.Client
 	OrgRepo                  interfaces.OrgRepository
 	GeoQuestionRepo          interfaces.GeoQuestionRepository
 	GeoModelRepo             interfaces.GeoModelRepository
@@ -35,11 +37,14 @@ type RepositoryManager struct {
 	OrgCompetitorRepo interfaces.OrgCompetitorRepository
 	// Question run batch repository
 	QuestionRunBatchRepo interfaces.QuestionRunBatchRepository
+	// Credit ledger repository
+	CreditLedgerRepo interfaces.CreditLedgerRepository
 }
 
 // NewRepositoryManager creates a new repository manager with all repositories
 func NewRepositoryManager(db *database.Client) *RepositoryManager {
 	return &RepositoryManager{
+		db:                       db,
 		OrgRepo:                  postgresql.NewOrgRepo(db),
 		GeoQuestionRepo:          postgresql.NewGeoQuestionRepo(db),
 		GeoModelRepo:             postgresql.NewGeoModelRepo(db),
@@ -59,7 +64,14 @@ func NewRepositoryManager(db *database.Client) *RepositoryManager {
 		OrgCompetitorRepo: postgresql.NewOrgCompetitorRepo(db),
 		// Question run batch repository
 		QuestionRunBatchRepo: postgresql.NewQuestionRunBatchRepo(db),
+		// Credit ledger repository
+		CreditLedgerRepo: postgresql.NewCreditLedgerRepo(db),
 	}
+}
+
+// BeginTx starts a database transaction
+func (rm *RepositoryManager) BeginTx(ctx context.Context) (*sqlx.Tx, error) {
+	return rm.db.BeginTxx(ctx, nil)
 }
 
 // RealOrgDetails contains complete organization data from database

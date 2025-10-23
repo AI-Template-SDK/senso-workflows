@@ -16,16 +16,19 @@ import (
 
 type NetworkOrgMissingProcessor struct {
 	questionRunnerService services.QuestionRunnerService
+	usageService          services.UsageService
 	client                inngestgo.Client
 	cfg                   *config.Config
 }
 
 func NewNetworkOrgMissingProcessor(
 	questionRunnerService services.QuestionRunnerService,
+	usageService services.UsageService,
 	cfg *config.Config,
 ) *NetworkOrgMissingProcessor {
 	return &NetworkOrgMissingProcessor{
 		questionRunnerService: questionRunnerService,
+		usageService:          usageService,
 		cfg:                   cfg,
 	}
 }
@@ -121,6 +124,7 @@ func (p *NetworkOrgMissingProcessor) ProcessNetworkOrgMissing() inngestgo.Servab
 
 			// Step 3: Process each question run individually
 			var allResults []interface{}
+			var processedRunIDs []uuid.UUID
 			totalCost := 0.0
 			totalCompetitors := 0
 			totalCitations := 0
@@ -189,11 +193,41 @@ func (p *NetworkOrgMissingProcessor) ProcessNetworkOrgMissing() inngestgo.Servab
 					"question_run_id": questionRunID,
 					"status":          "processed",
 				})
+
+				// Add successful run ID for usage tracking
+				runUUID, _ := uuid.Parse(questionRunID)
+				processedRunIDs = append(processedRunIDs, runUUID)
 			}
 
-			// SEBASTIAN HERE
-			// TODO: Determine how many questions we run in this batch for this org/networkthen create a usage record for each question run and tie the metadata to the
-			// specific question run. Ensure idempotency of the usage record creation so we don't create duplicate usage records.
+			// Step 4: Track Usage for Processed Runs
+			usageData, err := step.Run(ctx, "track-usage", func(ctx context.Context) (interface{}, error) {
+				fmt.Printf("[ProcessNetworkOrgMissing] Step 4: Tracking usage for org: %s\n", orgID)
+
+				orgUUID, err := uuid.Parse(orgID)
+				if err != nil {
+					return nil, fmt.Errorf("invalid org ID: %w", err)
+				}
+
+				if len(processedRunIDs) == 0 {
+					fmt.Printf("[ProcessNetworkOrgMissing] No runs were successfully processed, skipping usage tracking.\n")
+					return map[string]interface{}{"charged_runs": 0}, nil
+				}
+
+				// Call the usage service to charge for each individual successful run
+				chargedCount, err := p.usageService.TrackIndividualRuns(ctx, orgUUID, processedRunIDs)
+				if err != nil {
+					return nil, fmt.Errorf("failed to track usage for individual runs: %w", err)
+				}
+
+				fmt.Printf("[ProcessNetworkOrgMissing] ✅ Usage tracking completed: %d new runs charged\n", chargedCount)
+				return map[string]interface{}{
+					"charged_runs": chargedCount,
+				}, nil
+			})
+			if err != nil {
+				// Log the error but don't fail the entire pipeline
+				fmt.Printf("[ProcessNetworkOrgMissing] Warning: Step 4 (track-usage) failed: %v\n", err)
+			}
 
 			// Final Result Summary
 			finalResult := map[string]interface{}{
@@ -207,6 +241,9 @@ func (p *NetworkOrgMissingProcessor) ProcessNetworkOrgMissing() inngestgo.Servab
 				"total_citations":         totalCitations,
 				"total_cost":              totalCost,
 				"completed_at":            time.Now().UTC(),
+			}
+			if usageData != nil {
+				finalResult["usage_data"] = usageData
 			}
 
 			fmt.Printf("[ProcessNetworkOrgMissing] ✅ COMPLETED: Network org missing evaluation processing for org %s\n", orgID)

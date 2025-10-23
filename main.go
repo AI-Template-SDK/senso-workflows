@@ -152,6 +152,7 @@ func main() {
 	orgEvaluationService := services.NewOrgEvaluationService(cfg, repoManager, dataExtractionService)
 	questionRunnerService := services.NewQuestionRunnerService(cfg, repoManager, dataExtractionService, orgService)
 	analyticsService := services.NewAnalyticsService(cfg, repoManager)
+	usageService := services.NewUsageService(repoManager)
 	log.Printf("✅ All AI services initialized successfully")
 
 	// Create Inngest client
@@ -176,6 +177,7 @@ func main() {
 	orgEvaluationProcessor := workflows.NewOrgEvaluationProcessor( // ** THIS IS THE ORG QUESTION & EVAL RUNNER **
 		orgService,
 		orgEvaluationService,
+		usageService,
 		cfg,
 	)
 	scheduledProcessor := workflows.NewScheduledProcessor(orgService)
@@ -201,6 +203,7 @@ func main() {
 	// Initialize network org missing processor
 	networkOrgMissingProcessor := workflows.NewNetworkOrgMissingProcessor( // ** THIS IS THE NETWORK ORG RUNNER **
 		questionRunnerService,
+		usageService,
 		cfg,
 	)
 
