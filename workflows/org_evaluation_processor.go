@@ -16,6 +16,7 @@ import (
 type OrgEvaluationProcessor struct {
 	orgService           services.OrgService
 	orgEvaluationService services.OrgEvaluationService
+	usageService         services.UsageService
 	client               inngestgo.Client
 	cfg                  *config.Config
 }
@@ -23,11 +24,13 @@ type OrgEvaluationProcessor struct {
 func NewOrgEvaluationProcessor(
 	orgService services.OrgService,
 	orgEvaluationService services.OrgEvaluationService,
+	usageService services.UsageService,
 	cfg *config.Config,
 ) *OrgEvaluationProcessor {
 	return &OrgEvaluationProcessor{
 		orgService:           orgService,
 		orgEvaluationService: orgEvaluationService,
+		usageService:         usageService,
 		cfg:                  cfg,
 	}
 }
@@ -175,7 +178,37 @@ func (p *OrgEvaluationProcessor) ProcessOrgEvaluation() inngestgo.ServableFuncti
 
 			processingSummary := processingData.(map[string]interface{})
 
-			// Step 4: Complete Batch
+			// Step 4: Track Usage for Successful Runs
+			usageData, err := step.Run(ctx, "track-usage", func(ctx context.Context) (interface{}, error) {
+				fmt.Printf("[ProcessOrgEvaluation] Step 4: Tracking usage for batch: %s\n", batchID)
+
+				batchUUID, err := uuid.Parse(batchID)
+				if err != nil {
+					return nil, fmt.Errorf("invalid batch ID: %w", err)
+				}
+				orgUUID, err := uuid.Parse(orgID)
+				if err != nil {
+					return nil, fmt.Errorf("invalid org ID: %w", err)
+				}
+
+				// Call the usage service to create idempotent ledger entries
+				// This service internally fetches all successful runs for the batch and charges for them.
+				chargedCount, err := p.usageService.TrackBatchUsage(ctx, orgUUID, batchUUID)
+				if err != nil {
+					return nil, fmt.Errorf("failed to track usage: %w", err)
+				}
+
+				fmt.Printf("[ProcessOrgEvaluation] ✅ Usage tracking completed: %d new runs charged\n", chargedCount)
+				return map[string]interface{}{
+					"charged_runs": chargedCount,
+				}, nil
+			})
+			if err != nil {
+				// Log the error but don't fail the entire pipeline
+				fmt.Printf("[ProcessOrgEvaluation] Warning: Step 4 (track-usage) failed: %v\n", err)
+			}
+
+			// Step 5: Complete Batch
 			_, err = step.Run(ctx, "complete-batch", func(ctx context.Context) (interface{}, error) {
 				fmt.Printf("[ProcessOrgEvaluation] Step 4: Completing batch: %s\n", batchID)
 
@@ -198,7 +231,7 @@ func (p *OrgEvaluationProcessor) ProcessOrgEvaluation() inngestgo.ServableFuncti
 				return nil, fmt.Errorf("step 4 failed: %w", err)
 			}
 
-			// Step 5: Generate Processing Summary
+			// Step 6: Generate Processing Summary (was Step 5)
 			finalResult := map[string]interface{}{
 				"org_id":            orgID,
 				"batch_id":          batchID,
@@ -209,6 +242,9 @@ func (p *OrgEvaluationProcessor) ProcessOrgEvaluation() inngestgo.ServableFuncti
 				"total_cost":        processingSummary["total_cost"],
 				"processing_errors": processingSummary["errors"],
 				"status":            "completed",
+			}
+			if usageData != nil {
+				finalResult["usage_data"] = usageData
 			}
 
 			fmt.Printf("[ProcessOrgEvaluation] 🎉 Org evaluation pipeline completed for org: %s\n", orgID)
