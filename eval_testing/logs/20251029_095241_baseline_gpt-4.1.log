@@ -1,0 +1,77 @@
+2025/10/29 09:52:41 --- Starting Evaluation Test Harness ---
+2025/10/29 09:52:41 Test Type: baseline
+2025/10/29 09:52:41 Log file: logs/20251029_095241_baseline_gpt-4.1.log
+2025/10/29 09:52:41 Config loaded. Using Azure Deployment: gpt-4.1
+2025/10/29 09:52:41 OrgEvaluationService initialized.
+2025/10/29 09:52:41 Loaded 14 test records from golden_data.csv
+2025/10/29 09:52:41 --- Running Test for Org: 'Sun Life' ---
+2025/10/29 09:52:43 [Test: Sun Life] Generated 29 name variations.
+2025/10/29 09:52:43 [Test: Sun Life] Pre-filter PASSED. Running LLM extraction...
+2025/10/29 09:52:44 [Test: Sun Life] LLM extraction returned text. Mention: true, Sentiment: 'neutral'
+2025/10/29 09:52:44 --- Running Test for Org: 'Atlas Care' ---
+2025/10/29 09:52:55 [Test: Atlas Care] Generated 23 name variations.
+2025/10/29 09:52:55 [Test: Atlas Care] Pre-filter PASSED. Running LLM extraction...
+2025/10/29 09:52:57 [Test: Atlas Care] LLM extraction returned text. Mention: true, Sentiment: 'positive'
+2025/10/29 09:52:57 --- Running Test for Org: 'atlas care' ---
+2025/10/29 09:52:59 [Test: atlas care] Generated 24 name variations.
+2025/10/29 09:52:59 [Test: atlas care] Pre-filter PASSED. Running LLM extraction...
+2025/10/29 09:53:00 [Test: atlas care] LLM extraction returned text. Mention: true, Sentiment: 'positive'
+2025/10/29 09:53:00 --- Running Test for Org: 'atlascare' ---
+2025/10/29 09:53:02 [Test: atlascare] Generated 24 name variations.
+2025/10/29 09:53:02 [Test: atlascare] Pre-filter PASSED. Running LLM extraction...
+2025/10/29 09:53:03 [Test: atlascare] LLM extraction returned text. Mention: true, Sentiment: 'positive'
+2025/10/29 09:53:03 --- Running Test for Org: 'sunlife' ---
+2025/10/29 09:53:07 [Test: sunlife] Generated 48 name variations.
+2025/10/29 09:53:07 [Test: sunlife] Pre-filter PASSED. Running LLM extraction...
+2025/10/29 09:53:12 [Test: sunlife] LLM extraction returned text. Mention: true, Sentiment: 'positive'
+2025/10/29 09:53:12 --- Running Test for Org: 'sunlife' ---
+2025/10/29 09:53:15 [Test: sunlife] Generated 40 name variations.
+2025/10/29 09:53:15 [Test: sunlife] Pre-filter PASSED. Running LLM extraction...
+2025/10/29 09:53:17 [Test: sunlife] LLM extraction returned text. Mention: true, Sentiment: 'positive'
+2025/10/29 09:53:17 --- Running Test for Org: 'sunlife' ---
+2025/10/29 09:53:19 [Test: sunlife] Generated 23 name variations.
+2025/10/29 09:53:19 [Test: sunlife] Pre-filter PASSED. Running LLM extraction...
+2025/10/29 09:53:20 [Test: sunlife] LLM extraction returned text. Mention: true, Sentiment: 'positive'
+2025/10/29 09:53:20 --- Running Test for Org: 'sunlife' ---
+2025/10/29 09:53:23 [Test: sunlife] Generated 30 name variations.
+2025/10/29 09:53:23 [Test: sunlife] Pre-filter PASSED. Running LLM extraction...
+2025/10/29 09:53:24 [Test: sunlife] LLM extraction returned text. Mention: true, Sentiment: 'positive'
+2025/10/29 09:53:24 --- Running Test for Org: 'atlascare' ---
+2025/10/29 09:53:25 [Test: atlascare] Generated 24 name variations.
+2025/10/29 09:53:25 [Test: atlascare] Pre-filter FAILED. Skipping LLM extraction. Mention: false.
+2025/10/29 09:53:25 --- Running Test for Org: 'atlascare' ---
+2025/10/29 09:53:27 [Test: atlascare] Generated 13 name variations.
+2025/10/29 09:53:27 [Test: atlascare] Pre-filter FAILED. Skipping LLM extraction. Mention: false.
+2025/10/29 09:53:27 --- Running Test for Org: 'sunlife' ---
+2025/10/29 09:53:30 [Test: sunlife] Generated 24 name variations.
+2025/10/29 09:53:30 [Test: sunlife] Pre-filter FAILED. Skipping LLM extraction. Mention: false.
+2025/10/29 09:53:30 --- Running Test for Org: 'Arrowhead' ---
+2025/10/29 09:53:32 [Test: Arrowhead] Generated 10 name variations.
+2025/10/29 09:53:32 [Test: Arrowhead] Pre-filter FAILED. Skipping LLM extraction. Mention: false.
+2025/10/29 09:53:32 --- Running Test for Org: 'Community Financial Credit Union' ---
+2025/10/29 09:53:38 [Test: Community Financial Credit Union] Generated 34 name variations.
+2025/10/29 09:53:38 [Test: Community Financial Credit Union] Pre-filter FAILED. Skipping LLM extraction. Mention: false.
+2025/10/29 09:53:38 --- Running Test for Org: 'Community Financial Credit Union' ---
+2025/10/29 09:53:41 [Test: Community Financial Credit Union] Generated 24 name variations.
+2025/10/29 09:53:41 [Test: Community Financial Credit Union] Pre-filter PASSED. Running LLM extraction...
+2025/10/29 09:53:42 [Test: Community Financial Credit Union] LLM extraction returned text. Mention: true, Sentiment: 'neutral'
+2025/10/29 09:53:42 --- Test Harness Summary ---
+2025/10/29 09:53:42 ✅ PASS: [Sun Life]
+2025/10/29 09:53:42 ✅ PASS: [Atlas Care]
+2025/10/29 09:53:42 ✅ PASS: [atlas care]
+2025/10/29 09:53:42 ✅ PASS: [atlascare]
+2025/10/29 09:53:42 ✅ PASS: [sunlife]
+2025/10/29 09:53:42 ✅ PASS: [sunlife]
+2025/10/29 09:53:42 ✅ PASS: [sunlife]
+2025/10/29 09:53:42 ✅ PASS: [sunlife]
+2025/10/29 09:53:42 ✅ PASS: [atlascare]
+2025/10/29 09:53:42 ✅ PASS: [atlascare]
+2025/10/29 09:53:42 ✅ PASS: [sunlife]
+2025/10/29 09:53:42 ✅ PASS: [Arrowhead]
+2025/10/29 09:53:42 ✅ PASS: [Community Financial Credit Union]
+2025/10/29 09:53:42 ❌ FAIL: [Community Financial Credit Union] - Reason: Mention mismatch: expected false, got true (Error: <nil>)
+2025/10/29 09:53:42    -> Response: "Credit unions are generally excellent options for ..."
+2025/10/29 09:53:42    -> Expected Mention: false, Got: true
+2025/10/29 09:53:42    -> Expected Sentiment: '', Got: 'neutral'
+2025/10/29 09:53:42 --- 
+Overall Accuracy: 92.86% (13/14 passed) ---

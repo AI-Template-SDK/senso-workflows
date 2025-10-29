@@ -70,8 +70,9 @@ type NameListResponse struct {
 }
 
 type OrgEvaluationResponse struct {
-	Sentiment   string `json:"sentiment" jsonschema_description:"Sentiment: positive, negative, or neutral"`
-	MentionText string `json:"mention_text" jsonschema_description:"All text mentioning the organization with exact formatting preserved, separated by ||"`
+	IsMentionVerified bool   `json:"is_mention_verified" jsonschema_description:"Boolean indicating if the TARGET organization (not just generic terms) is specifically mentioned."`
+	Sentiment         string `json:"sentiment" jsonschema_description:"Sentiment: positive, negative, or neutral. Return null or empty if is_mention_verified is false."`
+	MentionText       string `json:"mention_text" jsonschema_description:"All text mentioning the organization with exact formatting preserved, separated by ||. Return null or empty if is_mention_verified is false."`
 }
 
 type CompetitorListResponse struct {
@@ -144,12 +145,12 @@ The brand name is %s
 Associated websites:
 %s`, "`"+orgName+"`", websitesFormatted)
 
-	// Use gpt-4.1-mini for name variations
+	// Use configured model for name variations
 	var model openai.ChatModel
 	if s.cfg.AzureOpenAIDeploymentName != "" {
-		// Use Azure with mini model
-		model = openai.ChatModel("gpt-4.1-mini")
-		fmt.Printf("[GenerateNameVariations] 🎯 Using Azure SDK with model: gpt-4.1-mini\n")
+		// Use Azure with configured deployment
+		model = openai.ChatModel(s.cfg.AzureOpenAIDeploymentName)
+		fmt.Printf("[GenerateNameVariations] 🎯 Using Azure SDK with model: %s\n", s.cfg.AzureOpenAIDeploymentName)
 	} else {
 		model = openai.ChatModel("gpt-4.1-mini")
 		fmt.Printf("[GenerateNameVariations] 🎯 Using Standard OpenAI model: gpt-4.1-mini\n")
@@ -165,7 +166,7 @@ Associated websites:
 	fmt.Printf("[GenerateNameVariations] 🚀 Making AI call for name variations...")
 
 	// Create the extraction request with structured output
-	chatResponse, err := s.openAIClient.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
+	params := openai.ChatCompletionNewParams{
 		Messages: []openai.ChatCompletionMessageParamUnion{
 			openai.SystemMessage("You are an expert in brand name analysis and variation generation. Generate realistic brand name variations that would actually be used in business contexts."),
 			openai.UserMessage(prompt),
@@ -174,8 +175,14 @@ Associated websites:
 		ResponseFormat: openai.ChatCompletionNewParamsResponseFormatUnion{
 			OfJSONSchema: &openai.ResponseFormatJSONSchemaParam{JSONSchema: schemaParam},
 		},
-		Temperature: openai.Float(0.3), // Low temperature for consistent variations
-	})
+	}
+
+	// Only set temperature if not using gpt-5 (which doesn't support custom temperature)
+	if string(model) != "gpt-5" {
+		params.Temperature = openai.Float(0.3)
+	}
+
+	chatResponse, err := s.openAIClient.Chat.Completions.New(ctx, params)
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate name variations: %w", err)
@@ -208,90 +215,107 @@ func (s *orgEvaluationService) ExtractOrgEvaluation(ctx context.Context, questio
 
 	nameVariationsStr := strings.Join(nameVariations, ", ")
 
-	prompt := fmt.Sprintf(`You are an expert text extraction specialist. The target organization IS MENTIONED in this text. Your task is to extract ALL text that mentions the organization and determine the overall sentiment.
+	// --- MODIFIED PROMPT ---
+	// Added TASK 0 for verification and stricter rules
+	prompt := fmt.Sprintf(`You are an expert text analysis and extraction specialist. You are being run because a preliminary check found potential mentions of the target organization based on name variations. Your primary task is to **verify** if the **specific TARGET ORGANIZATION** is genuinely mentioned, distinguishing it from generic terms or other similarly named entities, and then extract relevant details ONLY IF verified.
 
 **TARGET ORGANIZATION:** %s
-**Organization name variations:** %s
+**Potentially relevant name variations:** %s
 
-**TASK 1: EXTRACT MENTION TEXT**
+**TASK 0: VERIFY MENTION (CRITICAL FIRST STEP)**
+1. Carefully read the "RESPONSE TO ANALYZE" below.
+2. Determine if the text *specifically* mentions the **TARGET ORGANIZATION** (%s) or one of its highly probable variations (like "%s Inc.", "%s.com").
+3. **CRUCIAL:** Be strict. Ignore mentions of *generic terms* that might overlap with the name (e.g., if the target is "Community Credit Union", ignore generic uses of "community" or "credit union" unless they clearly refer to the specific target entity). Also ignore mentions of *different organizations* with similar names.
+4. Set the 'is_mention_verified' field to 'true' ONLY if you are confident the specific TARGET ORGANIZATION is mentioned. Otherwise, set it to 'false'.
 
-Find EVERY occurrence where the target organization is mentioned by name (including variations) and extract the text with perfect formatting preservation.
+**TASK 1: EXTRACT MENTION TEXT (ONLY if is_mention_verified is true)**
+* If 'is_mention_verified' is true, find EVERY occurrence where the verified target organization is mentioned.
+* Extract the text with perfect formatting preservation.
+* **EXTRACTION RULES:**
+    - **PRESERVE EXACT FORMATTING**: Copy character-for-character (punctuation, markdown, spacing, etc.).
+    - **INCLUDE CITATIONS**: Always include URLs/links appearing with mentions.
+    - **ALL FORMATS**: Extract from paragraphs, lists, tables, etc.
+    - **COMPLETE CONTEXT**: Extract the full sentence/paragraph/section containing the mention.
+    - **AGGREGATION**: Use " || " (space-pipe-pipe-space) between separate occurrences.
+* If 'is_mention_verified' is false, return null or an empty string for 'mention_text'.
 
-**EXTRACTION RULES:**
-- **PRESERVE EXACT FORMATTING**: Copy text character-for-character including:
-  - All punctuation marks (periods, commas, colons, semicolons, etc.)
-  - All markdown formatting (**, *, ##, [], (), etc.)
-  - All spacing, line breaks, and indentation
-  - All special characters and symbols
-- **INCLUDE CITATIONS**: Always include URLs, links, and citation references that appear with mentions
-- **ALL FORMATS**: Extract from paragraphs, lists, tables, headers, footnotes, structured data
-- **COMPLETE CONTEXT**: Extract the full sentence/paragraph/section that contains the mention
+**TASK 2: DETERMINE SENTIMENT (ONLY if is_mention_verified is true)**
+* If 'is_mention_verified' is true, analyze the overall sentiment toward the verified target organization across all extracted mentions.
+* Use exactly one of: "positive", "negative", "neutral".
+* If 'is_mention_verified' is false, return null or an empty string for 'sentiment'.
 
-**SPAN DEFINITION:**
-- **Single occurrence** = Complete sentence, bullet point, table row, or logical text unit that mentions the organization
-- **Adjacent context** = If consecutive sentences form one continuous thought about the organization, keep them together
-- **Aggregation** = Use exact delimiter " || " (space-pipe-pipe-space) between separate occurrences
+**EXAMPLES of Verification:**
+* Target: "Community Financial Credit Union"
+    * Text: "...building a strong community..." -> is_mention_verified: false (generic term)
+    * Text: "...many credit unions offer loans..." -> is_mention_verified: false (generic term)
+    * Text: "...at Community Financial Credit Union, we offer..." -> is_mention_verified: true (specific match)
+    * Text: "...better than First Community Credit Union..." -> is_mention_verified: false (different org)
+* Target: "Senso.ai"
+    * Text: "...the field of AI is growing..." -> is_mention_verified: false (generic term)
+    * Text: "...visit senso.ai for details..." -> is_mention_verified: true (specific match)
 
-**EXAMPLES:**
-
-Table mention: "| TechFlow Bank | https://techflow.com | Best rates |"
-→ Extract: "| TechFlow Bank | https://techflow.com | Best rates |"
-
-Multiple mentions: "**TechFlow Bank** offers great rates. Visit TechFlow Bank today."
-→ Extract: "**TechFlow Bank** offers great rates. || Visit TechFlow Bank today."
-
-List with citation: "- TechFlow Bank (https://techflow.com) - Recommended"
-→ Extract: "- TechFlow Bank (https://techflow.com) - Recommended"
-
-**TASK 2: DETERMINE SENTIMENT**
-
-Analyze the overall sentiment toward the target organization across all mentions:
-- **positive**: Favorable language, praise, recommendations ("excellent", "best", "recommended", "leading")
-- **negative**: Critical language, problems, warnings ("poor", "issues", "avoid", "problematic")
-- **neutral**: Factual, descriptive, balanced content without clear bias
 
 **RESPONSE TO ANALYZE:**
 `+"`"+`
 %s
 `+"`"+`
 
-**OUTPUT REQUIREMENTS:**
-- mention_text: ALL extracted text with perfect formatting, separated by " || "
-- sentiment: exactly one of "positive", "negative", or "neutral" (lowercase)`, "`"+orgName+"`", nameVariationsStr, responseText)
+**OUTPUT REQUIREMENTS (JSON Schema):**
+- is_mention_verified: boolean (true only if specific target org is mentioned)
+- mention_text: string (ALL extracted text if verified, null/empty otherwise)
+- sentiment: string ("positive", "negative", "neutral" if verified, null/empty otherwise)`,
+		"`"+orgName+"`", "`"+nameVariationsStr+"`", "`"+orgName+"`", orgName, orgName, responseText) // Added orgName multiple times for prompt clarity
+	// --- END MODIFIED PROMPT ---
 
-	// Use Azure or standard OpenAI with gpt-4.1 for org evaluation
+	// Model Selection (using config value, tracking name)
 	var model openai.ChatModel
+	modelName := ""
 	if s.cfg.AzureOpenAIDeploymentName != "" {
 		model = openai.ChatModel(s.cfg.AzureOpenAIDeploymentName)
-		fmt.Printf("[ExtractOrgEvaluation] 🎯 Using Azure OpenAI deployment: %s\n", s.cfg.AzureOpenAIDeploymentName)
+		modelName = s.cfg.AzureOpenAIDeploymentName
+		fmt.Printf("[ExtractOrgEvaluation] 🎯 Using Azure OpenAI deployment: %s\n", modelName)
 	} else {
-		model = openai.ChatModelGPT4_1
-		fmt.Printf("[ExtractOrgEvaluation] 🎯 Using Standard OpenAI model: %s\n", model)
+		model = openai.ChatModelGPT4_1 // Fallback
+		modelName = string(openai.ChatModelGPT4_1)
+		fmt.Printf("[ExtractOrgEvaluation] ⚠️ Azure deployment not set, falling back to Standard OpenAI model: %s\n", modelName)
 	}
 
+	// Schema uses the MODIFIED OrgEvaluationResponse struct
 	schemaParam := openai.ResponseFormatJSONSchemaJSONSchemaParam{
-		Name:        "org_evaluation_extraction",
-		Description: openai.String("Extract organization evaluation data from AI response"),
-		Schema:      GenerateSchema[OrgEvaluationResponse](),
+		Name:        "org_mention_verification_extraction", // Updated name slightly
+		Description: openai.String("Verify specific org mention and extract data ONLY IF verified."),
+		Schema:      GenerateSchema[OrgEvaluationResponse](), // Uses the updated struct
 		Strict:      openai.Bool(true),
 	}
 
-	fmt.Printf("[ExtractOrgEvaluation] 🚀 Making AI call for org evaluation...")
+	fmt.Printf("[ExtractOrgEvaluation] 🚀 Making AI call for org evaluation (verification + extraction)...")
 
-	// Create the extraction request with structured output
-	chatResponse, err := s.openAIClient.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
+	// Create API call parameters
+	params := openai.ChatCompletionNewParams{
 		Messages: []openai.ChatCompletionMessageParamUnion{
-			openai.SystemMessage("You are an expert text extraction specialist. Extract mention text with perfect formatting and determine sentiment. The organization is already confirmed to be mentioned."),
+			// Updated System Message
+			openai.SystemMessage("You are an expert text analysis specialist. Verify if the specific target organization is mentioned (distinguishing from generic terms). If verified, extract mention text and sentiment accurately. If not verified, return false for verification and empty/null for other fields."),
 			openai.UserMessage(prompt),
 		},
 		Model: model,
 		ResponseFormat: openai.ChatCompletionNewParamsResponseFormatUnion{
 			OfJSONSchema: &openai.ResponseFormatJSONSchemaParam{JSONSchema: schemaParam},
 		},
-		Temperature: openai.Float(0.1), // Low temperature for consistent extraction
-	})
+	}
+
+	// Conditional Temperature Setting
+	if modelName != "gpt-5" {
+		params.Temperature = openai.Float(0.1) // Keep low for consistency in extraction when verified
+		fmt.Printf("[ExtractOrgEvaluation] Setting temperature to 0.1 for model %s\n", modelName)
+	} else {
+		fmt.Printf("[ExtractOrgEvaluation] Skipping temperature setting for model gpt-5\n")
+	}
+
+	chatResponse, err := s.openAIClient.Chat.Completions.New(ctx, params)
 
 	if err != nil {
+		// Log the raw error for debugging
+		fmt.Printf("[ExtractOrgEvaluation] ❌ AI call failed: %v\n", err)
 		return nil, fmt.Errorf("failed to extract org evaluation: %w", err)
 	}
 
@@ -303,19 +327,21 @@ Analyze the overall sentiment toward the target organization across all mentions
 	if len(chatResponse.Choices) == 0 {
 		return nil, fmt.Errorf("no response choices returned from OpenAI")
 	}
-
 	responseContent := chatResponse.Choices[0].Message.Content
+	fmt.Printf("[ExtractOrgEvaluation] Raw AI Response: %s\n", responseContent) // Log raw response
 
-	// Parse the structured response
+	// Parse the structured response (using MODIFIED struct)
 	var extractedData OrgEvaluationResponse
 	if err := json.Unmarshal([]byte(responseContent), &extractedData); err != nil {
-		return nil, fmt.Errorf("failed to parse org evaluation response: %w", err)
+		fmt.Printf("[ExtractOrgEvaluation] ❌ Failed to parse JSON response: %v\n", err)
+		fmt.Printf("[ExtractOrgEvaluation]   Raw content was: %s\n", responseContent)
+		return nil, fmt.Errorf("failed to parse org evaluation response: %w. Raw content: %s", err, responseContent)
 	}
 
-	// Capture token and cost data from the AI call
+	// Capture token and cost data
 	inputTokens := int(chatResponse.Usage.PromptTokens)
 	outputTokens := int(chatResponse.Usage.CompletionTokens)
-	totalCost := s.costService.CalculateCost("openai", string(model), inputTokens, outputTokens, false)
+	totalCost := s.costService.CalculateCost("openai", modelName, inputTokens, outputTokens, false)
 
 	// Create the org evaluation model
 	now := time.Now()
@@ -323,8 +349,8 @@ Analyze the overall sentiment toward the target organization across all mentions
 		OrgEvalID:     uuid.New(),
 		QuestionRunID: questionRunID,
 		OrgID:         orgID,
-		Mentioned:     true,  // We already know it's mentioned from pre-filtering
-		Citation:      false, // Will be set by separate citation extraction if needed
+		Mentioned:     false, // Default to false, verify below
+		Citation:      false,
 		InputTokens:   &inputTokens,
 		OutputTokens:  &outputTokens,
 		TotalCost:     &totalCost,
@@ -332,19 +358,39 @@ Analyze the overall sentiment toward the target organization across all mentions
 		UpdatedAt:     now,
 	}
 
-	// Set the LLM-extracted fields
-	if extractedData.Sentiment != "" {
-		orgEval.Sentiment = &extractedData.Sentiment
-	}
-	if extractedData.MentionText != "" {
-		orgEval.MentionText = &extractedData.MentionText
-	}
-	// Set mention rank to 1 since we know it's mentioned and prominent enough to trigger extraction
-	mentionRank := 1
-	orgEval.MentionRank = &mentionRank
+	// --- SECONDARY VERIFICATION LOGIC ---
+	// Check both the explicit verification flag AND if mention text is non-empty
+	if extractedData.IsMentionVerified && extractedData.MentionText != "" {
+		orgEval.Mentioned = true // Set Mentioned to true ONLY if explicitly verified AND text exists
+		fmt.Printf("[ExtractOrgEvaluation] ✅ Mention VERIFIED by LLM. Mentioned=true\n")
 
-	fmt.Printf("[ExtractOrgEvaluation] ✅ Created org evaluation: mentioned=true, sentiment=%s, mention_text_length=%d",
-		extractedData.Sentiment, len(extractedData.MentionText))
+		// Set sentiment and text only if verified
+		if extractedData.Sentiment != "" {
+			orgEval.Sentiment = &extractedData.Sentiment
+		}
+		orgEval.MentionText = &extractedData.MentionText // Already checked non-empty
+
+		// Set mention rank to 1 since it's verified and extracted
+		mentionRank := 1
+		orgEval.MentionRank = &mentionRank
+
+		fmt.Printf("[ExtractOrgEvaluation]   Sentiment='%s', MentionTextLength=%d\n",
+			safeDerefString(orgEval.Sentiment), len(*orgEval.MentionText))
+
+	} else {
+		// If verification is false OR mention text is empty, ensure Mentioned is false
+		orgEval.Mentioned = false
+		orgEval.MentionText = nil // Ensure text is null/empty
+		orgEval.Sentiment = nil   // Ensure sentiment is null/empty
+		orgEval.MentionRank = nil // Ensure rank is null/empty
+
+		if !extractedData.IsMentionVerified {
+			fmt.Printf("[ExtractOrgEvaluation] ⚠️ Mention NOT VERIFIED by LLM (is_mention_verified=false). Mentioned=false\n")
+		} else { // MentionText must be empty if we reached here
+			fmt.Printf("[ExtractOrgEvaluation] ⚠️ Mention VERIFIED by LLM, but MentionText is EMPTY. Treating as Mentioned=false\n")
+		}
+	}
+	// --- END SECONDARY VERIFICATION LOGIC ---
 
 	return &OrgEvaluationResult{
 		Evaluation:   orgEval,
@@ -352,6 +398,17 @@ Analyze the overall sentiment toward the target organization across all mentions
 		OutputTokens: outputTokens,
 		TotalCost:    totalCost,
 	}, nil
+}
+
+// Helper function to safely dereference string pointers for logging
+func safeDerefString(s *string) string {
+	if s == nil {
+		return "<nil>"
+	}
+	if *s == "" {
+		return "<empty>"
+	}
+	return *s
 }
 
 // ExtractCompetitors implements the get_competitors() function from Python

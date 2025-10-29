@@ -1,0 +1,48 @@
+2025/10/29 16:35:29 --- 🚀 Starting Evaluation Test Harness ---
+2025/10/29 16:35:29 Test Type: improvement
+2025/10/29 16:35:29 SOV Tolerance: 10.00%
+2025/10/29 16:35:29 Log file: logs/20251029_163529_improvement_gpt-4.1.log
+2025/10/29 16:35:29 Config loaded. Using Azure Deployment: gpt-4.1
+2025/10/29 16:35:29 OrgEvaluationService initialized.
+2025/10/29 16:35:29 Loaded 23 test records from golden_data.csv
+2025/10/29 16:35:29 --- Running Test for Org: 'Sun Life' ---
+2025/10/29 16:35:31 [Test: Sun Life] Generated 24 name variations.
+2025/10/29 16:35:31 [Test: Sun Life] Pre-filter PASSED. Running LLM extraction...
+2025/10/29 16:35:31 [Test: Sun Life] LLM extraction returned text. Mention: true, Sentiment: 'neutral'
+2025/10/29 16:35:31 [Test: Sun Life] Calculated SOV: 6.42% (MentionLen: 76 / ResponseLen: 1184)
+2025/10/29 16:35:31 --- Running Test for Org: 'Atlas Care' ---
+2025/10/29 16:35:33 [Test: Atlas Care] Generated 26 name variations.
+2025/10/29 16:35:33 [Test: Atlas Care] Pre-filter PASSED. Running LLM extraction...
+2025/10/29 16:35:34 [Test: Atlas Care] LLM extraction returned text. Mention: true, Sentiment: 'positive'
+2025/10/29 16:35:34 [Test: Atlas Care] Calculated SOV: 12.94% (MentionLen: 345 / ResponseLen: 2667)
+2025/10/29 16:35:34 --- Running Test for Org: 'atlas care' ---
+2025/10/29 16:35:37 [Test: atlas care] Generated 27 name variations.
+2025/10/29 16:35:37 [Test: atlas care] Pre-filter PASSED. Running LLM extraction...
+2025/10/29 16:35:38 [Test: atlas care] LLM extraction returned text. Mention: true, Sentiment: 'positive'
+2025/10/29 16:35:38 [Test: atlas care] Calculated SOV: 12.94% (MentionLen: 345 / ResponseLen: 2667)
+2025/10/29 16:35:38 --- Running Test for Org: 'atlas care' ---
+2025/10/29 16:35:39 [Test: atlas care] Generated 25 name variations.
+2025/10/29 16:35:39 [Test: atlas care] Pre-filter PASSED. Running LLM extraction...
+2025/10/29 16:35:40 [Test: atlas care] LLM extraction returned text. Mention: true, Sentiment: 'positive'
+2025/10/29 16:35:40 [Test: atlas care] Calculated SOV: 13.09% (MentionLen: 369 / ResponseLen: 2818)
+2025/10/29 16:35:40 --- Running Test for Org: 'atlascare' ---
+2025/10/29 16:35:42 [Test: atlascare] Generated 26 name variations.
+2025/10/29 16:35:42 [Test: atlascare] Pre-filter PASSED. Running LLM extraction...
+2025/10/29 16:35:44 [Test: atlascare] LLM extraction returned text. Mention: true, Sentiment: 'positive'
+2025/10/29 16:35:44 [Test: atlascare] Calculated SOV: 24.01% (MentionLen: 408 / ResponseLen: 1699)
+2025/10/29 16:35:44 --- Running Test for Org: 'sunlife' ---
+2025/10/29 16:35:45 [Test: sunlife] Generated 25 name variations.
+2025/10/29 16:35:45 [Test: sunlife] Pre-filter PASSED. Running LLM extraction...
+2025/10/29 16:35:48 [Test: sunlife] LLM extraction returned text. Mention: true, Sentiment: 'positive'
+2025/10/29 16:35:48 [Test: sunlife] Calculated SOV: 28.94% (MentionLen: 1646 / ResponseLen: 5687)
+2025/10/29 16:35:48 --- Running Test for Org: 'sunlife' ---
+2025/10/29 16:35:50 [Test: sunlife] Generated 31 name variations.
+2025/10/29 16:35:50 [Test: sunlife] Pre-filter PASSED. Running LLM extraction...
+2025/10/29 16:35:51 [Test: sunlife] LLM extraction returned text. Mention: true, Sentiment: 'positive'
+2025/10/29 16:35:51 [Test: sunlife] Calculated SOV: 12.33% (MentionLen: 894 / ResponseLen: 7252)
+2025/10/29 16:35:51 --- Running Test for Org: 'sunlife' ---
+2025/10/29 16:35:53 [Test: sunlife] Generated 35 name variations.
+2025/10/29 16:35:53 [Test: sunlife] Pre-filter PASSED. Running LLM extraction...
+2025/10/29 16:35:55 [Test: sunlife] LLM extraction returned text. Mention: true, Sentiment: 'positive'
+2025/10/29 16:35:55 [Test: sunlife] Calculated SOV: 14.93% (MentionLen: 821 / ResponseLen: 5499)
+2025/10/29 16:35:55 --- Running Test for Org: 'sunlife' ---
