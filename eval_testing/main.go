@@ -10,6 +10,7 @@ import (
 	"log"
 	"math"
 	"os"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -26,21 +27,25 @@ type GoldenRecord struct {
 	ResponseText      string
 	ExpectedMention   bool
 	ExpectedSentiment string
-	ExpectedSOV       float64 // NEW: Added ExpectedSOV
+	ExpectedSOV       float64
+	ExpectedCitations string
 }
 
 // TestResult holds the outcome of a single test
 type TestResult struct {
-	Record          GoldenRecord
-	Passed          bool
-	MentionPassed   bool
-	SOVPassed       bool
-	SentimentPassed bool
-	ActualMention   bool
-	ActualSentiment string
-	ActualSOV       float64
-	Reason          string
-	Error           error
+	Record            GoldenRecord
+	Passed            bool
+	MentionPassed     bool
+	SOVPassed         bool
+	SentimentPassed   bool
+	CitationsPassed   bool
+	ActualMention     bool
+	ActualSentiment   string
+	ActualSOV         float64
+	ActualCitations   []string
+	ExpectedCitations []string
+	Reason            string
+	Error             error
 }
 
 func main() {
@@ -123,6 +128,7 @@ func main() {
 	mentionPassedCount := 0
 	sovPassedCount := 0
 	sentimentPassedCount := 0
+	citationsPassedCount := 0
 
 	for _, res := range results {
 		if res.Passed {
@@ -154,6 +160,9 @@ func main() {
 				}
 				log.Printf("     -> Sentiment Mismatch: Expected '%s', Got '%s'", expectedSent, actualSent)
 			}
+			if !res.CitationsPassed {
+				log.Printf("     -> Citations Mismatch: Expected %v, Got %v", res.ExpectedCitations, res.ActualCitations)
+			}
 		}
 		// Count individual metric passes regardless of overall pass/fail
 		if res.MentionPassed {
@@ -165,6 +174,9 @@ func main() {
 		if res.SentimentPassed {
 			sentimentPassedCount++
 		}
+		if res.CitationsPassed {
+			citationsPassedCount++
+		}
 	}
 
 	totalTests := float64(len(results))
@@ -172,12 +184,14 @@ func main() {
 	mentionAccuracy := (float64(mentionPassedCount) / totalTests) * 100
 	sovAccuracy := (float64(sovPassedCount) / totalTests) * 100
 	sentimentAccuracy := (float64(sentimentPassedCount) / totalTests) * 100
+	citationsAccuracy := (float64(citationsPassedCount) / totalTests) * 100
 
 	log.Printf("---")
 	log.Printf("📈 Individual Metric Accuracy:")
 	log.Printf("  - Mention Accuracy:   %.2f%% (%d/%d passed)", mentionAccuracy, mentionPassedCount, len(results))
 	log.Printf("  - SOV Accuracy (±%.2f%%): %.2f%% (%d/%d passed)", *sovTolerance, sovAccuracy, sovPassedCount, len(results))
 	log.Printf("  - Sentiment Accuracy: %.2f%% (%d/%d passed)", sentimentAccuracy, sentimentPassedCount, len(results))
+	log.Printf("  - Citations Accuracy: %.2f%% (%d/%d passed)", citationsAccuracy, citationsPassedCount, len(results))
 	log.Printf("---")
 	log.Printf("🎯 Overall Accuracy (All metrics must pass): %.2f%% (%d/%d passed)", overallAccuracy, overallPassedCount, len(results))
 	log.Printf("---")
@@ -187,6 +201,7 @@ func main() {
 func runTest(ctx context.Context, orgEvalSvc services.OrgEvaluationService, record GoldenRecord, sovTolerance float64) TestResult {
 
 	result := TestResult{Record: record} // Initialize result
+	dummyUUID := uuid.New()              // Re-use this
 
 	// --- Step 1: Generate Name Variations ---
 	nameVariations, err := orgEvalSvc.GenerateNameVariations(ctx, record.OrgName, nil)
@@ -205,7 +220,7 @@ func runTest(ctx context.Context, orgEvalSvc services.OrgEvaluationService, reco
 	}
 	log.Printf("[Test: %s] Generated %d name variations.", record.OrgName, len(nameVariations))
 
-	// --- Step 2: Run Pre-filter (Loose Sieve) ---
+	// --- Step 2: Run Pre-filter & LLM Sieve (ExtractOrgEvaluation) ---
 	preFilterMentioned := false
 	responseTextLower := strings.ToLower(record.ResponseText)
 	for _, name := range nameVariations {
@@ -221,7 +236,6 @@ func runTest(ctx context.Context, orgEvalSvc services.OrgEvaluationService, reco
 
 	if preFilterMentioned {
 		log.Printf("[Test: %s] Pre-filter PASSED. Running LLM extraction...", record.OrgName)
-		dummyUUID := uuid.New()
 		evalResult, err := orgEvalSvc.ExtractOrgEvaluation(ctx, dummyUUID, dummyUUID, record.OrgName, nil, nameVariations, record.ResponseText)
 		if err != nil {
 			result.Reason = "ExtractOrgEvaluation failed"
@@ -274,8 +288,46 @@ func runTest(ctx context.Context, orgEvalSvc services.OrgEvaluationService, reco
 		}
 	}
 
-	// --- Step 4: Compare Individual Metrics ---
+	// --- NEW Step 4: Extract and Compare Citations ---
+	log.Printf("[Test: %s] Running citation extraction...", record.OrgName)
+	// Pass nil for orgWebsites, so all citations will be "secondary"
+	// This is fine, as we are testing *extraction and cleaning*, not primary classification
+	citationResult, err := orgEvalSvc.ExtractCitations(ctx, dummyUUID, dummyUUID, record.ResponseText, nil)
 	var reasons []string
+	if err != nil {
+		// This shouldn't happen based on our implementation, but good to have
+		result.CitationsPassed = false
+		reasons = append(reasons, fmt.Sprintf("ExtractCitations returned an error: %v", err))
+	} else {
+		// Store actual citations
+		for _, cit := range citationResult.Citations {
+			result.ActualCitations = append(result.ActualCitations, cit.URL)
+		}
+
+		// Store and parse expected citations (split by pipe)
+		if record.ExpectedCitations != "" {
+			result.ExpectedCitations = strings.Split(record.ExpectedCitations, "|")
+		} else {
+			result.ExpectedCitations = []string{} // Empty slice
+		}
+
+		// Compare using maps (order doesn't matter)
+		actualMap := make(map[string]bool)
+		for _, c := range result.ActualCitations {
+			actualMap[c] = true
+		}
+		expectedMap := make(map[string]bool)
+		for _, c := range result.ExpectedCitations {
+			if c != "" { // Handle empty string from split
+				expectedMap[c] = true
+			}
+		}
+
+		// Use reflect.DeepEqual for simple map comparison
+		result.CitationsPassed = reflect.DeepEqual(actualMap, expectedMap)
+	}
+
+	// --- Step 5: Compare Individual Metrics (Updated) ---
 
 	// Mention Check
 	result.MentionPassed = (result.ActualMention == record.ExpectedMention)
@@ -310,8 +362,13 @@ func runTest(ctx context.Context, orgEvalSvc services.OrgEvaluationService, reco
 		reasons = append(reasons, fmt.Sprintf("Sentiment mismatch (Expected '%s', Got '%s')", expectedSentimentForCheck, actualSentimentForCheck))
 	}
 
+	// Add Citation Check result
+	if !result.CitationsPassed {
+		reasons = append(reasons, fmt.Sprintf("Citations mismatch (Expected %v, Got %v)", result.ExpectedCitations, result.ActualCitations))
+	}
+
 	// Determine Overall Pass/Fail
-	result.Passed = result.MentionPassed && result.SOVPassed && result.SentimentPassed
+	result.Passed = result.MentionPassed && result.SOVPassed && result.SentimentPassed && result.CitationsPassed
 	result.Reason = strings.Join(reasons, "; ")
 
 	return result
@@ -326,12 +383,11 @@ func loadGoldenData(path string) ([]GoldenRecord, error) {
 	defer file.Close()
 
 	reader := csv.NewReader(file)
-	// NEW: Check for header and field count consistency
 	header, err := reader.Read()
 	if err != nil {
 		return nil, fmt.Errorf("failed to read header row: %w", err)
 	}
-	expectedHeaders := []string{"org_name", "response_text", "expected_mention", "expected_sentiment", "expected_sov"}
+	expectedHeaders := []string{"org_name", "response_text", "expected_mention", "expected_sentiment", "expected_sov", "expected_citations"}
 	if len(header) != len(expectedHeaders) {
 		return nil, fmt.Errorf("incorrect number of columns: expected %d, got %d. Headers: %v", len(expectedHeaders), len(header), header)
 	}
@@ -378,12 +434,15 @@ func loadGoldenData(path string) ([]GoldenRecord, error) {
 			expectedSOV = 0.0
 		}
 
+		expectedCitations := strings.TrimSpace(row[5])
+
 		records = append(records, GoldenRecord{
 			OrgName:           strings.TrimSpace(row[0]),
 			ResponseText:      strings.TrimSpace(row[1]),
 			ExpectedMention:   expectedMention,
 			ExpectedSentiment: strings.TrimSpace(row[3]),
-			ExpectedSOV:       expectedSOV, // Assign parsed SOV
+			ExpectedSOV:       expectedSOV,
+			ExpectedCitations: expectedCitations,
 		})
 	}
 	if len(records) == 0 && len(rows) > 0 {

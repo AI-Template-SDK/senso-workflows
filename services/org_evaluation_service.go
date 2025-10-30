@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"net/url"
 	"strings"
 	"time"
@@ -513,38 +514,105 @@ func (s *orgEvaluationService) ExtractCompetitors(ctx context.Context, questionR
 	}, nil
 }
 
-// ExtractCitations implements the extract_citations() function from Python
+// ExtractCitations implements the extract_citations() function from Python with new logic
 func (s *orgEvaluationService) ExtractCitations(ctx context.Context, questionRunID, orgID uuid.UUID, responseText string, orgWebsites []string) (*CitationExtractionResult, error) {
 	fmt.Printf("[ExtractCitations] 🔍 Processing citations for question run %s, org %s\n", questionRunID, orgID)
 
-	// Use xurls relaxed mode to find all URLs in the text
-	matches := xurls.Relaxed().FindAllString(responseText, -1)
-
+	// --- New Logic Setup ---
 	var citations []*models.OrgCitation
 	seenURLs := make(map[string]bool)
 	now := time.Now()
 
-	for _, match := range matches {
-		// Clean up the match
-		url := strings.TrimSpace(match)
+	// Create an HTTP client once for reuse (ENG-30)
+	httpClient := &http.Client{
+		Timeout: 5 * time.Second, // 5-second timeout for dead link checks
+	}
 
-		// Skip if empty or already seen
-		if url == "" || seenURLs[url] {
+	// Image extensions to skip (ENG-162)
+	imageExtensions := []string{
+		".png", ".jpg", ".jpeg", ".gif", ".bmp", ".svg", ".webp",
+	}
+
+	// Use xurls relaxed mode to find all URLs in the text
+	matches := xurls.Relaxed().FindAllString(responseText, -1)
+
+	for _, match := range matches {
+		// 1. Start with the raw match
+		urlStr := strings.TrimSpace(match)
+
+		// 2. Normalize protocol (part of ENG-167)
+		// Ensure it has a scheme for parsing and requests. Default to https.
+		if !strings.HasPrefix(urlStr, "http://") && !strings.HasPrefix(urlStr, "https://") {
+			urlStr = "https://" + urlStr
+		}
+
+		// 3. Parse the URL
+		u, err := url.Parse(urlStr)
+		if err != nil {
+			fmt.Printf("[ExtractCitations] ⚠️ Skipping unparseable URL: %s\n", urlStr)
 			continue
 		}
 
-		// Normalize URL for comparison
-		normalizedURL := strings.ToLower(url)
-		if !strings.HasPrefix(normalizedURL, "http://") && !strings.HasPrefix(normalizedURL, "https://") {
-			normalizedURL = "https://" + normalizedURL
+		// 4. Check for valid scheme (ENG-167: "MATCH ON HTTP")
+		// This skips mailto:, ftp:, etc.
+		if u.Scheme != "http" && u.Scheme != "https" {
+			continue
 		}
 
-		// Remove trailing slashes for comparison
-		normalizedURL = strings.TrimRight(normalizedURL, "/")
+		// 5. Clean the URL (ENG-167)
+		// - Remove "www."
+		u.Host = strings.TrimPrefix(u.Hostname(), "www.")
+		// - Remove "?UTM_SOURCE=..."
+		q := u.Query()
+		for param := range q {
+			if strings.HasPrefix(param, "utm_") {
+				q.Del(param)
+			}
+		}
+		u.RawQuery = q.Encode()
+		// - Reconstruct and remove trailing slash
+		finalURL := u.String()
+		finalURL = strings.TrimRight(finalURL, "/")
 
-		// Determine if this is a primary or secondary citation using proper domain parsing
+		// 6. Check for duplicates (using the cleaned URL)
+		if finalURL == "" || seenURLs[finalURL] {
+			continue
+		}
+
+		// 7. Check for image links (ENG-162)
+		pathLower := strings.ToLower(u.Path)
+		isImage := false
+		for _, ext := range imageExtensions {
+			if strings.HasSuffix(pathLower, ext) {
+				isImage = true
+				break
+			}
+		}
+		if isImage {
+			fmt.Printf("[ExtractCitations] ⚠️ Skipping image URL: %s\n", finalURL)
+			continue
+		}
+
+		// 8. Check for dead links (ENG-30)
+		resp, err := httpClient.Get(finalURL)
+		if err != nil {
+			// Network error, treat as dead
+			fmt.Printf("[ExtractCitations] ⚠️ Skipping dead link (network error): %s\n", finalURL)
+			continue
+		}
+		resp.Body.Close() // Must close the body!
+
+		if resp.StatusCode >= 400 {
+			// HTTP error (404, 500, etc.)
+			fmt.Printf("[ExtractCitations] ⚠️ Skipping dead link (status %d): %s\n", resp.StatusCode, finalURL)
+			continue
+		}
+
+		// --- All checks passed, create the citation ---
+
+		// Determine if this is a primary or secondary citation
 		citationType := "secondary" // Default to secondary
-		if isPrimaryDomain(normalizedURL, orgWebsites) {
+		if isPrimaryDomain(finalURL, orgWebsites) {
 			citationType = "primary"
 		}
 
@@ -552,22 +620,22 @@ func (s *orgEvaluationService) ExtractCitations(ctx context.Context, questionRun
 			OrgCitationID: uuid.New(),
 			QuestionRunID: questionRunID,
 			OrgID:         orgID,
-			URL:           url,
+			URL:           finalURL, // Save the cleaned, final URL
 			Type:          citationType,
 			CreatedAt:     now,
 			UpdatedAt:     now,
 		}
 
 		citations = append(citations, citation)
-		seenURLs[url] = true
+		seenURLs[finalURL] = true
 	}
 
-	fmt.Printf("[ExtractCitations] ✅ Extracted %d citations (%d primary, %d secondary)",
+	fmt.Printf("[ExtractCitations] ✅ Extracted %d valid citations (%d primary, %d secondary)",
 		len(citations),
 		countCitationsByType(citations, "primary"),
 		countCitationsByType(citations, "secondary"))
 
-	// Citations use regex (no AI cost), but we return consistent structure
+	// Citations extraction itself doesn't use AI, so cost is 0
 	return &CitationExtractionResult{
 		Citations:    citations,
 		InputTokens:  0,
