@@ -518,33 +518,28 @@ func (s *orgEvaluationService) ExtractCompetitors(ctx context.Context, questionR
 func (s *orgEvaluationService) ExtractCitations(ctx context.Context, questionRunID, orgID uuid.UUID, responseText string, orgWebsites []string) (*CitationExtractionResult, error) {
 	fmt.Printf("[ExtractCitations] 🔍 Processing citations for question run %s, org %s\n", questionRunID, orgID)
 
-	// --- New Logic Setup ---
 	var citations []*models.OrgCitation
 	seenURLs := make(map[string]bool)
 	now := time.Now()
 
-	// Create an HTTP client once for reuse (ENG-30)
+	// Create an HTTP client once for reuse
 	httpClient := &http.Client{
 		Timeout: 5 * time.Second, // 5-second timeout for dead link checks
 	}
 
-	// Image extensions to skip (ENG-162)
+	// Image extensions to skip
 	imageExtensions := []string{
 		".png", ".jpg", ".jpeg", ".gif", ".bmp", ".svg", ".webp",
 	}
 
-	// Use xurls relaxed mode to find all URLs in the text
-	matches := xurls.Relaxed().FindAllString(responseText, -1)
+	// --- CHANGE 1: Use Strict() instead of Relaxed() ---
+	// Finds only URLs with a scheme (http://, https://)
+	// and solves the Markdown [text](href) double-citation problem.
+	matches := xurls.Strict().FindAllString(responseText, -1)
 
 	for _, match := range matches {
 		// 1. Start with the raw match
 		urlStr := strings.TrimSpace(match)
-
-		// 2. Normalize protocol (part of ENG-167)
-		// Ensure it has a scheme for parsing and requests. Default to https.
-		if !strings.HasPrefix(urlStr, "http://") && !strings.HasPrefix(urlStr, "https://") {
-			urlStr = "https://" + urlStr
-		}
 
 		// 3. Parse the URL
 		u, err := url.Parse(urlStr)
@@ -559,13 +554,13 @@ func (s *orgEvaluationService) ExtractCitations(ctx context.Context, questionRun
 			continue
 		}
 
-		// 5. Clean the URL (ENG-167)
+		// 5. Clean the URL
 		// - Remove "www."
 		u.Host = strings.TrimPrefix(u.Hostname(), "www.")
-		// - Remove "?UTM_SOURCE=..."
+		// - Remove all UTM parameters (case-insensitive)
 		q := u.Query()
 		for param := range q {
-			if strings.HasPrefix(param, "utm_") {
+			if strings.HasPrefix(strings.ToLower(param), "utm_") {
 				q.Del(param)
 			}
 		}
@@ -579,7 +574,7 @@ func (s *orgEvaluationService) ExtractCitations(ctx context.Context, questionRun
 			continue
 		}
 
-		// 7. Check for image links (ENG-162)
+		// 7. Check for image links
 		pathLower := strings.ToLower(u.Path)
 		isImage := false
 		for _, ext := range imageExtensions {
@@ -593,7 +588,7 @@ func (s *orgEvaluationService) ExtractCitations(ctx context.Context, questionRun
 			continue
 		}
 
-		// 8. Check for dead links (ENG-30)
+		// 8. Check for dead links
 		resp, err := httpClient.Get(finalURL)
 		if err != nil {
 			// Network error, treat as dead
@@ -620,7 +615,7 @@ func (s *orgEvaluationService) ExtractCitations(ctx context.Context, questionRun
 			OrgCitationID: uuid.New(),
 			QuestionRunID: questionRunID,
 			OrgID:         orgID,
-			URL:           finalURL, // Save the cleaned, final URL
+			URL:           finalURL,
 			Type:          citationType,
 			CreatedAt:     now,
 			UpdatedAt:     now,
