@@ -43,3 +43,7 @@ senso-workflows
 
 # Python venv folder
 venv/
+
+# macOS system files
+.DS_Store
+**/.DS_Store

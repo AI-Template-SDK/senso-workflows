@@ -177,9 +177,11 @@ Associated websites:
 		},
 	}
 
-	// Only set temperature if not using gpt-5 (which doesn't support custom temperature)
 	if string(model) != "gpt-5" {
-		params.Temperature = openai.Float(0.3)
+		params.Temperature = openai.Float(0.3) // Keep low for consistency in extraction when verified
+	} else {
+		params.ReasoningEffort = "minimal"
+		fmt.Printf("[ExtractOrgEvaluation] Skipping temperature setting for model gpt-5\n")
 	}
 
 	chatResponse, err := s.openAIClient.Chat.Completions.New(ctx, params)
@@ -308,6 +310,7 @@ func (s *orgEvaluationService) ExtractOrgEvaluation(ctx context.Context, questio
 		params.Temperature = openai.Float(0.1) // Keep low for consistency in extraction when verified
 		fmt.Printf("[ExtractOrgEvaluation] Setting temperature to 0.1 for model %s\n", modelName)
 	} else {
+		params.ReasoningEffort = "minimal"
 		fmt.Printf("[ExtractOrgEvaluation] Skipping temperature setting for model gpt-5\n")
 	}
 
@@ -360,6 +363,7 @@ func (s *orgEvaluationService) ExtractOrgEvaluation(ctx context.Context, questio
 
 	// --- SECONDARY VERIFICATION LOGIC ---
 	// Check both the explicit verification flag AND if mention text is non-empty
+	// The system will now only consider an organization "mentioned" if the AI both explicitly confirms the verification and provides extracted text.
 	if extractedData.IsMentionVerified && extractedData.MentionText != "" {
 		orgEval.Mentioned = true // Set Mentioned to true ONLY if explicitly verified AND text exists
 		fmt.Printf("[ExtractOrgEvaluation] ✅ Mention VERIFIED by LLM. Mentioned=true\n")

@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"math" // NEW: Import math package
+	"math"
 	"os"
 	"strconv"
 	"strings"
@@ -32,14 +32,14 @@ type GoldenRecord struct {
 // TestResult holds the outcome of a single test
 type TestResult struct {
 	Record          GoldenRecord
-	Passed          bool    // Overall pass/fail
-	MentionPassed   bool    // NEW: Mention specific result
-	SOVPassed       bool    // NEW: SOV specific result
-	SentimentPassed bool    // NEW: Sentiment specific result
-	ActualMention   bool    // Actual result from code
-	ActualSentiment string  // Actual result from code
-	ActualSOV       float64 // NEW: Actual calculated SOV
-	Reason          string  // Combined reasons for failure
+	Passed          bool
+	MentionPassed   bool
+	SOVPassed       bool
+	SentimentPassed bool
+	ActualMention   bool
+	ActualSentiment string
+	ActualSOV       float64
+	Reason          string
 	Error           error
 }
 
@@ -47,7 +47,7 @@ func main() {
 	// Define and parse command-line flags
 	testType := flag.String("type", "baseline", "Type of test: 'baseline' or 'improvement'")
 	modelFlag := flag.String("model", "", "Override Azure deployment name (e.g., gpt-4.1-mini, gpt-5)")
-	sovTolerance := flag.Float64("sov-tolerance", 10.0, "Allowed % tolerance for SOV comparison") // NEW: SOV Tolerance flag
+	sovTolerance := flag.Float64("sov-tolerance", 10.0, "Allowed % tolerance for SOV comparison")
 	flag.Parse()
 
 	// 1. Load Configuration
@@ -84,7 +84,7 @@ func main() {
 	writer := io.MultiWriter(os.Stdout, logFile)
 	log.SetOutput(writer)
 
-	// Now log initial settings
+	// log initial settings
 	log.Println("--- 🚀 Starting Evaluation Test Harness ---")
 	log.Printf("Test Type: %s", *testType)
 	log.Printf("SOV Tolerance: %.2f%%", *sovTolerance)
@@ -184,7 +184,6 @@ func main() {
 }
 
 // runTest executes the "sieve" logic and calculates individual metrics
-// NEW: Added sovTolerance parameter
 func runTest(ctx context.Context, orgEvalSvc services.OrgEvaluationService, record GoldenRecord, sovTolerance float64) TestResult {
 
 	result := TestResult{Record: record} // Initialize result
@@ -210,7 +209,7 @@ func runTest(ctx context.Context, orgEvalSvc services.OrgEvaluationService, reco
 	preFilterMentioned := false
 	responseTextLower := strings.ToLower(record.ResponseText)
 	for _, name := range nameVariations {
-		// Basic check - might need refinement later if still too loose
+		// Basic check
 		if strings.Contains(responseTextLower, strings.ToLower(name)) {
 			preFilterMentioned = true
 			break
@@ -218,7 +217,7 @@ func runTest(ctx context.Context, orgEvalSvc services.OrgEvaluationService, reco
 	}
 
 	// Initialize actual results
-	var mentionTextPtr *string = nil // NEW: Store the extracted mention text pointer
+	var mentionTextPtr *string = nil // Store the extracted mention text pointer
 
 	if preFilterMentioned {
 		log.Printf("[Test: %s] Pre-filter PASSED. Running LLM extraction...", record.OrgName)
@@ -261,7 +260,6 @@ func runTest(ctx context.Context, orgEvalSvc services.OrgEvaluationService, reco
 	}
 
 	// --- Step 3: Calculate Actual SOV ---
-	// Using the logic from your SQL query
 	responseTextLen := len(record.ResponseText)
 	if result.ActualMention && responseTextLen > 0 && mentionTextPtr != nil {
 		mentionTextLen := len(*mentionTextPtr)
