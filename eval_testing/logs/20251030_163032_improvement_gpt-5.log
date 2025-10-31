@@ -1,0 +1,174 @@
+2025/10/30 16:30:32 --- 🚀 Starting Evaluation Test Harness ---
+2025/10/30 16:30:32 Test Type: improvement
+2025/10/30 16:30:32 SOV Tolerance: 10.00%
+2025/10/30 16:30:32 Log file: logs/20251030_163032_improvement_gpt-5.log
+2025/10/30 16:30:32 Config loaded. Using Azure Deployment: gpt-5
+2025/10/30 16:30:32 OrgEvaluationService initialized.
+2025/10/30 16:30:32 Loaded 22 test records from golden_data.csv
+2025/10/30 16:30:32 --- Running Test for Org: 'Sun Life Financial' ---
+2025/10/30 16:30:34 [Test: Sun Life Financial] Generated 28 name variations.
+2025/10/30 16:30:34 [Test: Sun Life Financial] Pre-filter PASSED. Running LLM extraction...
+2025/10/30 16:30:35 [Test: Sun Life Financial] LLM extraction returned EMPTY text. Setting Mention: false.
+2025/10/30 16:30:35 [Test: Sun Life Financial] Calculated SOV: 0.0% (Not mentioned)
+2025/10/30 16:30:35 [Test: Sun Life Financial] Running citation extraction...
+2025/10/30 16:30:35 --- Running Test for Org: 'AtlasCare' ---
+2025/10/30 16:30:37 [Test: AtlasCare] Generated 24 name variations.
+2025/10/30 16:30:37 [Test: AtlasCare] Pre-filter PASSED. Running LLM extraction...
+2025/10/30 16:30:38 [Test: AtlasCare] LLM extraction returned text. Mention: true, Sentiment: 'positive'
+2025/10/30 16:30:38 [Test: AtlasCare] Calculated SOV: 13.05% (MentionLen: 348 / ResponseLen: 2667)
+2025/10/30 16:30:38 [Test: AtlasCare] Running citation extraction...
+2025/10/30 16:30:40 --- Running Test for Org: 'AtlasCare' ---
+2025/10/30 16:30:42 [Test: AtlasCare] Generated 25 name variations.
+2025/10/30 16:30:42 [Test: AtlasCare] Pre-filter PASSED. Running LLM extraction...
+2025/10/30 16:30:43 [Test: AtlasCare] LLM extraction returned text. Mention: true, Sentiment: 'positive'
+2025/10/30 16:30:44 [Test: AtlasCare] Calculated SOV: 13.09% (MentionLen: 369 / ResponseLen: 2818)
+2025/10/30 16:30:44 [Test: AtlasCare] Running citation extraction...
+2025/10/30 16:30:47 --- Running Test for Org: 'AtlasCare' ---
+2025/10/30 16:30:49 [Test: AtlasCare] Generated 26 name variations.
+2025/10/30 16:30:49 [Test: AtlasCare] Pre-filter PASSED. Running LLM extraction...
+2025/10/30 16:30:51 [Test: AtlasCare] LLM extraction returned text. Mention: true, Sentiment: 'positive'
+2025/10/30 16:30:51 [Test: AtlasCare] Calculated SOV: 24.01% (MentionLen: 408 / ResponseLen: 1699)
+2025/10/30 16:30:51 [Test: AtlasCare] Running citation extraction...
+2025/10/30 16:30:53 --- Running Test for Org: 'Sun Life Financial' ---
+2025/10/30 16:30:55 [Test: Sun Life Financial] Generated 26 name variations.
+2025/10/30 16:30:55 [Test: Sun Life Financial] Pre-filter PASSED. Running LLM extraction...
+2025/10/30 16:30:58 [Test: Sun Life Financial] LLM extraction returned text. Mention: true, Sentiment: 'positive'
+2025/10/30 16:30:58 [Test: Sun Life Financial] Calculated SOV: 27.17% (MentionLen: 1545 / ResponseLen: 5687)
+2025/10/30 16:30:58 [Test: Sun Life Financial] Running citation extraction...
+2025/10/30 16:30:58 --- Running Test for Org: 'Sun Life Financial' ---
+2025/10/30 16:31:01 [Test: Sun Life Financial] Generated 36 name variations.
+2025/10/30 16:31:01 [Test: Sun Life Financial] Pre-filter PASSED. Running LLM extraction...
+2025/10/30 16:31:04 [Test: Sun Life Financial] LLM extraction returned text. Mention: true, Sentiment: 'positive'
+2025/10/30 16:31:04 [Test: Sun Life Financial] Calculated SOV: 13.87% (MentionLen: 1006 / ResponseLen: 7252)
+2025/10/30 16:31:04 [Test: Sun Life Financial] Running citation extraction...
+2025/10/30 16:31:04 --- Running Test for Org: 'Sun Life Financial' ---
+2025/10/30 16:31:06 [Test: Sun Life Financial] Generated 24 name variations.
+2025/10/30 16:31:06 [Test: Sun Life Financial] Pre-filter PASSED. Running LLM extraction...
+2025/10/30 16:31:08 [Test: Sun Life Financial] LLM extraction returned text. Mention: true, Sentiment: 'neutral'
+2025/10/30 16:31:08 [Test: Sun Life Financial] Calculated SOV: 14.95% (MentionLen: 822 / ResponseLen: 5499)
+2025/10/30 16:31:08 [Test: Sun Life Financial] Running citation extraction...
+2025/10/30 16:31:08 --- Running Test for Org: 'Sun Life Financial' ---
+2025/10/30 16:31:11 [Test: Sun Life Financial] Generated 31 name variations.
+2025/10/30 16:31:11 [Test: Sun Life Financial] Pre-filter PASSED. Running LLM extraction...
+2025/10/30 16:31:12 [Test: Sun Life Financial] LLM extraction returned text. Mention: true, Sentiment: 'positive'
+2025/10/30 16:31:12 [Test: Sun Life Financial] Calculated SOV: 2.17% (MentionLen: 153 / ResponseLen: 7035)
+2025/10/30 16:31:12 [Test: Sun Life Financial] Running citation extraction...
+2025/10/30 16:31:12 --- Running Test for Org: 'AtlasCare' ---
+2025/10/30 16:31:14 [Test: AtlasCare] Generated 25 name variations.
+2025/10/30 16:31:14 [Test: AtlasCare] Pre-filter FAILED. Skipping LLM extraction. Mention: false.
+2025/10/30 16:31:14 [Test: AtlasCare] Calculated SOV: 0.0% (Not mentioned)
+2025/10/30 16:31:14 [Test: AtlasCare] Running citation extraction...
+2025/10/30 16:31:17 --- Running Test for Org: 'AtlasCare' ---
+2025/10/30 16:31:20 [Test: AtlasCare] Generated 42 name variations.
+2025/10/30 16:31:20 [Test: AtlasCare] Pre-filter FAILED. Skipping LLM extraction. Mention: false.
+2025/10/30 16:31:20 [Test: AtlasCare] Calculated SOV: 0.0% (Not mentioned)
+2025/10/30 16:31:20 [Test: AtlasCare] Running citation extraction...
+2025/10/30 16:31:21 --- Running Test for Org: 'Sun Life Financial' ---
+2025/10/30 16:31:23 [Test: Sun Life Financial] Generated 28 name variations.
+2025/10/30 16:31:23 [Test: Sun Life Financial] Pre-filter FAILED. Skipping LLM extraction. Mention: false.
+2025/10/30 16:31:23 [Test: Sun Life Financial] Calculated SOV: 0.0% (Not mentioned)
+2025/10/30 16:31:23 [Test: Sun Life Financial] Running citation extraction...
+2025/10/30 16:31:23 --- Running Test for Org: 'Arrowhead' ---
+2025/10/30 16:31:25 [Test: Arrowhead] Generated 25 name variations.
+2025/10/30 16:31:25 [Test: Arrowhead] Pre-filter FAILED. Skipping LLM extraction. Mention: false.
+2025/10/30 16:31:25 [Test: Arrowhead] Calculated SOV: 0.0% (Not mentioned)
+2025/10/30 16:31:25 [Test: Arrowhead] Running citation extraction...
+2025/10/30 16:31:27 --- Running Test for Org: 'Community Financial Credit Union' ---
+2025/10/30 16:31:31 [Test: Community Financial Credit Union] Generated 25 name variations.
+2025/10/30 16:31:31 [Test: Community Financial Credit Union] Pre-filter FAILED. Skipping LLM extraction. Mention: false.
+2025/10/30 16:31:31 [Test: Community Financial Credit Union] Calculated SOV: 0.0% (Not mentioned)
+2025/10/30 16:31:31 [Test: Community Financial Credit Union] Running citation extraction...
+2025/10/30 16:31:31 --- Running Test for Org: 'Community Financial Credit Union' ---
+2025/10/30 16:31:33 [Test: Community Financial Credit Union] Generated 25 name variations.
+2025/10/30 16:31:33 [Test: Community Financial Credit Union] Pre-filter FAILED. Skipping LLM extraction. Mention: false.
+2025/10/30 16:31:33 [Test: Community Financial Credit Union] Calculated SOV: 0.0% (Not mentioned)
+2025/10/30 16:31:33 [Test: Community Financial Credit Union] Running citation extraction...
+2025/10/30 16:31:33 --- Running Test for Org: 'Sylvan Learning' ---
+2025/10/30 16:31:35 [Test: Sylvan Learning] Generated 24 name variations.
+2025/10/30 16:31:35 [Test: Sylvan Learning] Pre-filter FAILED. Skipping LLM extraction. Mention: false.
+2025/10/30 16:31:35 [Test: Sylvan Learning] Calculated SOV: 0.0% (Not mentioned)
+2025/10/30 16:31:35 [Test: Sylvan Learning] Running citation extraction...
+2025/10/30 16:31:35 --- Running Test for Org: 'Sylvan Learning' ---
+2025/10/30 16:31:37 [Test: Sylvan Learning] Generated 24 name variations.
+2025/10/30 16:31:37 [Test: Sylvan Learning] Pre-filter PASSED. Running LLM extraction...
+2025/10/30 16:31:38 [Test: Sylvan Learning] LLM extraction returned EMPTY text. Setting Mention: false.
+2025/10/30 16:31:38 [Test: Sylvan Learning] Calculated SOV: 0.0% (Not mentioned)
+2025/10/30 16:31:38 [Test: Sylvan Learning] Running citation extraction...
+2025/10/30 16:31:38 --- Running Test for Org: 'Sylvan Learning' ---
+2025/10/30 16:31:41 [Test: Sylvan Learning] Generated 25 name variations.
+2025/10/30 16:31:41 [Test: Sylvan Learning] Pre-filter PASSED. Running LLM extraction...
+2025/10/30 16:31:42 [Test: Sylvan Learning] LLM extraction returned EMPTY text. Setting Mention: false.
+2025/10/30 16:31:42 [Test: Sylvan Learning] Calculated SOV: 0.0% (Not mentioned)
+2025/10/30 16:31:42 [Test: Sylvan Learning] Running citation extraction...
+2025/10/30 16:31:44 --- Running Test for Org: 'Unleashed Brands' ---
+2025/10/30 16:31:47 [Test: Unleashed Brands] Generated 25 name variations.
+2025/10/30 16:31:47 [Test: Unleashed Brands] Pre-filter PASSED. Running LLM extraction...
+2025/10/30 16:31:48 [Test: Unleashed Brands] LLM extraction returned EMPTY text. Setting Mention: false.
+2025/10/30 16:31:48 [Test: Unleashed Brands] Calculated SOV: 0.0% (Not mentioned)
+2025/10/30 16:31:48 [Test: Unleashed Brands] Running citation extraction...
+2025/10/30 16:31:48 --- Running Test for Org: 'Unleashed Brands' ---
+2025/10/30 16:31:50 [Test: Unleashed Brands] Generated 25 name variations.
+2025/10/30 16:31:50 [Test: Unleashed Brands] Pre-filter PASSED. Running LLM extraction...
+2025/10/30 16:31:51 [Test: Unleashed Brands] LLM extraction returned EMPTY text. Setting Mention: false.
+2025/10/30 16:31:51 [Test: Unleashed Brands] Calculated SOV: 0.0% (Not mentioned)
+2025/10/30 16:31:51 [Test: Unleashed Brands] Running citation extraction...
+2025/10/30 16:31:51 --- Running Test for Org: 'Unleashed Brands' ---
+2025/10/30 16:31:53 [Test: Unleashed Brands] Generated 26 name variations.
+2025/10/30 16:31:53 [Test: Unleashed Brands] Pre-filter PASSED. Running LLM extraction...
+2025/10/30 16:31:53 [Test: Unleashed Brands] LLM extraction returned EMPTY text. Setting Mention: false.
+2025/10/30 16:31:53 [Test: Unleashed Brands] Calculated SOV: 0.0% (Not mentioned)
+2025/10/30 16:31:53 [Test: Unleashed Brands] Running citation extraction...
+2025/10/30 16:31:53 --- Running Test for Org: 'Unleashed Brands' ---
+2025/10/30 16:31:56 [Test: Unleashed Brands] Generated 25 name variations.
+2025/10/30 16:31:56 [Test: Unleashed Brands] Pre-filter PASSED. Running LLM extraction...
+2025/10/30 16:31:57 [Test: Unleashed Brands] LLM extraction returned EMPTY text. Setting Mention: false.
+2025/10/30 16:31:57 [Test: Unleashed Brands] Calculated SOV: 0.0% (Not mentioned)
+2025/10/30 16:31:57 [Test: Unleashed Brands] Running citation extraction...
+2025/10/30 16:31:57 --- Running Test for Org: 'Unleashed Brands' ---
+2025/10/30 16:31:59 [Test: Unleashed Brands] Generated 27 name variations.
+2025/10/30 16:31:59 [Test: Unleashed Brands] Pre-filter PASSED. Running LLM extraction...
+2025/10/30 16:32:00 [Test: Unleashed Brands] LLM extraction returned EMPTY text. Setting Mention: false.
+2025/10/30 16:32:00 [Test: Unleashed Brands] Calculated SOV: 0.0% (Not mentioned)
+2025/10/30 16:32:00 [Test: Unleashed Brands] Running citation extraction...
+2025/10/30 16:32:00 
+--- 📊 Test Harness Summary ---
+2025/10/30 16:32:00 ❌ OVERALL FAIL: [Sun Life Financial] - Reason(s): Mention mismatch (Expected true, Got false); Sentiment mismatch (Expected 'neutral', Got '') (Error: <nil>)
+2025/10/30 16:32:00    -> Response: "For a healthy 35-year-old non-smoker in Ontario, C..."
+2025/10/30 16:32:00      -> Mention Mismatch: Expected true, Got false
+2025/10/30 16:32:00      -> Sentiment Mismatch: Expected 'neutral', Got '(N/A)'
+2025/10/30 16:32:00 ❌ OVERALL FAIL: [AtlasCare] - Reason(s): Citations mismatch (Expected [https://idealheating.ca https://idealheating.ca/hvac-technican https://greenheatingandair.ca/residential/hvac-services https://beyondhvac.ca https://atlascare.ca/toronto-hvac], Got [https://idealheating.ca https://idealheating.ca/hvac-technican https://greenheatingandair.ca https://greenheatingandair.ca/residential/hvac-services https://beyondhvac.ca https://atlascare.ca https://atlascare.ca/toronto-hvac]) (Error: <nil>)
+2025/10/30 16:32:00    -> Response: "To find certified HVAC technicians in Toronto who ..."
+2025/10/30 16:32:00      -> Citations Mismatch: Expected [https://idealheating.ca https://idealheating.ca/hvac-technican https://greenheatingandair.ca/residential/hvac-services https://beyondhvac.ca https://atlascare.ca/toronto-hvac], Got [https://idealheating.ca https://idealheating.ca/hvac-technican https://greenheatingandair.ca https://greenheatingandair.ca/residential/hvac-services https://beyondhvac.ca https://atlascare.ca https://atlascare.ca/toronto-hvac]
+2025/10/30 16:32:00 ✅ OVERALL PASS: [AtlasCare]
+2025/10/30 16:32:00 ❌ OVERALL FAIL: [AtlasCare] - Reason(s): SOV mismatch (Expected 34.90%, Got 24.01%, Diff 10.89% > Tol 10.00%) (Error: <nil>)
+2025/10/30 16:32:00    -> Response: "If you're seeking reputable HVAC companies in the ..."
+2025/10/30 16:32:00      -> SOV Mismatch (Tolerance 10.00%): Expected 34.90%, Got 24.01%
+2025/10/30 16:32:00 ✅ OVERALL PASS: [Sun Life Financial]
+2025/10/30 16:32:00 ✅ OVERALL PASS: [Sun Life Financial]
+2025/10/30 16:32:00 ❌ OVERALL FAIL: [Sun Life Financial] - Reason(s): Sentiment mismatch (Expected 'positive', Got 'neutral') (Error: <nil>)
+2025/10/30 16:32:00    -> Response: "Ranking Canadian insurers by their global presence..."
+2025/10/30 16:32:00      -> Sentiment Mismatch: Expected 'positive', Got 'neutral'
+2025/10/30 16:32:00 ✅ OVERALL PASS: [Sun Life Financial]
+2025/10/30 16:32:00 ✅ OVERALL PASS: [AtlasCare]
+2025/10/30 16:32:00 ✅ OVERALL PASS: [AtlasCare]
+2025/10/30 16:32:00 ✅ OVERALL PASS: [Sun Life Financial]
+2025/10/30 16:32:00 ✅ OVERALL PASS: [Arrowhead]
+2025/10/30 16:32:00 ✅ OVERALL PASS: [Community Financial Credit Union]
+2025/10/30 16:32:00 ✅ OVERALL PASS: [Community Financial Credit Union]
+2025/10/30 16:32:00 ✅ OVERALL PASS: [Sylvan Learning]
+2025/10/30 16:32:00 ✅ OVERALL PASS: [Sylvan Learning]
+2025/10/30 16:32:00 ✅ OVERALL PASS: [Sylvan Learning]
+2025/10/30 16:32:00 ✅ OVERALL PASS: [Unleashed Brands]
+2025/10/30 16:32:00 ✅ OVERALL PASS: [Unleashed Brands]
+2025/10/30 16:32:00 ✅ OVERALL PASS: [Unleashed Brands]
+2025/10/30 16:32:00 ✅ OVERALL PASS: [Unleashed Brands]
+2025/10/30 16:32:00 ✅ OVERALL PASS: [Unleashed Brands]
+2025/10/30 16:32:00 ---
+2025/10/30 16:32:00 📈 Individual Metric Accuracy:
+2025/10/30 16:32:00   - Mention Accuracy:   95.45% (21/22 passed)
+2025/10/30 16:32:00   - SOV Accuracy (±10.00%): 95.45% (21/22 passed)
+2025/10/30 16:32:00   - Sentiment Accuracy: 90.91% (20/22 passed)
+2025/10/30 16:32:00   - Citations Accuracy: 95.45% (21/22 passed)
+2025/10/30 16:32:00 ---
+2025/10/30 16:32:00 🎯 Overall Accuracy (All metrics must pass): 81.82% (18/22 passed)
+2025/10/30 16:32:00 ---
