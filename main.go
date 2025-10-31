@@ -207,6 +207,9 @@ func main() {
 		cfg,
 	)
 
+	// Initialize dummy processor for scheduler testing
+	dummyProcessor := workflows.NewDummyProcessor()
+
 	// Set client on workflows
 	orgProcessor.SetClient(client)
 	orgEvaluationProcessor.SetClient(client)
@@ -217,6 +220,7 @@ func main() {
 	orgReevalProcessor.SetClient(client)
 	networkOrgReevalProcessor.SetClient(client)
 	networkOrgMissingProcessor.SetClient(client)
+	dummyProcessor.SetClient(client)
 
 	// Register functions (they auto-register with the client when created)
 	orgProcessor.ProcessOrg()
@@ -229,6 +233,7 @@ func main() {
 	orgReevalProcessor.ProcessOrgReeval()
 	networkOrgReevalProcessor.ProcessNetworkOrgReeval()
 	networkOrgMissingProcessor.ProcessNetworkOrgMissing()
+	dummyProcessor.ProcessDummy()
 
 	// Create handler
 	h := client.Serve()

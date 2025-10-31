@@ -129,6 +129,17 @@ func (s *orgService) GetOrgsByCreationWeekday(ctx context.Context, weekday time.
 	return filteredOrgs, nil
 }
 
+// GetOrgIDsByScheduledDOW retrieves organization IDs from the org_schedules table
+func (s *orgService) GetOrgIDsByScheduledDOW(ctx context.Context, dow int) ([]uuid.UUID, error) {
+	orgIDs, err := s.repos.OrgScheduleRepo.GetOrgIDsByDOW(ctx, dow)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get org IDs by scheduled DOW: %w", err)
+	}
+
+	fmt.Printf("[GetOrgIDsByScheduledDOW] Found %d orgs scheduled for DOW %d\n", len(orgIDs), dow)
+	return orgIDs, nil
+}
+
 func (s *orgService) GetOrgsScheduledForDate(ctx context.Context, date time.Time) ([]string, error) {
 	// Get organizations scheduled for this date (based on weekday)
 	weekday := date.Weekday()

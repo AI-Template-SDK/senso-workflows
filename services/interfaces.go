@@ -39,6 +39,8 @@ type RepositoryManager struct {
 	QuestionRunBatchRepo interfaces.QuestionRunBatchRepository
 	// Credit ledger repository
 	CreditLedgerRepo interfaces.CreditLedgerRepository
+	// Organization schedule repository
+	OrgScheduleRepo interfaces.OrgScheduleRepository
 }
 
 // NewRepositoryManager creates a new repository manager with all repositories
@@ -66,6 +68,8 @@ func NewRepositoryManager(db *database.Client) *RepositoryManager {
 		QuestionRunBatchRepo: postgresql.NewQuestionRunBatchRepo(db),
 		// Credit ledger repository
 		CreditLedgerRepo: postgresql.NewCreditLedgerRepo(db),
+		// Organization schedule repository
+		OrgScheduleRepo: postgresql.NewOrgScheduleRepo(db),
 	}
 }
 
@@ -187,6 +191,7 @@ type OrgDetailsForNetworkProcessing struct {
 type OrgService interface {
 	GetOrgDetails(ctx context.Context, orgID string) (*RealOrgDetails, error)
 	GetOrgsByCreationWeekday(ctx context.Context, weekday time.Weekday) ([]*workflowModels.OrgSummary, error)
+	GetOrgIDsByScheduledDOW(ctx context.Context, dow int) ([]uuid.UUID, error)
 	GetOrgsScheduledForDate(ctx context.Context, date time.Time) ([]string, error)
 	GetOrgCountByWeekday(ctx context.Context) (map[string]int, error)
 }
