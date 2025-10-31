@@ -38,7 +38,7 @@ func (p *ScheduledProcessor) DailyOrgProcessor() inngestgo.ServableFunction {
 		inngestgo.CronTrigger("0 2 * * *"), // Every day at 2 AM UTC
 		func(ctx context.Context, input inngestgo.Input[any]) (any, error) {
 
-			// Tom's logic: "if Monday is zero"
+			// Monday is zero
 			// Go's logic: Sunday=0, Monday=1, ... Saturday=6
 			// Conversion: (time.Now().Weekday() + 6) % 7
 			now := time.Now()
@@ -62,29 +62,30 @@ func (p *ScheduledProcessor) DailyOrgProcessor() inngestgo.ServableFunction {
 				}, nil
 			}
 
-			// Step 2: Trigger dummy pipelines asynchronously for testing
-			_, err = step.Run(ctx, "trigger-dummy-evaluations", func(ctx context.Context) (interface{}, error) {
-				// Send events asynchronously - the scheduler does NOT wait for completion
-				for _, orgID := range orgIDs {
+			// Step 2: Loop over each org and trigger an idempotent step-run for each.
+			// This ensures if the workflow fails, it only retries sends that didn't complete.
+			for _, orgID := range orgIDs {
+				// Create a unique step name for each org
+				stepName := fmt.Sprintf("trigger-dummy-eval-%s", orgID.String())
+
+				// This step.Run is now *inside* the loop and is idempotent per-org
+				_, err := step.Run(ctx, stepName, func(ctx context.Context) (interface{}, error) {
 					evt := inngestgo.Event{
-						Name: "dummy.org.process", // USING DUMMY WORKFLOW FOR TESTING
+						Name: "dummy.org.process",
 						Data: map[string]interface{}{
 							"org_id":       orgID.String(),
 							"triggered_by": "automatic_scheduler",
 						},
 					}
+					// Send the single event
+					return p.client.Send(ctx, evt)
+				})
 
-					// Send the event (fire and forget)
-					_, err := p.client.Send(ctx, evt)
-					if err != nil {
-						fmt.Printf("Warning: Failed to send event for org %s: %v\n", orgID.String(), err)
-						// Continue processing other orgs even if one fails
-					}
+				if err != nil {
+					// Log the error but continue processing other orgs
+					fmt.Printf("Warning: Failed to send event for org %s: %v\n", orgID.String(), err)
+					// Do not return the error, to allow other orgs to process
 				}
-				return map[string]interface{}{"events_sent": len(orgIDs)}, nil
-			})
-			if err != nil {
-				return nil, fmt.Errorf("failed to trigger dummy evaluations: %w", err)
 			}
 
 			return map[string]interface{}{
@@ -103,10 +104,4 @@ func (p *ScheduledProcessor) DailyOrgProcessor() inngestgo.ServableFunction {
 	}
 
 	return fn
-}
-
-// Helper function to calculate weeks since creation
-func weeksSince(createdAt, now time.Time) int {
-	duration := now.Sub(createdAt)
-	return int(duration.Hours() / 24 / 7)
 }
