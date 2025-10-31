@@ -532,9 +532,7 @@ func (s *orgEvaluationService) ExtractCitations(ctx context.Context, questionRun
 		".png", ".jpg", ".jpeg", ".gif", ".bmp", ".svg", ".webp",
 	}
 
-	// --- CHANGE 1: Use Strict() instead of Relaxed() ---
-	// Finds only URLs with a scheme (http://, https://)
-	// and solves the Markdown [text](href) double-citation problem.
+	// Use Strict() to only find URLs with a scheme (http://, https://)
 	matches := xurls.Strict().FindAllString(responseText, -1)
 
 	for _, match := range matches {
@@ -549,9 +547,8 @@ func (s *orgEvaluationService) ExtractCitations(ctx context.Context, questionRun
 		}
 
 		// 4. Check for valid scheme (ENG-167: "MATCH ON HTTP")
-		// This skips mailto:, ftp:, etc.
 		if u.Scheme != "http" && u.Scheme != "https" {
-			continue
+			continue // Skip mailto:, ftp:, etc.
 		}
 
 		// 5. Clean the URL
@@ -585,25 +582,11 @@ func (s *orgEvaluationService) ExtractCitations(ctx context.Context, questionRun
 		}
 		if isImage {
 			fmt.Printf("[ExtractCitations] ⚠️ Skipping image URL: %s\n", finalURL)
-			continue
+			continue // We skip image links entirely
 		}
 
-		// 8. Check for dead links
-		resp, err := httpClient.Get(finalURL)
-		if err != nil {
-			// Network error, treat as dead
-			fmt.Printf("[ExtractCitations] ⚠️ Skipping dead link (network error): %s\n", finalURL)
-			continue
-		}
-		resp.Body.Close() // Must close the body!
-
-		if resp.StatusCode >= 400 {
-			// HTTP error (404, 500, etc.)
-			fmt.Printf("[ExtractCitations] ⚠️ Skipping dead link (status %d): %s\n", resp.StatusCode, finalURL)
-			continue
-		}
-
-		// --- All checks passed, create the citation ---
+		// --- CHANGE 1: Create the citation object *before* the dead link check ---
+		// We need to create it now so we can set its DeadLink flag.
 
 		// Determine if this is a primary or secondary citation
 		citationType := "secondary" // Default to secondary
@@ -617,15 +600,36 @@ func (s *orgEvaluationService) ExtractCitations(ctx context.Context, questionRun
 			OrgID:         orgID,
 			URL:           finalURL,
 			Type:          citationType,
+			DeadLink:      false, // Default to false
 			CreatedAt:     now,
 			UpdatedAt:     now,
 		}
 
+		// --- CHANGE 2: Modify dead link check to *flag* instead of *skip* ---
+		// 8. Check for dead links (ENG-30)
+		resp, err := httpClient.Get(finalURL)
+		if err != nil {
+			// Network error, treat as dead
+			fmt.Printf("[ExtractCitations] ⚠️ Flagging dead link (network error): %s\n", finalURL)
+			citation.DeadLink = true
+		} else {
+			resp.Body.Close() // Must close the body!
+
+			if resp.StatusCode >= 400 {
+				// HTTP error (404, 500, etc.)
+				fmt.Printf("[ExtractCitations] ⚠️ Flagging dead link (status %d): %s\n", resp.StatusCode, finalURL)
+				citation.DeadLink = true
+			}
+		}
+
+		// --- CHANGE 3: Always add the citation (dead or not) ---
+		// The `continue` statements for dead links are gone.
+		// We now add the citation to the list regardless of its status.
 		citations = append(citations, citation)
 		seenURLs[finalURL] = true
 	}
 
-	fmt.Printf("[ExtractCitations] ✅ Extracted %d valid citations (%d primary, %d secondary)",
+	fmt.Printf("[ExtractCitations] ✅ Extracted %d citations (incl. dead) (%d primary, %d secondary)",
 		len(citations),
 		countCitationsByType(citations, "primary"),
 		countCitationsByType(citations, "secondary"))
