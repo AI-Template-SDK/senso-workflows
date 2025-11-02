@@ -4,53 +4,36 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/AI-Template-SDK/senso-workflows/internal/models"
 	"github.com/AI-Template-SDK/senso-workflows/internal/providers/common"
 )
 
 // RunQuestionBatch processes multiple questions in a single BrightData API call
+// This is the SYNC version that does submit + poll + retrieve in one call
+// For async workflows, use SubmitBatchJob -> PollJobStatus -> RetrieveBatchResults instead
 func (p *Provider) RunQuestionBatch(ctx context.Context, queries []string, websearch bool, location *models.Location) ([]*common.AIResponse, error) {
-	fmt.Printf("[ChatGPTProvider] 🚀 Making batched BrightData call for %d queries\n", len(queries))
+	fmt.Printf("[ChatGPTProvider] 🚀 Making SYNC batched BrightData call for %d queries\n", len(queries))
 
-	if len(queries) > 20 {
-		return nil, fmt.Errorf("batch size %d exceeds maximum of 20", len(queries))
-	}
-
-	// 1. Submit batch job to BrightData
-	snapshotID, err := p.submitBatchJob(ctx, queries, location, websearch)
+	// 1. Submit batch job
+	snapshotID, err := p.SubmitBatchJob(ctx, queries, websearch, location)
 	if err != nil {
-		return nil, fmt.Errorf("failed to submit BrightData batch job: %w", err)
+		return nil, err
 	}
-
-	fmt.Printf("[ChatGPTProvider] 📋 Batch job submitted with snapshot ID: %s\n", snapshotID)
 
 	// 2. Poll until completion
 	if err := p.client.PollUntilComplete(ctx, snapshotID, "ChatGPTProvider"); err != nil {
 		return nil, fmt.Errorf("failed to poll BrightData batch job: %w", err)
 	}
 
-	// 3. Get results
-	bodyBytes, err := p.client.GetBatchResults(ctx, snapshotID, "ChatGPTProvider")
-	if err != nil {
-		return nil, fmt.Errorf("failed to get batch results: %w", err)
-	}
-
-	// 4. Parse results
-	results, err := p.parseBatchResults(bodyBytes, snapshotID)
+	// 3. Retrieve results
+	responses, err := p.RetrieveBatchResults(ctx, snapshotID, queries)
 	if err != nil {
 		return nil, err
 	}
 
-	fmt.Printf("[ChatGPTProvider] 📊 Retrieved %d results for %d queries\n", len(results), len(queries))
-
-	// 5. Match results to queries and convert to AIResponse
-	responses, err := p.matchAndConvertResults(results, queries)
-	if err != nil {
-		return nil, err
-	}
-
-	fmt.Printf("[ChatGPTProvider] ✅ Batch completed: %d questions processed, total cost: $%.4f\n",
+	fmt.Printf("[ChatGPTProvider] ✅ SYNC batch completed: %d questions processed, total cost: $%.4f\n",
 		len(responses), float64(len(responses))*0.0015)
 
 	return responses, nil
@@ -192,25 +175,21 @@ func (p *Provider) matchAndConvertResults(results []Result, queries []string) ([
 	return responses, nil
 }
 
+// fixCitations replaces escaped citation markers like \[1\] with markdown links [1](url)
+// This converts escaped citation references into clickable markdown links
+func fixCitations(text string, citations []LinksAttachedResult) string {
+	for _, citation := range citations {
+		// Replace \[position\] with [position](url)
+		// e.g., \[1\] becomes [1](https://example.com)
+		marker := fmt.Sprintf("\\[%d\\]", citation.Position)
+		link := fmt.Sprintf("[%d](%s)", citation.Position, citation.URL)
+		text = strings.ReplaceAll(text, marker, link)
+	}
+	return text
+}
+
 // convertResultToResponse converts a Result to an AIResponse
 func (p *Provider) convertResultToResponse(result *Result, displayIndex int) *common.AIResponse {
-	// Parse citations
-	var citations []string
-	if result.Citations != nil {
-		switch v := result.Citations.(type) {
-		case []interface{}:
-			for _, citation := range v {
-				if str, ok := citation.(string); ok {
-					citations = append(citations, str)
-				}
-			}
-		case string:
-			if v != "" {
-				citations = []string{v}
-			}
-		}
-	}
-
 	// Handle response
 	var responseText string
 	var shouldProcessEvaluation bool
@@ -224,12 +203,9 @@ func (p *Provider) convertResultToResponse(result *Result, displayIndex int) *co
 		shouldProcessEvaluation = false
 		fmt.Printf("[ChatGPTProvider] ⚠️ Question %d returned empty answer_text_markdown\n", displayIndex)
 	} else {
-		responseText = result.AnswerTextMarkdown
+		// Fix citations: replace [position] with [position](url)
+		responseText = fixCitations(result.AnswerTextMarkdown, result.LinksAttached)
 		shouldProcessEvaluation = true
-	}
-
-	if !shouldProcessEvaluation {
-		citations = []string{}
 	}
 
 	return &common.AIResponse{
@@ -237,7 +213,6 @@ func (p *Provider) convertResultToResponse(result *Result, displayIndex int) *co
 		InputTokens:             0,
 		OutputTokens:            0,
 		Cost:                    0.0015,
-		Citations:               citations,
 		ShouldProcessEvaluation: shouldProcessEvaluation,
 	}
 }

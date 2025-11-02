@@ -11,7 +11,10 @@ func NewCostService() CostService {
 
 // Cost per 1M tokens
 var costPerToken = map[string]struct{ input, output float64 }{
-	"gpt-4.1":                  {input: 2.00, output: 8.00},
+	"gpt-5":                    {input: 1.25, output: 10.00},
+	"gpt-5-mini":               {input: 0.25, output: 2.00},
+	"gpt-4.1":                  {input: 3.00, output: 12.00},
+	"gpt-4.1-mini":             {input: 0.80, output: 3.20},
 	"gpt-4o-2024-08-06":        {input: 2.50, output: 10.00}, // GPT-4o structured outputs pricing
 	"claude-sonnet-4-20250514": {input: 3.00, output: 15.00},
 	"sonar":                    {input: 1.00, output: 1.00}, // Perplexity Sonar pricing (estimated)

@@ -18,6 +18,15 @@ coverage.*
 *.coverprofile
 profile.cov
 
+# Test-generated error files (from BrightData client SaveErrorResponse)
+*_error_*.txt
+*_error_*.json
+
+# Test artifacts and temporary files
+test-*.txt
+test-*.json
+*.test.log
+
 # Dependency directories (remove the comment below to include it)
 # vendor/
 

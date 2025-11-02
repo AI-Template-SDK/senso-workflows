@@ -189,6 +189,11 @@ func (p *anthropicProvider) extractResponseText(response anthropic.Message) stri
 	return strings.Join(textParts, "")
 }
 
+// IsAsync returns false for Anthropic (synchronous execution)
+func (p *anthropicProvider) IsAsync() bool {
+	return false
+}
+
 // SupportsBatching returns false for Anthropic (no native batching support)
 func (p *anthropicProvider) SupportsBatching() bool {
 	return false
@@ -213,4 +218,21 @@ func (p *anthropicProvider) RunQuestionBatch(ctx context.Context, queries []stri
 	}
 
 	return responses, nil
+}
+
+// Async methods (not supported for Anthropic - synchronous provider)
+
+// SubmitBatchJob is not supported for synchronous providers
+func (p *anthropicProvider) SubmitBatchJob(ctx context.Context, queries []string, websearch bool, location *models.Location) (string, error) {
+	return "", fmt.Errorf("async batch jobs not supported for Anthropic provider")
+}
+
+// PollJobStatus is not supported for synchronous providers
+func (p *anthropicProvider) PollJobStatus(ctx context.Context, jobID string) (string, bool, error) {
+	return "", false, fmt.Errorf("async batch jobs not supported for Anthropic provider")
+}
+
+// RetrieveBatchResults is not supported for synchronous providers
+func (p *anthropicProvider) RetrieveBatchResults(ctx context.Context, jobID string, queries []string) ([]*AIResponse, error) {
+	return nil, fmt.Errorf("async batch jobs not supported for Anthropic provider")
 }

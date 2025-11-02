@@ -377,6 +377,11 @@ func (p *openAIProvider) RunQuestionWebSearch(ctx context.Context, query string)
 	return p.runWebSearch(ctx, query, neutralLocation)
 }
 
+// IsAsync returns false for OpenAI (synchronous execution)
+func (p *openAIProvider) IsAsync() bool {
+	return false
+}
+
 // SupportsBatching returns false for OpenAI (no native batching support)
 func (p *openAIProvider) SupportsBatching() bool {
 	return false
@@ -401,4 +406,21 @@ func (p *openAIProvider) RunQuestionBatch(ctx context.Context, queries []string,
 	}
 
 	return responses, nil
+}
+
+// Async methods (not supported for OpenAI - synchronous provider)
+
+// SubmitBatchJob is not supported for synchronous providers
+func (p *openAIProvider) SubmitBatchJob(ctx context.Context, queries []string, websearch bool, location *models.Location) (string, error) {
+	return "", fmt.Errorf("async batch jobs not supported for OpenAI provider")
+}
+
+// PollJobStatus is not supported for synchronous providers
+func (p *openAIProvider) PollJobStatus(ctx context.Context, jobID string) (string, bool, error) {
+	return "", false, fmt.Errorf("async batch jobs not supported for OpenAI provider")
+}
+
+// RetrieveBatchResults is not supported for synchronous providers
+func (p *openAIProvider) RetrieveBatchResults(ctx context.Context, jobID string, queries []string) ([]*AIResponse, error) {
+	return nil, fmt.Errorf("async batch jobs not supported for OpenAI provider")
 }

@@ -15,6 +15,10 @@ type Provider struct {
 
 // NewProvider creates a new ChatGPT provider
 func NewProvider(cfg *config.Config, model string, costService services.CostService) *Provider {
+	if cfg == nil {
+		cfg = &config.Config{}
+	}
+
 	return &Provider{
 		client:      common.NewBrightDataClient(cfg.BrightDataAPIKey),
 		datasetID:   cfg.BrightDataDatasetID,
@@ -25,6 +29,11 @@ func NewProvider(cfg *config.Config, model string, costService services.CostServ
 // GetProviderName returns the name of this provider
 func (p *Provider) GetProviderName() string {
 	return "chatgpt"
+}
+
+// IsAsync returns true as ChatGPT provider uses async polling
+func (p *Provider) IsAsync() bool {
+	return true
 }
 
 // SupportsBatching returns true as ChatGPT supports batch processing

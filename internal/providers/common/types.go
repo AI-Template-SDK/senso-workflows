@@ -30,6 +30,5 @@ type AIResponse struct {
 	InputTokens             int
 	OutputTokens            int
 	Cost                    float64
-	Citations               []string
 	ShouldProcessEvaluation bool
 }

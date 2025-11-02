@@ -18,16 +18,22 @@ type Input struct {
 }
 
 // Result represents the response for a single query from BrightData
+type LinksAttachedResult struct {
+	URL      string `json:"url"`
+	Text     string `json:"text"`
+	Position int    `json:"position"`
+}
+
 type Result struct {
-	URL                string      `json:"url"`
-	Prompt             string      `json:"prompt"`
-	Citations          interface{} `json:"citations"`
-	Country            string      `json:"country"`
-	AnswerTextMarkdown string      `json:"answer_text_markdown"`
-	WebSearchTriggered bool        `json:"web_search_triggered"`
-	Index              int         `json:"index"`
-	Error              string      `json:"error,omitempty"`
-	Input              *InputEcho  `json:"input,omitempty"` // Echoed back on errors
+	URL                string                `json:"url"`
+	Prompt             string                `json:"prompt"`
+	Country            string                `json:"country"`
+	AnswerTextMarkdown string                `json:"answer_text_markdown"`
+	WebSearchTriggered bool                  `json:"web_search_triggered"`
+	Index              int                   `json:"index"`
+	Error              string                `json:"error,omitempty"`
+	Input              *InputEcho            `json:"input,omitempty"` // Echoed back on errors
+	LinksAttached      []LinksAttachedResult `json:"links_attached"`
 }
 
 // InputEcho is the echoed input for error results

@@ -396,6 +396,11 @@ func (p *perplexityProvider) mapLocationToCountry(location *workflowModels.Locat
 	return "US"
 }
 
+// IsAsync returns true for Perplexity (async polling via BrightData)
+func (p *perplexityProvider) IsAsync() bool {
+	return true
+}
+
 // SupportsBatching returns true for Perplexity (supports batch processing via BrightData)
 func (p *perplexityProvider) SupportsBatching() bool {
 	return true
@@ -404,6 +409,95 @@ func (p *perplexityProvider) SupportsBatching() bool {
 // GetMaxBatchSize returns 20 for Perplexity (can batch up to 20 questions)
 func (p *perplexityProvider) GetMaxBatchSize() int {
 	return 20
+}
+
+// Async methods for Perplexity (polling-based via BrightData)
+
+// SubmitBatchJob submits a batch job and returns the job ID
+func (p *perplexityProvider) SubmitBatchJob(ctx context.Context, queries []string, websearch bool, location *workflowModels.Location) (string, error) {
+	fmt.Printf("[PerplexityProvider] 📤 Submitting async batch job with %d queries\n", len(queries))
+	return p.submitBatchJob(ctx, queries, location)
+}
+
+// PollJobStatus checks the status of a submitted job
+func (p *perplexityProvider) PollJobStatus(ctx context.Context, jobID string) (string, bool, error) {
+	status, err := p.checkProgress(ctx, jobID)
+	if err != nil {
+		return "", false, err
+	}
+	isReady := status.Status == "ready"
+	if status.Status == "failed" {
+		return status.Status, false, fmt.Errorf("job failed")
+	}
+	return status.Status, isReady, nil
+}
+
+// RetrieveBatchResults retrieves and processes results from a completed job
+func (p *perplexityProvider) RetrieveBatchResults(ctx context.Context, jobID string, queries []string) ([]*AIResponse, error) {
+	results, err := p.getBatchResults(ctx, jobID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Match and convert results (using existing logic)
+	resultMap := make(map[int]*PerplexityResult)
+	unmatchedResults := []*PerplexityResult{}
+	hasValidIndices := true
+
+	for i := range results {
+		index := results[i].Index
+		if index == 0 && results[i].Input != nil {
+			index = results[i].Input.Index
+		}
+		if index < 1 || index > len(queries) {
+			unmatchedResults = append(unmatchedResults, &results[i])
+			hasValidIndices = false
+			continue
+		}
+		if _, exists := resultMap[index]; exists {
+			unmatchedResults = append(unmatchedResults, &results[i])
+			hasValidIndices = false
+			continue
+		}
+		resultMap[index] = &results[i]
+	}
+
+	responses := make([]*AIResponse, len(queries))
+	if hasValidIndices && len(resultMap) == len(queries) {
+		for i := range queries {
+			result := resultMap[i+1]
+			responses[i] = p.convertResultToResponse(result, i+1)
+		}
+	} else {
+		allResults := make(map[string]*PerplexityResult)
+		for _, result := range resultMap {
+			prompt := result.Prompt
+			if prompt == "" && result.Input != nil {
+				prompt = result.Input.Prompt
+			}
+			if prompt != "" {
+				allResults[prompt] = result
+			}
+		}
+		for _, result := range unmatchedResults {
+			prompt := result.Prompt
+			if prompt == "" && result.Input != nil {
+				prompt = result.Input.Prompt
+			}
+			if prompt != "" {
+				allResults[prompt] = result
+			}
+		}
+		for i, query := range queries {
+			result, exists := allResults[query]
+			if !exists {
+				return nil, fmt.Errorf("no result found for query: %q", query)
+			}
+			responses[i] = p.convertResultToResponse(result, i+1)
+		}
+	}
+
+	return responses, nil
 }
 
 // RunQuestionBatch processes multiple questions in a single Perplexity API call

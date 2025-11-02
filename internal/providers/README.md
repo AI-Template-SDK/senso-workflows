@@ -16,22 +16,27 @@ providers/
 ├── chatgpt/               # ChatGPT provider (via BrightData)
 │   ├── provider.go        # Provider implementation
 │   ├── batch.go          # Batch processing logic
+│   ├── single.go         # Single question processing
 │   └── types.go          # ChatGPT-specific types
 ├── perplexity/           # Perplexity provider (via BrightData)
 │   ├── provider.go
 │   ├── batch.go
+│   ├── single.go
 │   └── types.go
 ├── gemini/               # Gemini provider (via BrightData)
 │   ├── provider.go
 │   ├── batch.go
+│   ├── single.go
 │   └── types.go
 ├── openai/               # OpenAI provider (direct API)
 │   ├── provider.go
-│   ├── batch.go
+│   ├── single.go         # Primary method for OpenAI
+│   ├── batch.go          # Sequential fallback (no native batching)
 │   └── types.go
 └── anthropic/            # Anthropic provider (direct API)
     ├── provider.go
-    ├── batch.go
+    ├── single.go         # Primary method for Anthropic
+    ├── batch.go          # Sequential fallback (no native batching)
     └── types.go
 ```
 
@@ -60,12 +65,29 @@ All providers implement the `AIProvider` interface:
 
 ```go
 type AIProvider interface {
+    // Single question operations
+    RunQuestion(ctx context.Context, query string, websearch bool, location *models.Location) (*common.AIResponse, error)
+    RunQuestionWebSearch(ctx context.Context, query string) (*common.AIResponse, error)
+
+    // Batch operations
     RunQuestionBatch(ctx context.Context, queries []string, websearch bool, location *models.Location) ([]*common.AIResponse, error)
+    
+    // Provider metadata
     GetProviderName() string
     SupportsBatching() bool
     GetMaxBatchSize() int
 }
 ```
+
+### Single vs Batch Operations
+
+**BrightData-based providers (ChatGPT, Perplexity, Gemini):**
+- **Batching**: Native support, processes up to 20 queries in a single API call
+- **Single**: Available for compatibility, but batching is preferred
+
+**Direct API providers (OpenAI, Anthropic):**
+- **Single**: Primary method, direct API calls
+- **Batching**: Sequential fallback (calls `RunQuestion()` in a loop)
 
 ## Common Package
 
@@ -121,7 +143,16 @@ func NewProvider(cfg *config.Config, model string, costService services.CostServ
 func (p *Provider) GetProviderName() string { return "myprovider" }
 func (p *Provider) SupportsBatching() bool { return true }
 func (p *Provider) GetMaxBatchSize() int { return 20 }
+func (p *Provider) RunQuestion(ctx, query, websearch, location) (*common.AIResponse, error) { /* impl */ }
+func (p *Provider) RunQuestionWebSearch(ctx, query) (*common.AIResponse, error) { /* impl */ }
+func (p *Provider) RunQuestionBatch(ctx, queries, websearch, location) ([]*common.AIResponse, error) { /* impl */ }
 ```
+
+**File Organization:**
+- `provider.go` - Struct, constructor, metadata methods
+- `single.go` - `RunQuestion()` and `RunQuestionWebSearch()` implementations
+- `batch.go` - `RunQuestionBatch()` implementation
+- `types.go` - Provider-specific request/response types
 
 ## Design Principles
 

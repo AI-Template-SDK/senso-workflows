@@ -345,6 +345,11 @@ func (p *brightDataProvider) mapLocationToCountry(location *workflowModels.Locat
 	return "US"
 }
 
+// IsAsync returns true for BrightData (async polling)
+func (p *brightDataProvider) IsAsync() bool {
+	return true
+}
+
 // SupportsBatching returns true for BrightData (supports batch processing)
 func (p *brightDataProvider) SupportsBatching() bool {
 	return true
@@ -353,6 +358,83 @@ func (p *brightDataProvider) SupportsBatching() bool {
 // GetMaxBatchSize returns 20 for BrightData (can batch up to 20 questions)
 func (p *brightDataProvider) GetMaxBatchSize() int {
 	return 20
+}
+
+// Async methods for BrightData (polling-based)
+
+// SubmitBatchJob submits a batch job and returns the job ID
+func (p *brightDataProvider) SubmitBatchJob(ctx context.Context, queries []string, websearch bool, location *workflowModels.Location) (string, error) {
+	fmt.Printf("[BrightDataProvider] 📤 Submitting async batch job with %d queries\n", len(queries))
+	return p.submitBatchJob(ctx, queries, location, websearch)
+}
+
+// PollJobStatus checks the status of a submitted job
+func (p *brightDataProvider) PollJobStatus(ctx context.Context, jobID string) (string, bool, error) {
+	status, err := p.checkProgress(ctx, jobID)
+	if err != nil {
+		return "", false, err
+	}
+	isReady := status.Status == "ready"
+	if status.Status == "failed" {
+		return status.Status, false, fmt.Errorf("job failed")
+	}
+	return status.Status, isReady, nil
+}
+
+// RetrieveBatchResults retrieves and processes results from a completed job
+func (p *brightDataProvider) RetrieveBatchResults(ctx context.Context, jobID string, queries []string) ([]*AIResponse, error) {
+	results, err := p.getBatchResults(ctx, jobID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Match and convert results (using existing logic from RunQuestionBatch)
+	resultMap := make(map[int]*BrightDataResult)
+	hasValidIndices := true
+
+	for i := range results {
+		index := results[i].Index
+		if index == 0 && results[i].Input != nil {
+			index = results[i].Input.Index
+		}
+		if index < 1 || index > len(queries) {
+			hasValidIndices = false
+			break
+		}
+		if _, exists := resultMap[index]; exists {
+			hasValidIndices = false
+			break
+		}
+		resultMap[index] = &results[i]
+	}
+
+	responses := make([]*AIResponse, len(queries))
+	if hasValidIndices && len(resultMap) == len(queries) {
+		for i := range queries {
+			result := resultMap[i+1]
+			responses[i] = p.convertResultToResponse(result, i+1)
+		}
+	} else {
+		allResults := make(map[string]*BrightDataResult)
+		for i := range results {
+			prompt := results[i].Prompt
+			if prompt == "" && results[i].Input != nil {
+				prompt = results[i].Input.Prompt
+			}
+			if prompt != "" {
+				allResults[prompt] = &results[i]
+			}
+		}
+		for i, query := range queries {
+			result, exists := allResults[query]
+			if !exists {
+				return nil, fmt.Errorf("no result found for query: %q", query)
+			}
+			responses[i] = p.convertResultToResponse(result, i+1)
+		}
+	}
+
+	return responses, nil
 }
 
 // RunQuestionBatch processes multiple questions in a single BrightData API call
