@@ -9,6 +9,8 @@ import (
 	"io"
 	"log"
 	"math"
+	"math/rand"
+	"net/http"
 	"os"
 	"reflect"
 	"strconv"
@@ -48,12 +50,45 @@ type TestResult struct {
 	Error             error
 }
 
+// --- Dead Link Testing Types ---
+
+// Citation represents a citation record from the database
+type Citation struct {
+	ID            string
+	QuestionRunID string
+	OrgID         string
+	URL           string
+	Type          string
+	TableName     string // "org_citations" or "network_org_citations"
+}
+
+// LinkTestResult represents the result of testing a citation
+type LinkTestResult struct {
+	Citation Citation
+	OldAgent LinkTestStatus
+	NewAgent LinkTestStatus
+	Changed  bool
+}
+
+// LinkTestStatus represents the status of a link test
+type LinkTestStatus struct {
+	IsAlive    bool
+	StatusCode int
+	Error      string
+}
+
 func main() {
 	// Define and parse command-line flags
-	testType := flag.String("type", "baseline", "Type of test: 'baseline' or 'improvement'")
+	testType := flag.String("type", "baseline", "Type of test: 'baseline', 'improvement', or 'deadlink'")
 	modelFlag := flag.String("model", "", "Override Azure deployment name (e.g., gpt-4.1-mini, gpt-5)")
 	sovTolerance := flag.Float64("sov-tolerance", 10.0, "Allowed % tolerance for SOV comparison")
 	flag.Parse()
+
+	// Route to dead link testing if requested
+	if *testType == "deadlink" {
+		runDeadLinkTest()
+		return
+	}
 
 	// 1. Load Configuration
 	if err := godotenv.Load("../.env"); err != nil {
@@ -449,4 +484,292 @@ func loadGoldenData(path string) ([]GoldenRecord, error) {
 		return nil, fmt.Errorf("no valid records found after parsing %d rows", len(rows))
 	}
 	return records, nil
+}
+
+// --- Dead Link Testing Functions ---
+
+func runDeadLinkTest() {
+	fmt.Println("🔍 Dead Link User Agent Testing Tool")
+	fmt.Println("=====================================")
+
+	// Load citations from CSV files
+	fmt.Println("📊 Loading citations from CSV files...")
+	citations, err := loadCitationsFromCSV()
+	if err != nil {
+		log.Fatalf("❌ Failed to load citations: %v", err)
+	}
+	fmt.Printf("✅ Loaded %d citations to test\n\n", len(citations))
+
+	// Test citations with both user agents
+	fmt.Println("🧪 Testing citations with old (no user agent) and new (browser user agent)...")
+	fmt.Println("This may take a few minutes...\n")
+
+	results := testCitations(citations)
+
+	// Analyze results
+	analyzeDeadLinkResults(results)
+}
+
+// loadCitationsFromCSV loads citations from CSV files
+func loadCitationsFromCSV() ([]Citation, error) {
+	var citations []Citation
+
+	// Load org_citations
+	orgCitations, err := loadCitationCSV("org_citations_sample.csv", "org_citations")
+	if err != nil {
+		return nil, fmt.Errorf("failed to load org_citations_sample.csv: %w", err)
+	}
+	citations = append(citations, orgCitations...)
+
+	// Load network_org_citations
+	networkCitations, err := loadCitationCSV("network_org_citations_sample.csv", "network_org_citations")
+	if err != nil {
+		return nil, fmt.Errorf("failed to load network_org_citations_sample.csv: %w", err)
+	}
+	citations = append(citations, networkCitations...)
+
+	return citations, nil
+}
+
+// loadCitationCSV loads a single citation CSV file
+func loadCitationCSV(filename, tableName string) ([]Citation, error) {
+	file, err := os.Open(filename)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open %s: %w", filename, err)
+	}
+	defer file.Close()
+
+	reader := csv.NewReader(file)
+
+	// Read header row
+	header, err := reader.Read()
+	if err != nil {
+		return nil, fmt.Errorf("failed to read header: %w", err)
+	}
+
+	// Validate headers based on table name
+	var expectedHeaders []string
+	if tableName == "org_citations" {
+		expectedHeaders = []string{"org_citation_id", "question_run_id", "org_id", "url", "type"}
+	} else {
+		expectedHeaders = []string{"network_org_citation_id", "question_run_id", "org_id", "url", "type"}
+	}
+
+	if len(header) != len(expectedHeaders) {
+		return nil, fmt.Errorf("%s: expected %d columns, got %d", filename, len(expectedHeaders), len(header))
+	}
+
+	// Read all rows
+	rows, err := reader.ReadAll()
+	if err != nil {
+		return nil, fmt.Errorf("failed to read rows: %w", err)
+	}
+
+	var citations []Citation
+	for i, row := range rows {
+		if len(row) != len(expectedHeaders) {
+			log.Printf("Warning: Skipping row %d in %s: incorrect column count", i+2, filename)
+			continue
+		}
+
+		citation := Citation{
+			ID:            strings.TrimSpace(row[0]),
+			QuestionRunID: strings.TrimSpace(row[1]),
+			OrgID:         strings.TrimSpace(row[2]),
+			URL:           strings.TrimSpace(row[3]),
+			Type:          strings.TrimSpace(row[4]),
+			TableName:     tableName,
+		}
+
+		citations = append(citations, citation)
+	}
+
+	return citations, nil
+}
+
+// testCitations tests each citation with both old and new user agents
+func testCitations(citations []Citation) []LinkTestResult {
+	results := make([]LinkTestResult, 0, len(citations))
+
+	// User agents
+	oldAgent := "" // No user agent (default Go behavior)
+
+	// Rotate between multiple browser user agents
+	userAgents := []string{
+		"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+		"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+		"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+		"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Safari/605.1.15",
+		"Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0",
+	}
+
+	client := &http.Client{
+		Timeout: 5 * time.Second,
+	}
+
+	// Seed random number generator
+	rand.Seed(time.Now().UnixNano())
+
+	for i, citation := range citations {
+		if i%50 == 0 && i > 0 {
+			fmt.Printf("   Tested %d/%d citations...\n", i, len(citations))
+		}
+
+		// Test with old user agent (no user agent)
+		oldStatus := testURL(client, citation.URL, oldAgent)
+
+		// Randomized delay to avoid rate limiting (50-200ms)
+		time.Sleep(time.Duration(50+rand.Intn(150)) * time.Millisecond)
+
+		// Test with new user agent (rotate through the list)
+		newAgent := userAgents[i%len(userAgents)]
+		newStatus := testURL(client, citation.URL, newAgent)
+
+		// Determine if result changed
+		changed := oldStatus.IsAlive != newStatus.IsAlive
+
+		results = append(results, LinkTestResult{
+			Citation: citation,
+			OldAgent: oldStatus,
+			NewAgent: newStatus,
+			Changed:  changed,
+		})
+
+		// Randomized delay between tests (50-200ms)
+		time.Sleep(time.Duration(50+rand.Intn(150)) * time.Millisecond)
+	}
+
+	fmt.Printf("   Tested %d/%d citations.\n\n", len(citations), len(citations))
+	return results
+}
+
+// testURL tests a single URL with the given user agent using GET request
+func testURL(client *http.Client, url string, userAgent string) LinkTestStatus {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Use GET request to check if link is alive
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return LinkTestStatus{
+			IsAlive:    false,
+			StatusCode: 0,
+			Error:      fmt.Sprintf("request creation error: %v", err),
+		}
+	}
+
+	if userAgent != "" {
+		req.Header.Set("User-Agent", userAgent)
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return LinkTestStatus{
+			IsAlive:    false,
+			StatusCode: 0,
+			Error:      fmt.Sprintf("network error: %v", err),
+		}
+	}
+	defer resp.Body.Close()
+
+	isAlive := resp.StatusCode < 400
+	return LinkTestStatus{
+		IsAlive:    isAlive,
+		StatusCode: resp.StatusCode,
+		Error:      "",
+	}
+}
+
+// analyzeDeadLinkResults analyzes and displays the test results
+func analyzeDeadLinkResults(results []LinkTestResult) {
+	fmt.Println("📈 ANALYSIS RESULTS")
+	fmt.Println("===================\n")
+
+	totalTests := len(results)
+	changedCount := 0
+	nowAliveCount := 0    // Was dead without user agent, now alive with it
+	nowDeadCount := 0     // Was alive without user agent, now dead with it
+	stableAliveCount := 0 // Alive in both tests
+	stableDeadCount := 0  // Dead in both tests
+
+	var changedToAlive []LinkTestResult
+	var changedToDead []LinkTestResult
+
+	for _, result := range results {
+		if result.Changed {
+			changedCount++
+			if result.NewAgent.IsAlive {
+				nowAliveCount++
+				changedToAlive = append(changedToAlive, result)
+			} else {
+				nowDeadCount++
+				changedToDead = append(changedToDead, result)
+			}
+		} else {
+			if result.NewAgent.IsAlive {
+				stableAliveCount++
+			} else {
+				stableDeadCount++
+			}
+		}
+	}
+
+	// Summary statistics
+	fmt.Printf("Total Citations Tested: %d\n", totalTests)
+	fmt.Printf("Changed Status: %d (%.1f%%)\n", changedCount, float64(changedCount)/float64(totalTests)*100)
+	fmt.Printf("  → Now Alive (Fixed by user agent): %d (%.1f%%)\n", nowAliveCount, float64(nowAliveCount)/float64(totalTests)*100)
+	fmt.Printf("  → Now Dead (Broken by user agent): %d (%.1f%%)\n", nowDeadCount, float64(nowDeadCount)/float64(totalTests)*100)
+	fmt.Printf("Stable Alive: %d (%.1f%%)\n", stableAliveCount, float64(stableAliveCount)/float64(totalTests)*100)
+	fmt.Printf("Stable Dead: %d (%.1f%%)\n\n", stableDeadCount, float64(stableDeadCount)/float64(totalTests)*100)
+
+	// Show examples of citations that changed to alive (the good news!)
+	if len(changedToAlive) > 0 {
+		fmt.Println("🎉 CITATIONS FIXED BY USER AGENT (Sample of first 10)")
+		fmt.Println("====================================================")
+		fmt.Println("These were flagged as dead without user agent, but are alive with it:\n")
+		for i, result := range changedToAlive {
+			if i >= 10 {
+				fmt.Printf("... and %d more\n\n", len(changedToAlive)-10)
+				break
+			}
+			fmt.Printf("%d. URL: %s\n", i+1, result.Citation.URL)
+			fmt.Printf("   Table: %s\n", result.Citation.TableName)
+			fmt.Printf("   Old Status: %d (%s)\n", result.OldAgent.StatusCode, result.OldAgent.Error)
+			fmt.Printf("   New Status: %d (Alive!)\n\n", result.NewAgent.StatusCode)
+		}
+	}
+
+	// Show examples of citations that changed to dead (potential issues)
+	if len(changedToDead) > 0 {
+		fmt.Println("⚠️  CITATIONS BROKEN BY USER AGENT (Sample of first 10)")
+		fmt.Println("======================================================")
+		fmt.Println("These were alive without user agent, but dead with it:\n")
+		for i, result := range changedToDead {
+			if i >= 10 {
+				fmt.Printf("... and %d more\n\n", len(changedToDead)-10)
+				break
+			}
+			fmt.Printf("%d. URL: %s\n", i+1, result.Citation.URL)
+			fmt.Printf("   Table: %s\n", result.Citation.TableName)
+			fmt.Printf("   Old Status: %d (Alive)\n", result.OldAgent.StatusCode)
+			fmt.Printf("   New Status: %d (%s)\n\n", result.NewAgent.StatusCode, result.NewAgent.Error)
+		}
+	}
+
+	// Conclusion
+	fmt.Println("💡 CONCLUSION")
+	fmt.Println("=============")
+	if nowAliveCount > nowDeadCount {
+		fmt.Printf("✅ The user agent change is BENEFICIAL!\n")
+		fmt.Printf("   It fixes %d false positives (dead links that are actually alive)\n", nowAliveCount)
+		fmt.Printf("   while only introducing %d false negatives (alive links marked as dead)\n", nowDeadCount)
+		fmt.Printf("   Net improvement: %d citations\n", nowAliveCount-nowDeadCount)
+	} else if nowAliveCount < nowDeadCount {
+		fmt.Printf("⚠️  The user agent change may be PROBLEMATIC!\n")
+		fmt.Printf("   It fixes %d false positives but introduces %d false negatives\n", nowAliveCount, nowDeadCount)
+		fmt.Printf("   Net impact: %d more citations incorrectly flagged\n", nowDeadCount-nowAliveCount)
+	} else {
+		fmt.Printf("➖ The user agent change has a NEUTRAL impact\n")
+		fmt.Printf("   It fixes %d citations but breaks %d others\n", nowAliveCount, nowDeadCount)
+	}
 }
