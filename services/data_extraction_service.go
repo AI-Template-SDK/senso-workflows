@@ -84,7 +84,7 @@ func (s *dataExtractionService) ExtractMentions(ctx context.Context, questionRun
 	fmt.Printf("[ExtractMentions] 🚀 Making AI call for mentions extraction...")
 
 	// Create the extraction request with structured output
-	chatResponse, err := s.openAIClient.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
+	params := openai.ChatCompletionNewParams{
 		Messages: []openai.ChatCompletionMessageParamUnion{
 			openai.SystemMessage("You are an expert financial services analyst specializing in credit unions and banks. Extract company mentions accurately and comprehensively."),
 			openai.UserMessage(prompt),
@@ -93,7 +93,18 @@ func (s *dataExtractionService) ExtractMentions(ctx context.Context, questionRun
 		ResponseFormat: openai.ChatCompletionNewParamsResponseFormatUnion{
 			OfJSONSchema: &openai.ResponseFormatJSONSchemaParam{JSONSchema: schemaParam},
 		},
-	})
+	}
+
+	// Conditional Temperature Setting
+	if !strings.HasPrefix(string(model), "gpt-5") {
+		params.Temperature = openai.Float(0.1) // Keep low for consistency in extraction when verified
+		fmt.Printf("[ExtractMentions] Setting temperature to 0.1 for model %s\n", model)
+	} else {
+		params.ReasoningEffort = "low"
+		fmt.Printf("[ExtractMentions] Skipping temperature setting for model gpt-5\n")
+	}
+
+	chatResponse, err := s.openAIClient.Chat.Completions.New(ctx, params)
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to extract mentions: %w", err)
@@ -200,7 +211,7 @@ func (s *dataExtractionService) ExtractClaims(ctx context.Context, questionRunID
 	fmt.Printf("[ExtractClaims] 🚀 Making AI call for claims extraction...")
 
 	// Create the extraction request
-	chatResponse, err := s.openAIClient.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
+	params := openai.ChatCompletionNewParams{
 		Messages: []openai.ChatCompletionMessageParamUnion{
 			openai.SystemMessage("You are an expert fact-checker. Break down the response into individual, verifiable factual claims."),
 			openai.UserMessage(prompt),
@@ -209,7 +220,18 @@ func (s *dataExtractionService) ExtractClaims(ctx context.Context, questionRunID
 		ResponseFormat: openai.ChatCompletionNewParamsResponseFormatUnion{
 			OfJSONSchema: &openai.ResponseFormatJSONSchemaParam{JSONSchema: schemaParam},
 		},
-	})
+	}
+
+	// Conditional Temperature Setting
+	if !strings.HasPrefix(string(model), "gpt-5") {
+		params.Temperature = openai.Float(0.1) // Keep low for consistency in extraction when verified
+		fmt.Printf("[ExtractClaims] Setting temperature to 0.1 for model %s\n", model)
+	} else {
+		params.ReasoningEffort = "low"
+		fmt.Printf("[ExtractClaims] Skipping temperature setting for model gpt-5\n")
+	}
+
+	chatResponse, err := s.openAIClient.Chat.Completions.New(ctx, params)
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to extract claims: %w", err)
@@ -415,7 +437,7 @@ Assign prominence ranking (1=most prominent, higher numbers=less prominent, 0=no
 	fmt.Printf("[ExtractNetworkOrgEvaluation] 🚀 Making AI call for network org evaluation...\n")
 
 	// Create the extraction request with structured output
-	chatResponse, err := s.openAIClient.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
+	params := openai.ChatCompletionNewParams{
 		Messages: []openai.ChatCompletionMessageParamUnion{
 			openai.SystemMessage("You are an expert text extraction specialist. Extract mention text with perfect formatting and determine sentiment. The organization is already confirmed to be mentioned."),
 			openai.UserMessage(prompt),
@@ -424,8 +446,18 @@ Assign prominence ranking (1=most prominent, higher numbers=less prominent, 0=no
 		ResponseFormat: openai.ChatCompletionNewParamsResponseFormatUnion{
 			OfJSONSchema: &openai.ResponseFormatJSONSchemaParam{JSONSchema: schemaParam},
 		},
-		Temperature: openai.Float(0.1), // Low temperature for consistent extraction
-	})
+	}
+
+	// Conditional Temperature Setting
+	if !strings.HasPrefix(string(model), "gpt-5") {
+		params.Temperature = openai.Float(0.1) // Keep low for consistency in extraction when verified
+		fmt.Printf("[ExtractNetworkOrgEvaluation] Setting temperature to 0.1 for model %s\n", model)
+	} else {
+		params.ReasoningEffort = "low"
+		fmt.Printf("[ExtractNetworkOrgEvaluation] Skipping temperature setting for model gpt-5\n")
+	}
+
+	chatResponse, err := s.openAIClient.Chat.Completions.New(ctx, params)
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to extract network org evaluation: %w", err)
@@ -509,7 +541,7 @@ func (s *dataExtractionService) ExtractNetworkOrgCompetitors(ctx context.Context
 	fmt.Printf("[ExtractNetworkOrgCompetitors] 🚀 Making AI call for competitor extraction...\n")
 
 	// Create the extraction request with structured output
-	chatResponse, err := s.openAIClient.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
+	params := openai.ChatCompletionNewParams{
 		Messages: []openai.ChatCompletionMessageParamUnion{
 			openai.SystemMessage("You are an expert in competitive analysis and brand identification. Extract competitor names accurately and comprehensively."),
 			openai.UserMessage(prompt),
@@ -518,8 +550,18 @@ func (s *dataExtractionService) ExtractNetworkOrgCompetitors(ctx context.Context
 		ResponseFormat: openai.ChatCompletionNewParamsResponseFormatUnion{
 			OfJSONSchema: &openai.ResponseFormatJSONSchemaParam{JSONSchema: schemaParam},
 		},
-		Temperature: openai.Float(0.1), // Low temperature for consistent extraction
-	})
+	}
+
+	// Conditional Temperature Setting
+	if !strings.HasPrefix(string(model), "gpt-5") {
+		params.Temperature = openai.Float(0.1) // Keep low for consistency in extraction when verified
+		fmt.Printf("[ExtractNetworkOrgCompetitors] Setting temperature to 0.1 for model %s\n", model)
+	} else {
+		params.ReasoningEffort = "low"
+		fmt.Printf("[ExtractNetworkOrgCompetitors] Skipping temperature setting for model gpt-5\n")
+	}
+
+	chatResponse, err := s.openAIClient.Chat.Completions.New(ctx, params)
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to extract network org competitors: %w", err)
@@ -995,7 +1037,7 @@ func (s *dataExtractionService) extractCitationsForClaim(ctx context.Context, cl
 
 	fmt.Printf("[extractCitationsForClaim] 🚀 Making AI call for citations extraction...")
 
-	chatResponse, err := s.openAIClient.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
+	params := openai.ChatCompletionNewParams{
 		Messages: []openai.ChatCompletionMessageParamUnion{
 			openai.SystemMessage("You are an expert researcher specializing in citation extraction and URL analysis. Extract URLs exactly as they appear in the text."),
 			openai.UserMessage(prompt),
@@ -1004,7 +1046,18 @@ func (s *dataExtractionService) extractCitationsForClaim(ctx context.Context, cl
 		ResponseFormat: openai.ChatCompletionNewParamsResponseFormatUnion{
 			OfJSONSchema: &openai.ResponseFormatJSONSchemaParam{JSONSchema: schemaParam},
 		},
-	})
+	}
+
+	// Conditional Temperature Setting
+	if !strings.HasPrefix(string(model), "gpt-5") {
+		params.Temperature = openai.Float(0.1) // Keep low for consistency in extraction when verified
+		fmt.Printf("[extractCitationsForClaim] Setting temperature to 0.1 for model %s\n", model)
+	} else {
+		params.ReasoningEffort = "low"
+		fmt.Printf("[extractCitationsForClaim] Skipping temperature setting for model gpt-5\n")
+	}
+
+	chatResponse, err := s.openAIClient.Chat.Completions.New(ctx, params)
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to extract citations: %w", err)
@@ -1372,7 +1425,7 @@ Associated websites:
 	fmt.Printf("[generateNameVariations] 🚀 Making AI call for name variations...\n")
 
 	// Create the extraction request with structured output
-	chatResponse, err := s.openAIClient.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
+	params := openai.ChatCompletionNewParams{
 		Messages: []openai.ChatCompletionMessageParamUnion{
 			openai.SystemMessage("You are an expert in brand name analysis and variation generation. Generate realistic brand name variations that would actually be used in business contexts."),
 			openai.UserMessage(prompt),
@@ -1381,8 +1434,18 @@ Associated websites:
 		ResponseFormat: openai.ChatCompletionNewParamsResponseFormatUnion{
 			OfJSONSchema: &openai.ResponseFormatJSONSchemaParam{JSONSchema: schemaParam},
 		},
-		Temperature: openai.Float(0.3), // Low temperature for consistent variations
-	})
+	}
+
+	// Conditional Temperature Setting
+	if !strings.HasPrefix(string(model), "gpt-5") {
+		params.Temperature = openai.Float(0.3) // Keep low for consistency in extraction when verified
+		fmt.Printf("[generateNameVariations] Setting temperature to 0.3 for model %s\n", model)
+	} else {
+		params.ReasoningEffort = "low"
+		fmt.Printf("[generateNameVariations] Skipping temperature setting for model gpt-5\n")
+	}
+
+	chatResponse, err := s.openAIClient.Chat.Completions.New(ctx, params)
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate name variations: %w", err)

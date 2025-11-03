@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/AI-Template-SDK/senso-workflows/internal/config"
@@ -83,7 +84,7 @@ func (s *extractService) ExtractCompanyMentions(ctx context.Context, question st
 	}
 
 	// Create the extraction request with structured output
-	chatResponse, err := s.openAIClient.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
+	params := openai.ChatCompletionNewParams{
 		Messages: []openai.ChatCompletionMessageParamUnion{
 			openai.SystemMessage("You are an expert financial services analyst specializing in credit unions and banks. Extract company mentions accurately and comprehensively."),
 			openai.UserMessage(prompt),
@@ -92,8 +93,18 @@ func (s *extractService) ExtractCompanyMentions(ctx context.Context, question st
 		ResponseFormat: openai.ChatCompletionNewParamsResponseFormatUnion{
 			OfJSONSchema: &openai.ResponseFormatJSONSchemaParam{JSONSchema: schemaParam},
 		},
-		Temperature: openai.Float(0), // Deterministic extraction
-	})
+	}
+
+	// Conditional Temperature Setting
+	if !strings.HasPrefix(string(model), "gpt-5") {
+		params.Temperature = openai.Float(0.1) // Keep low for consistency in extraction when verified
+		fmt.Printf("[ExtractCompanyMentions] Setting temperature to 0.1 for model %s\n", model)
+	} else {
+		params.ReasoningEffort = "low"
+		fmt.Printf("[ExtractCompanyMentions] Skipping temperature setting for model gpt-5\n")
+	}
+
+	chatResponse, err := s.openAIClient.Chat.Completions.New(ctx, params)
 
 	if err != nil {
 		return &models.ExtractResult{
