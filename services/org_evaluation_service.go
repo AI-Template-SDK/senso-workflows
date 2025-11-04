@@ -178,11 +178,12 @@ Associated websites:
 		},
 	}
 
-	if string(model) != "gpt-5" {
+	if !strings.HasPrefix(string(model), "gpt-5") {
 		params.Temperature = openai.Float(0.3) // Keep low for consistency in extraction when verified
+		fmt.Printf("[GenerateNameVariations] Setting temperature to 0.3 for model %s\n", model)
 	} else {
-		params.ReasoningEffort = "minimal"
-		fmt.Printf("[ExtractOrgEvaluation] Skipping temperature setting for model gpt-5\n")
+		params.ReasoningEffort = "low"
+		fmt.Printf("[GenerateNameVariations] Skipping temperature setting for model gpt-5\n")
 	}
 
 	chatResponse, err := s.openAIClient.Chat.Completions.New(ctx, params)
@@ -307,11 +308,11 @@ func (s *orgEvaluationService) ExtractOrgEvaluation(ctx context.Context, questio
 	}
 
 	// Conditional Temperature Setting
-	if modelName != "gpt-5" {
+	if !strings.HasPrefix(string(model), "gpt-5") {
 		params.Temperature = openai.Float(0.1) // Keep low for consistency in extraction when verified
 		fmt.Printf("[ExtractOrgEvaluation] Setting temperature to 0.1 for model %s\n", modelName)
 	} else {
-		params.ReasoningEffort = "minimal"
+		params.ReasoningEffort = "low"
 		fmt.Printf("[ExtractOrgEvaluation] Skipping temperature setting for model gpt-5\n")
 	}
 
@@ -443,7 +444,7 @@ func (s *orgEvaluationService) ExtractCompetitors(ctx context.Context, questionR
 	fmt.Printf("[ExtractCompetitors] 🚀 Making AI call for competitor extraction...")
 
 	// Create the extraction request with structured output
-	chatResponse, err := s.openAIClient.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
+	params := openai.ChatCompletionNewParams{
 		Messages: []openai.ChatCompletionMessageParamUnion{
 			openai.SystemMessage("You are an expert in competitive analysis and brand identification. Extract competitor names accurately and comprehensively."),
 			openai.UserMessage(prompt),
@@ -452,8 +453,18 @@ func (s *orgEvaluationService) ExtractCompetitors(ctx context.Context, questionR
 		ResponseFormat: openai.ChatCompletionNewParamsResponseFormatUnion{
 			OfJSONSchema: &openai.ResponseFormatJSONSchemaParam{JSONSchema: schemaParam},
 		},
-		Temperature: openai.Float(0.1), // Low temperature for consistent extraction
-	})
+	}
+
+	// Conditional Temperature Setting
+	if !strings.HasPrefix(string(model), "gpt-5") {
+		params.Temperature = openai.Float(0.1) // Keep low for consistency in extraction when verified
+		fmt.Printf("[ExtractCompetitors] Setting temperature to 0.1 for model %s\n", model)
+	} else {
+		params.ReasoningEffort = "low"
+		fmt.Printf("[ExtractCompetitors] Skipping temperature setting for model gpt-5\n")
+	}
+
+	chatResponse, err := s.openAIClient.Chat.Completions.New(ctx, params)
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to extract competitors: %w", err)
