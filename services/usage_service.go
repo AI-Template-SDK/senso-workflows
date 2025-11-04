@@ -112,6 +112,17 @@ func (s *usageService) TrackIndividualRuns(ctx context.Context, orgID uuid.UUID,
 
 // chargeRunsInTx is an internal helper to process a list of runs within a transaction.
 func (s *usageService) chargeRunsInTx(ctx context.Context, tx *sqlx.Tx, orgID uuid.UUID, runs []*models.QuestionRun) (int, error) {
+	// Fetch the org to get its partner_id (do this once per batch)
+	org, err := s.repos.OrgRepo.GetByID(ctx, orgID)
+	if err != nil {
+		return 0, fmt.Errorf("failed to fetch org %s: %w", orgID, err)
+	}
+	if org == nil {
+		return 0, fmt.Errorf("org %s not found", orgID)
+	}
+
+	fmt.Printf("[chargeRunsInTx] Processing %d runs for org %s (partner: %s)\n", len(runs), orgID, org.PartnerID)
+
 	chargedCount := 0
 	for _, run := range runs {
 		// Idempotency check: Has this run already been charged?
@@ -130,16 +141,18 @@ func (s *usageService) chargeRunsInTx(ctx context.Context, tx *sqlx.Tx, orgID uu
 		metadata := map[string]string{
 			"question_run_id": run.QuestionRunID.String(),
 			"org_id":          orgID.String(),
+			"partner_id":      org.PartnerID.String(),
 		}
 		if run.BatchID != nil {
 			metadata["batch_id"] = run.BatchID.String()
 		}
 		metadataJSON, _ := json.Marshal(metadata)
 
-		// Create the new ledger entry
+		// Create the new ledger entry with BOTH org_id and partner_id
 		entry := &models.CreditLedger{
 			EntryID:    uuid.New(),
 			OrgID:      &orgID,
+			PartnerID:  &org.PartnerID,         // Required for partner-level usage queries
 			Amount:     DefaultQuestionRunCost, // This is the charge (debit)
 			SourceType: "question_run",         // As per migration 000027
 			SourceID:   &sourceIDStr,
