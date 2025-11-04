@@ -180,9 +180,10 @@ func main() {
 		usageService,
 		cfg,
 	)
-	scheduledProcessor := workflows.NewScheduledProcessor(orgService)
+	scheduledProcessor := workflows.NewScheduledProcessor(orgService, repoManager)
 	networkProcessor := workflows.NewNetworkProcessor( // ** THIS IS THE NETWORK QUESTION RUNNER **
 		questionRunnerService,
+		repoManager,
 		cfg,
 	)
 	networkOrgProcessor := workflows.NewNetworkOrgProcessor(
@@ -226,6 +227,7 @@ func main() {
 	orgProcessor.ProcessOrg()
 	orgEvaluationProcessor.ProcessOrgEvaluation()
 	scheduledProcessor.DailyOrgProcessor()
+	scheduledProcessor.DailyNetworkProcessor()
 	scheduledProcessor.WeeklyLoadAnalyzer()
 	networkProcessor.ProcessNetwork()
 	networkOrgProcessor.ProcessNetworkOrg()

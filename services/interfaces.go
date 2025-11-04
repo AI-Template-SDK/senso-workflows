@@ -41,6 +41,8 @@ type RepositoryManager struct {
 	CreditLedgerRepo interfaces.CreditLedgerRepository
 	// Organization schedule repository
 	OrgScheduleRepo interfaces.OrgScheduleRepository
+	// Network schedule repository
+	NetworkScheduleRepo interfaces.NetworkScheduleRepository
 }
 
 // NewRepositoryManager creates a new repository manager with all repositories
@@ -70,6 +72,8 @@ func NewRepositoryManager(db *database.Client) *RepositoryManager {
 		CreditLedgerRepo: postgresql.NewCreditLedgerRepo(db),
 		// Organization schedule repository
 		OrgScheduleRepo: postgresql.NewOrgScheduleRepo(db),
+		// Network schedule repository
+		NetworkScheduleRepo: postgresql.NewNetworkScheduleRepo(db),
 	}
 }
 
