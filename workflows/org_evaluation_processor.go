@@ -103,7 +103,54 @@ func (p *OrgEvaluationProcessor) ProcessOrgEvaluation() inngestgo.ServableFuncti
 			batchInfo := batchData.(map[string]interface{})
 			batchID := batchInfo["batch_id"].(string)
 			isExistingBatch := batchInfo["is_existing"].(bool)
-			_ = batchInfo["batch_status"].(string) // Unused for now
+			batchStatus := batchInfo["batch_status"].(string)
+			totalQuestions, ok := batchInfo["total_questions"].(int)
+			if !ok {
+				// Handle potential float64 conversion from JSON
+				if fTotal, fOk := batchInfo["total_questions"].(float64); fOk {
+					totalQuestions = int(fTotal)
+				} else {
+					return nil, fmt.Errorf("failed to parse total_questions as integer")
+				}
+			}
+
+			// ** Step 1.5 - Check Partner Balance **
+			// If batch is already completed, skip balance check
+			if batchStatus == "completed" {
+				fmt.Printf("[ProcessOrgEvaluation] Batch %s already completed, skipping balance check.\n", batchID)
+			} else {
+				_, err = step.Run(ctx, "check-balance", func(ctx context.Context) (interface{}, error) {
+					fmt.Printf("[ProcessOrgEvaluation] Step 1.5: Checking partner balance for org %s\n", orgID)
+					orgUUID, err := uuid.Parse(orgID)
+					if err != nil {
+						return nil, fmt.Errorf("invalid org ID: %w", err)
+					}
+
+					// Calculate total cost
+					// Note: This checks the cost for ALL questions in the batch.
+					// This is safe, as the usage tracking is idempotent.
+					runCost := -services.DefaultQuestionRunCost // 0.05
+					totalCost := float64(totalQuestions) * runCost
+
+					if totalCost == 0 {
+						fmt.Printf("[ProcessOrgEvaluation] No questions to run, skipping balance check.\n")
+						return map[string]interface{}{"status": "ok", "checked_cost": 0}, nil
+					}
+
+					err = p.usageService.CheckBalance(ctx, orgUUID, totalCost)
+					if err != nil {
+						// This will fail the workflow step, preventing execution
+						return nil, fmt.Errorf("partner balance check failed: %w", err)
+					}
+
+					fmt.Printf("[ProcessOrgEvaluation] ✅ Partner has sufficient balance for %d runs (%.2f cost)\n", totalQuestions, totalCost)
+					return map[string]interface{}{"status": "ok", "checked_cost": totalCost}, nil
+				})
+				if err != nil {
+					// Fail the entire workflow if the balance check fails
+					return nil, fmt.Errorf("step 1.5 (check-balance) failed: %w", err)
+				}
+			}
 
 			// Step 2: Start Batch Processing (only if new or pending)
 			_, err = step.Run(ctx, "start-batch-processing", func(ctx context.Context) (interface{}, error) {

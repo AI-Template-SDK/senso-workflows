@@ -93,7 +93,16 @@ func (p *NetworkOrgMissingProcessor) ProcessNetworkOrgMissing() inngestgo.Servab
 			// Extract data from results
 			orgDetailsData := orgDetailsResult.(map[string]interface{})
 			questionRunsData := questionRunsResult.(map[string]interface{})
-			questionCount := int(questionRunsData["count"].(float64))
+			// Ensure this is parsed as int
+			questionCount, ok := questionRunsData["count"].(int)
+			if !ok {
+				// Handle potential float64 conversion from JSON
+				if fCount, fOk := questionRunsData["count"].(float64); fOk {
+					questionCount = int(fCount)
+				} else {
+					return nil, fmt.Errorf("failed to parse question_runs count as integer")
+				}
+			}
 			orgName := orgDetailsData["org_name"].(string)
 			networkID := orgDetailsData["network_id"].(string)
 			orgWebsites := orgDetailsData["org_websites"].([]interface{})
@@ -117,6 +126,32 @@ func (p *NetworkOrgMissingProcessor) ProcessNetworkOrgMissing() inngestgo.Servab
 					"message":                 "No missing evaluations to process",
 					"completed_at":            time.Now().UTC(),
 				}, nil
+			}
+
+			// Step 2.5 - Check Partner Balance
+			_, err = step.Run(ctx, "check-balance", func(ctx context.Context) (interface{}, error) {
+				fmt.Printf("[ProcessNetworkOrgMissing] Step 2.5: Checking partner balance for org %s\n", orgID)
+				orgUUID, err := uuid.Parse(orgID)
+				if err != nil {
+					return nil, fmt.Errorf("invalid org ID: %w", err)
+				}
+
+				// Calculate total cost
+				runCost := -services.DefaultQuestionRunCost // 0.05
+				totalCost := float64(questionCount) * runCost
+
+				err = p.usageService.CheckBalance(ctx, orgUUID, totalCost)
+				if err != nil {
+					// This will fail the workflow step, preventing execution
+					return nil, fmt.Errorf("partner balance check failed: %w", err)
+				}
+
+				fmt.Printf("[ProcessNetworkOrgMissing] ✅ Partner has sufficient balance for %d runs (%.2f cost)\n", questionCount, totalCost)
+				return map[string]interface{}{"status": "ok", "checked_cost": totalCost}, nil
+			})
+			if err != nil {
+				// Fail the entire workflow if the balance check fails
+				return nil, fmt.Errorf("step 2.5 (check-balance) failed: %w", err)
 			}
 
 			// Extract question runs (only after we know there are results)
