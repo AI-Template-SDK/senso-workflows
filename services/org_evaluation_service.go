@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math/rand"
 	"net/http"
 	"net/url"
 	"strings"
@@ -178,11 +179,12 @@ Associated websites:
 		},
 	}
 
-	if string(model) != "gpt-5" {
+	if !strings.HasPrefix(string(model), "gpt-5") {
 		params.Temperature = openai.Float(0.3) // Keep low for consistency in extraction when verified
+		fmt.Printf("[GenerateNameVariations] Setting temperature to 0.3 for model %s\n", model)
 	} else {
-		params.ReasoningEffort = "minimal"
-		fmt.Printf("[ExtractOrgEvaluation] Skipping temperature setting for model gpt-5\n")
+		params.ReasoningEffort = "low"
+		fmt.Printf("[GenerateNameVariations] Skipping temperature setting for model gpt-5\n")
 	}
 
 	chatResponse, err := s.openAIClient.Chat.Completions.New(ctx, params)
@@ -307,11 +309,11 @@ func (s *orgEvaluationService) ExtractOrgEvaluation(ctx context.Context, questio
 	}
 
 	// Conditional Temperature Setting
-	if modelName != "gpt-5" {
+	if !strings.HasPrefix(string(model), "gpt-5") {
 		params.Temperature = openai.Float(0.1) // Keep low for consistency in extraction when verified
 		fmt.Printf("[ExtractOrgEvaluation] Setting temperature to 0.1 for model %s\n", modelName)
 	} else {
-		params.ReasoningEffort = "minimal"
+		params.ReasoningEffort = "low"
 		fmt.Printf("[ExtractOrgEvaluation] Skipping temperature setting for model gpt-5\n")
 	}
 
@@ -443,7 +445,7 @@ func (s *orgEvaluationService) ExtractCompetitors(ctx context.Context, questionR
 	fmt.Printf("[ExtractCompetitors] 🚀 Making AI call for competitor extraction...")
 
 	// Create the extraction request with structured output
-	chatResponse, err := s.openAIClient.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
+	params := openai.ChatCompletionNewParams{
 		Messages: []openai.ChatCompletionMessageParamUnion{
 			openai.SystemMessage("You are an expert in competitive analysis and brand identification. Extract competitor names accurately and comprehensively."),
 			openai.UserMessage(prompt),
@@ -452,8 +454,18 @@ func (s *orgEvaluationService) ExtractCompetitors(ctx context.Context, questionR
 		ResponseFormat: openai.ChatCompletionNewParamsResponseFormatUnion{
 			OfJSONSchema: &openai.ResponseFormatJSONSchemaParam{JSONSchema: schemaParam},
 		},
-		Temperature: openai.Float(0.1), // Low temperature for consistent extraction
-	})
+	}
+
+	// Conditional Temperature Setting
+	if !strings.HasPrefix(string(model), "gpt-5") {
+		params.Temperature = openai.Float(0.1) // Keep low for consistency in extraction when verified
+		fmt.Printf("[ExtractCompetitors] Setting temperature to 0.1 for model %s\n", model)
+	} else {
+		params.ReasoningEffort = "low"
+		fmt.Printf("[ExtractCompetitors] Skipping temperature setting for model gpt-5\n")
+	}
+
+	chatResponse, err := s.openAIClient.Chat.Completions.New(ctx, params)
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to extract competitors: %w", err)
@@ -526,6 +538,16 @@ func (s *orgEvaluationService) ExtractCitations(ctx context.Context, questionRun
 	httpClient := &http.Client{
 		Timeout: 5 * time.Second, // 5-second timeout for dead link checks
 	}
+
+	// Rotate between multiple browser user agents to avoid being flagged as a bot
+	userAgents := []string{
+		"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+		"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+		"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+		"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Safari/605.1.15",
+		"Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0",
+	}
+	userAgentIndex := 0
 
 	// Image extensions to skip
 	imageExtensions := []string{
@@ -606,19 +628,29 @@ func (s *orgEvaluationService) ExtractCitations(ctx context.Context, questionRun
 		}
 
 		// --- CHANGE 2: Modify dead link check to *flag* instead of *skip* ---
-		// 8. Check for dead links (ENG-30)
-		resp, err := httpClient.Get(finalURL)
+		// 8. Check for dead links (ENG-30) with GET request and rotating user agents
+		req, err := http.NewRequestWithContext(ctx, "GET", finalURL, nil)
 		if err != nil {
-			// Network error, treat as dead
-			fmt.Printf("[ExtractCitations] ⚠️ Flagging dead link (network error): %s\n", finalURL)
+			fmt.Printf("[ExtractCitations] ⚠️ Flagging dead link (invalid request): %s\n", finalURL)
 			citation.DeadLink = true
 		} else {
-			resp.Body.Close() // Must close the body!
+			// Rotate through user agents
+			req.Header.Set("User-Agent", userAgents[userAgentIndex%len(userAgents)])
+			userAgentIndex++
 
-			if resp.StatusCode >= 400 {
-				// HTTP error (404, 500, etc.)
-				fmt.Printf("[ExtractCitations] ⚠️ Flagging dead link (status %d): %s\n", resp.StatusCode, finalURL)
+			resp, err := httpClient.Do(req)
+			if err != nil {
+				// Network error, treat as dead
+				fmt.Printf("[ExtractCitations] ⚠️ Flagging dead link (network error): %s\n", finalURL)
 				citation.DeadLink = true
+			} else {
+				resp.Body.Close() // Must close the body!
+
+				if resp.StatusCode >= 400 {
+					// HTTP error (404, 500, etc.)
+					fmt.Printf("[ExtractCitations] ⚠️ Flagging dead link (status %d): %s\n", resp.StatusCode, finalURL)
+					citation.DeadLink = true
+				}
 			}
 		}
 
@@ -627,6 +659,9 @@ func (s *orgEvaluationService) ExtractCitations(ctx context.Context, questionRun
 		// We now add the citation to the list regardless of its status.
 		citations = append(citations, citation)
 		seenURLs[finalURL] = true
+
+		// Add small randomized delay to avoid rate limiting (10-50ms)
+		time.Sleep(time.Duration(10+rand.Intn(40)) * time.Millisecond)
 	}
 
 	fmt.Printf("[ExtractCitations] ✅ Extracted %d citations (incl. dead) (%d primary, %d secondary)",

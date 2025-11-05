@@ -68,6 +68,12 @@ type BrightDataProgressResponse struct {
 	CollectionDuration *int   `json:"collection_duration,omitempty"`
 }
 
+type BrightDataLinks struct {
+	URL      string `json:"url"`
+	Text     string `json:"text"`
+	Position int    `json:"position"`
+}
+
 type BrightDataResult struct {
 	URL                string               `json:"url"`
 	Prompt             string               `json:"prompt"`
@@ -78,6 +84,7 @@ type BrightDataResult struct {
 	Index              int                  `json:"index"`
 	Error              string               `json:"error,omitempty"`
 	Input              *BrightDataInputEcho `json:"input,omitempty"` // Echoed back on errors
+	LinksAttached      []BrightDataLinks    `json:"links_attached"`
 }
 
 type BrightDataInputEcho struct {
@@ -137,7 +144,8 @@ func (p *brightDataProvider) RunQuestion(ctx context.Context, query string, webs
 		shouldProcessEvaluation = false
 		fmt.Printf("[BrightDataProvider] ⚠️ BrightData returned empty answer_text_markdown\n")
 	} else {
-		responseText = result.AnswerTextMarkdown
+		// Fix citations in the response text by converting [position] to [position](url)
+		responseText = p.fixCitationsInResponse(result.AnswerTextMarkdown, result.LinksAttached)
 		shouldProcessEvaluation = true
 		fmt.Printf("[BrightDataProvider] ✅ BrightData returned valid response\n")
 	}
@@ -529,7 +537,8 @@ func (p *brightDataProvider) convertResultToResponse(result *BrightDataResult, d
 		shouldProcessEvaluation = false
 		fmt.Printf("[BrightDataProvider] ⚠️ Question %d returned empty answer_text_markdown\n", displayIndex)
 	} else {
-		responseText = result.AnswerTextMarkdown
+		// Fix citations in the response text by converting [position] to [position](url)
+		responseText = p.fixCitationsInResponse(result.AnswerTextMarkdown, result.LinksAttached)
 		shouldProcessEvaluation = true
 	}
 
@@ -740,6 +749,38 @@ func (p *brightDataProvider) isStatusResponse(bodyBytes []byte) (bool, string, s
 	}
 
 	return false, "", ""
+}
+
+// fixCitationsInResponse fixes citation markers in the response text by converting
+// plain citation markers to markdown links [position](url) using the LinksAttached data.
+// This matches the Python implementation that replaces citation placeholders with proper markdown links.
+// Handles both [position] and \[position\] formats (escaped brackets).
+func (p *brightDataProvider) fixCitationsInResponse(text string, linksAttached []BrightDataLinks) string {
+	if len(linksAttached) == 0 {
+		return text
+	}
+
+	// Create a copy of the text to modify
+	result := text
+
+	// Replace each citation marker with [position](url)
+	// Python code uses \[position\], so we handle both escaped and non-escaped formats
+	for _, link := range linksAttached {
+		// Try escaped format first (\[position\]) to match Python implementation
+		escapedOldMarker := fmt.Sprintf("\\[%d\\]", link.Position)
+		escapedNewMarker := fmt.Sprintf("[%d](%s)", link.Position, link.URL)
+		result = strings.ReplaceAll(result, escapedOldMarker, escapedNewMarker)
+
+		// Also handle non-escaped format ([position]) as fallback
+		oldMarker := fmt.Sprintf("[%d]", link.Position)
+		newMarker := fmt.Sprintf("[%d](%s)", link.Position, link.URL)
+		// Only replace if it's not already a markdown link (doesn't contain parentheses)
+		if !strings.Contains(result, fmt.Sprintf("[%d](", link.Position)) {
+			result = strings.ReplaceAll(result, oldMarker, newMarker)
+		}
+	}
+
+	return result
 }
 
 func min(a, b int) int {

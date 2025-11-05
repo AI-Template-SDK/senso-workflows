@@ -214,7 +214,7 @@ func (s *usageService) chargeRunsInTx(ctx context.Context, tx *sqlx.Tx, orgID, p
 		}
 		metadataJSON, _ := json.Marshal(metadata)
 
-		// Create the new ledger entry
+		// Create the new ledger entry with BOTH org_id and partner_id
 		entry := &models.CreditLedger{
 			EntryID:    uuid.New(),
 			OrgID:      &orgID,
