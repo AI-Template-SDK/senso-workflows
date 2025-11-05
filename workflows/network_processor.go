@@ -16,16 +16,19 @@ import (
 
 type NetworkProcessor struct {
 	questionRunnerService services.QuestionRunnerService
+	repos                 *services.RepositoryManager
 	client                inngestgo.Client
 	cfg                   *config.Config
 }
 
 func NewNetworkProcessor(
 	questionRunnerService services.QuestionRunnerService,
+	repos *services.RepositoryManager,
 	cfg *config.Config,
 ) *NetworkProcessor {
 	return &NetworkProcessor{
 		questionRunnerService: questionRunnerService,
+		repos:                 repos,
 		cfg:                   cfg,
 	}
 }
@@ -219,6 +222,71 @@ func (p *NetworkProcessor) ProcessNetwork() inngestgo.ServableFunction {
 			if err != nil {
 				return nil, fmt.Errorf("step 5 failed: %w", err)
 			}
+
+			// Step 6: Trigger Org-Level Processing for All Network Organizations
+			orgTriggerData, err := step.Run(ctx, "trigger-org-level-processing", func(ctx context.Context) (interface{}, error) {
+				fmt.Printf("[ProcessNetwork] Step 6: Triggering org-level processing for network: %s\n", networkID)
+
+				networkUUID, err := uuid.Parse(networkID)
+				if err != nil {
+					return nil, fmt.Errorf("invalid network ID: %w", err)
+				}
+
+				// Get all organizations in this network
+				orgIDs, err := p.repos.OrgRepo.GetByNetworkID(ctx, networkUUID)
+				if err != nil {
+					return nil, fmt.Errorf("failed to get organizations for network: %w", err)
+				}
+
+				if len(orgIDs) == 0 {
+					fmt.Printf("[ProcessNetwork] No organizations found in network %s\n", networkID)
+					return map[string]interface{}{
+						"network_id":     networkID,
+						"orgs_triggered": 0,
+						"message":        "No organizations in this network",
+					}, nil
+				}
+
+				fmt.Printf("[ProcessNetwork] Found %d organizations in network %s\n", len(orgIDs), networkID)
+
+				// Trigger network.org.missing.process event for each org
+				triggeredCount := 0
+				for _, orgID := range orgIDs {
+					evt := inngestgo.Event{
+						Name: "network.org.missing.process",
+						Data: map[string]interface{}{
+							"org_id":       orgID.String(),
+							"triggered_by": "network_completion",
+							"network_id":   networkID,
+						},
+					}
+
+					_, err := p.client.Send(ctx, evt)
+					if err != nil {
+						// Log error but continue with other orgs
+						fmt.Printf("[ProcessNetwork] Warning: Failed to trigger org-level processing for org %s: %v\n", orgID.String(), err)
+						continue
+					}
+
+					triggeredCount++
+					fmt.Printf("[ProcessNetwork] Triggered org-level processing for org: %s\n", orgID.String())
+				}
+
+				fmt.Printf("[ProcessNetwork] ✅ Successfully triggered %d/%d org-level processing workflows\n", triggeredCount, len(orgIDs))
+				return map[string]interface{}{
+					"network_id":     networkID,
+					"total_orgs":     len(orgIDs),
+					"orgs_triggered": triggeredCount,
+					"message":        fmt.Sprintf("Triggered org-level processing for %d organizations", triggeredCount),
+				}, nil
+			})
+			if err != nil {
+				// Log the error but don't fail the entire workflow
+				fmt.Printf("[ProcessNetwork] Warning: Step 6 (trigger-org-level-processing) failed: %v\n", err)
+				// Don't return error to allow the workflow to complete
+			}
+
+			_ = orgTriggerData // Org trigger data for logging/tracking
 
 			// Final Result Summary
 			finalResult := map[string]interface{}{

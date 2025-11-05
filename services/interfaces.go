@@ -39,8 +39,12 @@ type RepositoryManager struct {
 	QuestionRunBatchRepo interfaces.QuestionRunBatchRepository
 	// Credit ledger repository
 	CreditLedgerRepo interfaces.CreditLedgerRepository
+	// ** ADDED: Credit balance repository **
+	CreditBalanceRepo interfaces.CreditBalanceRepository
 	// Organization schedule repository
 	OrgScheduleRepo interfaces.OrgScheduleRepository
+	// Network schedule repository
+	NetworkScheduleRepo interfaces.NetworkScheduleRepository
 }
 
 // NewRepositoryManager creates a new repository manager with all repositories
@@ -68,8 +72,12 @@ func NewRepositoryManager(db *database.Client) *RepositoryManager {
 		QuestionRunBatchRepo: postgresql.NewQuestionRunBatchRepo(db),
 		// Credit ledger repository
 		CreditLedgerRepo: postgresql.NewCreditLedgerRepo(db),
+		// ** ADDED: Credit balance repository **
+		CreditBalanceRepo: postgresql.NewCreditBalanceRepo(db),
 		// Organization schedule repository
 		OrgScheduleRepo: postgresql.NewOrgScheduleRepo(db),
+		// Network schedule repository
+		NetworkScheduleRepo: postgresql.NewNetworkScheduleRepo(db),
 	}
 }
 

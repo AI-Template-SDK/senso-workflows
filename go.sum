@@ -1,7 +1,7 @@
 filippo.io/edwards25519 v1.1.0 h1:FNf4tywRC1HmFuKW5xopWpigGjJKiJSV0Cqo0cJWDaA=
 filippo.io/edwards25519 v1.1.0/go.mod h1:BxyFTGdWcka3PhytdK4V28tE5sGfRvvvRV7EaN4VDT4=
-github.com/AI-Template-SDK/senso-api v1.11.6 h1:mw8stsYoZkO9Cuhsl7Ujn/rXBVHz+CbsbVlUbDJdUfE=
-github.com/AI-Template-SDK/senso-api v1.11.6/go.mod h1:QxvPlweG5q2JET4MtibHXKZZuF1quhhqg8AyKKXR8Hc=
+github.com/AI-Template-SDK/senso-api v1.11.7 h1:ukXSqsYBW2Wrchww2wGL4ullw49aXPvRk6oJ7wLWNUk=
+github.com/AI-Template-SDK/senso-api v1.11.7/go.mod h1:QxvPlweG5q2JET4MtibHXKZZuF1quhhqg8AyKKXR8Hc=
 github.com/Azure/azure-sdk-for-go/sdk/azcore v1.17.0 h1:g0EZJwz7xkXQiZAI5xi9f3WWFYBlX1CPTrR+NDToRkQ=
 github.com/Azure/azure-sdk-for-go/sdk/azcore v1.17.0/go.mod h1:XCW7KnZet0Opnr7HccfUw1PLc4CjHqpcaxW8DHklNkQ=
 github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.7.0 h1:tfLQ34V6F7tVSwoTf/4lH5sE0o6eCJuNDTmH09nDpbc=
