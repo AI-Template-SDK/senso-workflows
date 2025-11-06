@@ -102,7 +102,28 @@ func (p *NetworkOrgProcessor) ProcessNetworkOrg() inngestgo.ServableFunction {
 				websites[i] = website.(string)
 			}
 
-			// Step 3: Process each question run individually
+			// Step 2.5: Generate name variations ONCE for this org (before processing question runs)
+			nameVariationsResult, err := step.Run(ctx, "generate-name-variations", func(ctx context.Context) (interface{}, error) {
+				fmt.Printf("[ProcessNetworkOrg] Step 2.5: Generating name variations for org: %s\n", orgName)
+				variations, err := p.questionRunnerService.GenerateOrgNameVariations(ctx, orgName, websites)
+				if err != nil {
+					return nil, fmt.Errorf("failed to generate name variations: %w", err)
+				}
+				fmt.Printf("[ProcessNetworkOrg] ✅ Generated %d name variations\n", len(variations))
+				return variations, nil
+			})
+			if err != nil {
+				return nil, fmt.Errorf("step 2.5 failed: %w", err)
+			}
+			nameVariations := nameVariationsResult.([]interface{})
+
+			// Convert interface{} slice to []string
+			nameVariationsStr := make([]string, len(nameVariations))
+			for i, v := range nameVariations {
+				nameVariationsStr[i] = v.(string)
+			}
+
+			// Step 3: Process each question run individually (with pre-generated name variations)
 			var allResults []interface{}
 			for i, questionRunInterface := range questionRuns {
 				questionRun := questionRunInterface.(map[string]interface{})
@@ -126,8 +147,8 @@ func (p *NetworkOrgProcessor) ProcessNetworkOrg() inngestgo.ServableFunction {
 						return nil, fmt.Errorf("invalid org ID format: %w", err)
 					}
 
-					// Extract network org data (with cleanup to prevent duplicates)
-					result, err := p.questionRunnerService.ProcessNetworkOrgQuestionRunWithCleanup(ctx, questionRunUUID, orgUUID, orgName, websites, questionText, responseText)
+					// Extract network org data (with cleanup to prevent duplicates and pre-generated name variations)
+					result, err := p.questionRunnerService.ProcessNetworkOrgQuestionRunWithCleanup(ctx, questionRunUUID, orgUUID, orgName, websites, nameVariationsStr, questionText, responseText)
 					if err != nil {
 						return nil, fmt.Errorf("failed to process question run %s: %w", questionRunID, err)
 					}

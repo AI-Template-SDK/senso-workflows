@@ -210,7 +210,8 @@ type QuestionRunnerService interface {
 	GetAllNetworkQuestionRuns(ctx context.Context, networkID string) ([]map[string]interface{}, error)
 	GetMissingNetworkOrgQuestionRuns(ctx context.Context, networkID string, orgID string) ([]map[string]interface{}, error)
 	ProcessNetworkOrgQuestionRun(ctx context.Context, questionRunID uuid.UUID, orgID uuid.UUID, orgName string, orgWebsites []string, questionText string, responseText string) (*NetworkOrgExtractionResult, error)
-	ProcessNetworkOrgQuestionRunWithCleanup(ctx context.Context, questionRunID uuid.UUID, orgID uuid.UUID, orgName string, orgWebsites []string, questionText string, responseText string) (*NetworkOrgExtractionResult, error)
+	ProcessNetworkOrgQuestionRunWithCleanup(ctx context.Context, questionRunID uuid.UUID, orgID uuid.UUID, orgName string, orgWebsites []string, nameVariations []string, questionText string, responseText string) (*NetworkOrgExtractionResult, error)
+	GenerateOrgNameVariations(ctx context.Context, orgName string, orgWebsites []string) ([]string, error)
 
 	// Network batch processing with multi-model/location support
 	GetNetworkDetails(ctx context.Context, networkID string) (*NetworkDetails, error)
@@ -228,7 +229,8 @@ type DataExtractionService interface {
 	ExtractClaims(ctx context.Context, questionRunID uuid.UUID, response string, targetCompany string, orgWebsites []string) ([]*models.QuestionRunClaim, error)
 	ExtractCitations(ctx context.Context, claims []*models.QuestionRunClaim, response string, orgWebsites []string) ([]*models.QuestionRunCitation, error)
 	CalculateMetrics(ctx context.Context, mentions []*models.QuestionRunMention, response string, targetCompany string) (*CompetitiveMetrics, error)
-	ExtractNetworkOrgData(ctx context.Context, questionRunID uuid.UUID, orgID uuid.UUID, orgName string, orgWebsites []string, questionText string, responseText string) (*NetworkOrgExtractionResult, error)
+	ExtractNetworkOrgData(ctx context.Context, questionRunID uuid.UUID, orgID uuid.UUID, orgName string, orgWebsites []string, questionText string, responseText string, nameVariations []string) (*NetworkOrgExtractionResult, error)
+	GenerateNameVariations(ctx context.Context, orgName string, websites []string) ([]string, error)
 }
 
 // Updated AnalyticsService interface for database-driven analytics

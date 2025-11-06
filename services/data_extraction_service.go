@@ -695,21 +695,27 @@ func (s *dataExtractionService) ExtractNetworkOrgCitations(ctx context.Context, 
 
 // ExtractNetworkOrgData is the main entry point that orchestrates the extraction process
 // This method has been UPDATED to use separate extraction methods like the org evaluation pipeline:
-// 1. Generate name variations (once)
+// 1. Generate name variations (once) - or use pre-generated ones if provided
 // 2. Check if organization is mentioned
 // 3. Extract evaluation: ONLY if mentioned (AI with gpt-4.1), otherwise create minimal record
 // 4. Extract competitors: ALWAYS (AI with gpt-4.1-mini) - regardless of mention status
 // 5. Extract citations: ALWAYS (regex-based) - regardless of mention status
-func (s *dataExtractionService) ExtractNetworkOrgData(ctx context.Context, questionRunID uuid.UUID, orgID uuid.UUID, orgName string, orgWebsites []string, questionText string, responseText string) (*NetworkOrgExtractionResult, error) {
+func (s *dataExtractionService) ExtractNetworkOrgData(ctx context.Context, questionRunID uuid.UUID, orgID uuid.UUID, orgName string, orgWebsites []string, questionText string, responseText string, nameVariations []string) (*NetworkOrgExtractionResult, error) {
 	fmt.Printf("[ExtractNetworkOrgData] 🔍 Processing network org data for question run %s, org %s\n", questionRunID, orgName)
 	fmt.Printf("[ExtractNetworkOrgData] 🎯 Using NEW THREE-METHOD APPROACH (like org evaluation pipeline)\n")
 
-	// Step 1: Generate name variations for mention detection
-	nameVariations, err := s.generateNameVariations(ctx, orgName, orgWebsites)
-	if err != nil {
-		return nil, fmt.Errorf("failed to generate name variations: %w", err)
+	// Step 1: Generate name variations for mention detection (if not provided)
+	if len(nameVariations) == 0 {
+		fmt.Printf("[ExtractNetworkOrgData] Generating name variations for org: %s\n", orgName)
+		var err error
+		nameVariations, err = s.generateNameVariations(ctx, orgName, orgWebsites)
+		if err != nil {
+			return nil, fmt.Errorf("failed to generate name variations: %w", err)
+		}
+		fmt.Printf("[ExtractNetworkOrgData] ✅ Generated %d name variations\n", len(nameVariations))
+	} else {
+		fmt.Printf("[ExtractNetworkOrgData] ✅ Using %d pre-generated name variations\n", len(nameVariations))
 	}
-	fmt.Printf("[ExtractNetworkOrgData] ✅ Generated %d name variations\n", len(nameVariations))
 
 	// Step 2: Check if organization is mentioned (using name variations)
 	mentioned := false
@@ -1344,7 +1350,12 @@ func (s *dataExtractionService) convertSentimentToFloat(sentiment string) float6
 	}
 }
 
-// generateNameVariations generates brand name variations for mention detection
+// GenerateNameVariations is the public method that generates brand name variations for mention detection
+func (s *dataExtractionService) GenerateNameVariations(ctx context.Context, orgName string, websites []string) ([]string, error) {
+	return s.generateNameVariations(ctx, orgName, websites)
+}
+
+// generateNameVariations is the internal implementation
 func (s *dataExtractionService) generateNameVariations(ctx context.Context, orgName string, websites []string) ([]string, error) {
 	fmt.Printf("[generateNameVariations] 🔍 Generating name variations for org: %s\n", orgName)
 
@@ -1408,10 +1419,10 @@ Associated websites:
 	// Use gpt-4.1-mini for name variations (cost-effective)
 	var model openai.ChatModel
 	if s.cfg.AzureOpenAIDeploymentName != "" {
-		model = openai.ChatModel("gpt-4.1-mini")
+		model = openai.ChatModel("gpt-5")
 		fmt.Printf("[generateNameVariations] 🎯 Using Azure SDK with model: gpt-4.1-mini\n")
 	} else {
-		model = openai.ChatModel("gpt-4.1-mini")
+		model = openai.ChatModel("gpt-5")
 		fmt.Printf("[generateNameVariations] 🎯 Using Standard OpenAI model: gpt-4.1-mini\n")
 	}
 
@@ -1430,7 +1441,8 @@ Associated websites:
 			openai.SystemMessage("You are an expert in brand name analysis and variation generation. Generate realistic brand name variations that would actually be used in business contexts."),
 			openai.UserMessage(prompt),
 		},
-		Model: model,
+		Model:               model,
+		MaxCompletionTokens: openai.Int(5000), // Prevent truncation of JSON response (Azure-compatible parameter)
 		ResponseFormat: openai.ChatCompletionNewParamsResponseFormatUnion{
 			OfJSONSchema: &openai.ResponseFormatJSONSchemaParam{JSONSchema: schemaParam},
 		},
