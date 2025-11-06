@@ -1760,7 +1760,8 @@ func (s *orgEvaluationService) ProcessNetworkOrgQuestionRunReeval(ctx context.Co
 	// Step 3: Conditionally run org evaluation LLM (if mentioned) but extract to network org format
 	if mentioned {
 		// Use the data extraction service to extract network org data with org evaluation methodology
-		extractionResult, err := s.dataExtractionService.ExtractNetworkOrgData(ctx, questionRunID, orgID, orgName, websites, questionText, responseText)
+		// Pass pre-generated nameVariations to avoid redundant API call
+		extractionResult, err := s.dataExtractionService.ExtractNetworkOrgData(ctx, questionRunID, orgID, orgName, websites, questionText, responseText, nameVariations)
 		if err != nil {
 			result.ErrorMessage = fmt.Sprintf("Network org evaluation failed: %v", err)
 			return result, nil

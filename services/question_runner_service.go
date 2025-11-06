@@ -494,12 +494,20 @@ func (s *questionRunnerService) RunNetworkOrgProcessing(ctx context.Context, org
 	fmt.Printf("[RunNetworkOrgProcessing] Processing %d question runs for org %s in network %s\n",
 		len(questionRuns), orgDetails.OrgName, orgDetails.NetworkID)
 
+	// Generate name variations ONCE for this org (before processing question runs)
+	fmt.Printf("[RunNetworkOrgProcessing] Generating name variations for org: %s\n", orgDetails.OrgName)
+	nameVariations, err := s.GenerateOrgNameVariations(ctx, orgDetails.OrgName, orgDetails.Websites)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate name variations: %w", err)
+	}
+	fmt.Printf("[RunNetworkOrgProcessing] ✅ Generated %d name variations\n", len(nameVariations))
+
 	var results []*NetworkOrgProcessingResult
 	totalEvaluations := 0
 	totalCompetitors := 0
 	totalCitations := 0
 
-	// Process each question run
+	// Process each question run (with pre-generated name variations)
 	for _, questionRun := range questionRuns {
 		questionRunID := questionRun["question_run_id"].(string)
 		questionText := questionRun["question_text"].(string)
@@ -517,8 +525,8 @@ func (s *questionRunnerService) RunNetworkOrgProcessing(ctx context.Context, org
 			continue
 		}
 
-		// Process the question run (with cleanup to prevent duplicates)
-		result, err := s.ProcessNetworkOrgQuestionRunWithCleanup(ctx, questionRunUUID, orgUUID, orgDetails.OrgName, orgDetails.Websites, questionText, responseText)
+		// Process the question run (with cleanup to prevent duplicates and pre-generated name variations)
+		result, err := s.ProcessNetworkOrgQuestionRunWithCleanup(ctx, questionRunUUID, orgUUID, orgDetails.OrgName, orgDetails.Websites, nameVariations, questionText, responseText)
 		if err != nil {
 			fmt.Printf("[RunNetworkOrgProcessing] Warning: failed to process question run %s: %v\n", questionRunID, err)
 			continue
@@ -635,8 +643,8 @@ func (s *questionRunnerService) GetLatestNetworkQuestionRuns(ctx context.Context
 func (s *questionRunnerService) ProcessNetworkOrgQuestionRun(ctx context.Context, questionRunID uuid.UUID, orgID uuid.UUID, orgName string, orgWebsites []string, questionText string, responseText string) (*NetworkOrgExtractionResult, error) {
 	fmt.Printf("[ProcessNetworkOrgQuestionRun] Processing question run %s for org %s\n", questionRunID, orgName)
 
-	// Extract network org data using the data extraction service
-	result, err := s.dataExtractionService.ExtractNetworkOrgData(ctx, questionRunID, orgID, orgName, orgWebsites, questionText, responseText)
+	// Extract network org data using the data extraction service (no pre-generated variations)
+	result, err := s.dataExtractionService.ExtractNetworkOrgData(ctx, questionRunID, orgID, orgName, orgWebsites, questionText, responseText, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to extract network org data: %w", err)
 	}
@@ -775,9 +783,16 @@ func (s *questionRunnerService) GetMissingNetworkOrgQuestionRuns(ctx context.Con
 	return result, nil
 }
 
+// GenerateOrgNameVariations generates brand name variations for an organization
+// This is a wrapper around the data extraction service's GenerateNameVariations method
+func (s *questionRunnerService) GenerateOrgNameVariations(ctx context.Context, orgName string, orgWebsites []string) ([]string, error) {
+	return s.dataExtractionService.GenerateNameVariations(ctx, orgName, orgWebsites)
+}
+
 // ProcessNetworkOrgQuestionRunWithCleanup processes a single question run for network org data extraction
 // and deletes any existing eval/citation/competitor data for that org+question run before saving new results
-func (s *questionRunnerService) ProcessNetworkOrgQuestionRunWithCleanup(ctx context.Context, questionRunID uuid.UUID, orgID uuid.UUID, orgName string, orgWebsites []string, questionText string, responseText string) (*NetworkOrgExtractionResult, error) {
+// nameVariations can be pre-generated and passed in to avoid redundant API calls; pass nil to generate on-the-fly
+func (s *questionRunnerService) ProcessNetworkOrgQuestionRunWithCleanup(ctx context.Context, questionRunID uuid.UUID, orgID uuid.UUID, orgName string, orgWebsites []string, nameVariations []string, questionText string, responseText string) (*NetworkOrgExtractionResult, error) {
 	fmt.Printf("[ProcessNetworkOrgQuestionRunWithCleanup] Processing question run %s for org %s with cleanup\n", questionRunID, orgName)
 
 	// Step 1: Delete existing data for this org+question run combination
@@ -800,8 +815,8 @@ func (s *questionRunnerService) ProcessNetworkOrgQuestionRunWithCleanup(ctx cont
 
 	fmt.Printf("[ProcessNetworkOrgQuestionRunWithCleanup] Cleanup completed for org %s, question run %s\n", orgID, questionRunID)
 
-	// Step 2: Extract network org data using the data extraction service
-	result, err := s.dataExtractionService.ExtractNetworkOrgData(ctx, questionRunID, orgID, orgName, orgWebsites, questionText, responseText)
+	// Step 2: Extract network org data using the data extraction service (with pre-generated variations if provided)
+	result, err := s.dataExtractionService.ExtractNetworkOrgData(ctx, questionRunID, orgID, orgName, orgWebsites, questionText, responseText, nameVariations)
 	if err != nil {
 		return nil, fmt.Errorf("failed to extract network org data: %w", err)
 	}
