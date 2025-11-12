@@ -884,39 +884,52 @@ func (s *questionRunnerService) GetNetworkDetails(ctx context.Context, networkID
 		{GeoModelID: uuid.New(), Name: "gemini", CreatedAt: time.Now(), UpdatedAt: time.Now()},
 	}
 
-	// Fetch ONE US location from database (just to get the right type, ID won't be stored)
-	// This is a workaround until OrgLocation type is properly exported
-	orgs, err := s.repos.OrgRepo.List(ctx, 1, 0)
-	if err != nil || len(orgs) == 0 {
-		return nil, fmt.Errorf("failed to get any org for location: %w", err)
+	// Fetch network locations from the network_locations table
+	networkLocations, err := s.repos.NetworkLocationRepo.GetByNetwork(ctx, networkUUID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get network locations: %w", err)
 	}
-	allLocs, err := s.repos.OrgLocationRepo.GetByOrg(ctx, orgs[0].OrgID)
-	if err != nil || len(allLocs) == 0 {
-		return nil, fmt.Errorf("failed to get locations: %w", err)
-	}
-	// Find US location or use first
-	var usLoc *models.OrgLocation
-	for _, loc := range allLocs {
-		if loc.CountryCode == "US" {
-			usLoc = loc
-			break
+
+	var locations []*models.OrgLocation
+	if len(networkLocations) == 0 {
+		// Fall back to US location if no network locations configured
+		fmt.Printf("[GetNetworkDetails] No locations found for network %s, falling back to US\n", networkID)
+		locations = []*models.OrgLocation{
+			{
+				OrgLocationID: uuid.New(), // Generate a temporary ID (not stored in DB)
+				OrgID:         uuid.Nil,   // Not tied to any org
+				CountryCode:   "US",
+				RegionName:    nil,
+				CreatedAt:     time.Now(),
+				UpdatedAt:     time.Now(),
+			},
+		}
+	} else {
+		// Convert NetworkLocation to OrgLocation format for compatibility with existing code
+		// (Location IDs aren't stored in question_runs for network questions anyway)
+		locations = make([]*models.OrgLocation, len(networkLocations))
+		for i, netLoc := range networkLocations {
+			locations[i] = &models.OrgLocation{
+				OrgLocationID: uuid.New(), // Generate a temporary ID (not stored in DB)
+				OrgID:         uuid.Nil,   // Not tied to any org
+				CountryCode:   netLoc.CountryCode,
+				RegionName:    netLoc.RegionName,
+				CreatedAt:     netLoc.CreatedAt,
+				UpdatedAt:     netLoc.UpdatedAt,
+			}
 		}
 	}
-	if usLoc == nil {
-		usLoc = allLocs[0]
-	}
-	hardcodedLocations := []*models.OrgLocation{usLoc}
 
 	networkDetails := &NetworkDetails{
 		Network:   network,
 		Models:    hardcodedModels,
-		Locations: hardcodedLocations,
+		Locations: locations,
 		Questions: questions,
 	}
 
 	fmt.Printf("[GetNetworkDetails] Successfully loaded network with %d models, %d locations, %d questions\n",
-		len(hardcodedModels), len(hardcodedLocations), len(questions))
-	fmt.Printf("[GetNetworkDetails] NOTE: Using 3 hardcoded models + 1 US location (IDs not stored in DB for network questions)\n")
+		len(hardcodedModels), len(locations), len(questions))
+	fmt.Printf("[GetNetworkDetails] NOTE: Using 3 hardcoded models + network locations from network_locations table (location IDs not stored in DB for network questions)\n")
 
 	return networkDetails, nil
 }
