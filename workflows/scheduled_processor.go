@@ -68,12 +68,12 @@ func (p *ScheduledProcessor) DailyOrgProcessor() inngestgo.ServableFunction {
 			// This ensures if the workflow fails, it only retries sends that didn't complete.
 			for _, orgID := range orgIDs {
 				// Create a unique step name for each org
-				stepName := fmt.Sprintf("trigger-dummy-eval-%s", orgID.String())
+				stepName := fmt.Sprintf("trigger-org-eval-%s", orgID.String())
 
 				// This step.Run is now *inside* the loop and is idempotent per-org
 				_, err := step.Run(ctx, stepName, func(ctx context.Context) (interface{}, error) {
 					evt := inngestgo.Event{
-						Name: "dummy.org.process",
+						Name: "org.evaluation.process",
 						Data: map[string]interface{}{
 							"org_id":       orgID.String(),
 							"triggered_by": "automatic_scheduler",
@@ -96,7 +96,7 @@ func (p *ScheduledProcessor) DailyOrgProcessor() inngestgo.ServableFunction {
 				"dow_value":        dayOfWeek,
 				"total_orgs_found": len(orgIDs),
 				"orgs_processed":   orgIDs,
-				"message":          fmt.Sprintf("Triggered %d dummy evaluation pipelines for %s (DOW %d)", len(orgIDs), now.Weekday().String(), dayOfWeek),
+				"message":          fmt.Sprintf("Triggered %d org evaluation pipelines for %s (DOW %d)", len(orgIDs), now.Weekday().String(), dayOfWeek),
 			}, nil
 		},
 	)

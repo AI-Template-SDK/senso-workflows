@@ -45,6 +45,8 @@ type RepositoryManager struct {
 	OrgScheduleRepo interfaces.OrgScheduleRepository
 	// Network schedule repository
 	NetworkScheduleRepo interfaces.NetworkScheduleRepository
+	// Network location repository
+	NetworkLocationRepo interfaces.NetworkLocationRepository
 }
 
 // NewRepositoryManager creates a new repository manager with all repositories
@@ -78,6 +80,8 @@ func NewRepositoryManager(db *database.Client) *RepositoryManager {
 		OrgScheduleRepo: postgresql.NewOrgScheduleRepo(db),
 		// Network schedule repository
 		NetworkScheduleRepo: postgresql.NewNetworkScheduleRepo(db),
+		// Network location repository
+		NetworkLocationRepo: postgresql.NewNetworkLocationRepo(db),
 	}
 }
 
