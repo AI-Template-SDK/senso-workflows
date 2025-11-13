@@ -22,6 +22,7 @@ var costPerWebSearch = map[string]float64{
 	"openai":     35.00,
 	"anthropic":  10.00,
 	"perplexity": 8.00,
+	"linkup":     5.50, // Linkup pricing: €0.005 per search = $0.0055 per search = $5.50 per 1000 searches
 }
 
 func (s *costService) CalculateCost(provider string, model string, inputTokens int, outputTokens int, websearch bool) float64 {
@@ -57,6 +58,9 @@ func (s *costService) getProviderKey(provider string) string {
 	}
 	if strings.Contains(provider, "perplexity") || strings.Contains(provider, "sonar") {
 		return "perplexity"
+	}
+	if strings.Contains(provider, "linkup") {
+		return "linkup"
 	}
 	return "openai" // default
 }

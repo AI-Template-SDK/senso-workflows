@@ -213,6 +213,15 @@ func (s *questionRunnerService) getProvider(model string) (AIProvider, error) {
 		return NewGeminiProvider(s.cfg, model, s.costService), nil
 	}
 
+	// Linkup provider
+	if strings.Contains(modelLower, "linkup") {
+		if s.cfg.LinkupAPIKey == "" {
+			return nil, fmt.Errorf("Linkup API key is empty in config")
+		}
+		fmt.Printf("[getProvider] 🎯 Selected Linkup provider for model: %s", model)
+		return NewLinkupProvider(s.cfg, model, s.costService), nil
+	}
+
 	// OpenAI provider (gpt-4.1, etc.)
 	if strings.Contains(modelLower, "gpt") || strings.Contains(modelLower, "4.1") {
 		if s.cfg.OpenAIAPIKey == "" {

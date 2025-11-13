@@ -25,6 +25,7 @@ type Config struct {
 	BrightDataDatasetID       string
 	PerplexityDatasetID       string
 	GeminiDatasetID           string
+	LinkupAPIKey              string
 	Database                  DatabaseConfig
 }
 
@@ -59,6 +60,7 @@ func Load() *Config {
 		BrightDataDatasetID:       os.Getenv("BRIGHTDATA_DATASET_ID"),
 		PerplexityDatasetID:       os.Getenv("PERPLEXITY_DATASET_ID"),
 		GeminiDatasetID:           os.Getenv("GEMINI_DATASET_ID"),
+		LinkupAPIKey:              os.Getenv("LINKUP_API_KEY"),
 	}
 
 	// Parse database configuration
