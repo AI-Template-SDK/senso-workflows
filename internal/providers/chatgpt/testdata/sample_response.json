@@ -1,0 +1,35 @@
+[
+	{
+		"url": "https://chatgpt.com/",
+		"prompt": "What are the top credit unions?",
+		"answer_text_markdown": "Here are the top credit unions:\n\n1. **Navy Federal Credit Union** - Largest credit union in the US\n2. **State Employees Credit Union** - Excellent customer service\n3. **Pentagon Federal Credit Union** - Great rates for members",
+		"citations": [
+			"https://www.ncua.gov/analysis/credit-union-corporate-call-report-data",
+			"https://www.mycreditunion.gov/about-credit-unions"
+		],
+		"country": "US",
+		"web_search_triggered": true,
+		"index": 1
+	},
+	{
+		"url": "https://chatgpt.com/",
+		"prompt": "Which banks have the best rates?",
+		"answer_text_markdown": "Banks with competitive rates include:\n\n- **Chase Bank** - 4.5% APY on savings\n- **Bank of America** - 4.3% APY\n- **Wells Fargo** - 4.2% APY",
+		"citations": [
+			"https://www.bankrate.com/banking/savings/rates/"
+		],
+		"country": "US",
+		"web_search_triggered": true,
+		"index": 2
+	},
+	{
+		"url": "https://chatgpt.com/",
+		"prompt": "What is the average loan interest rate?",
+		"answer_text_markdown": "The average personal loan interest rate varies by credit score:\n\n- Excellent credit (720+): 8-12%\n- Good credit (680-719): 12-18%\n- Fair credit (640-679): 18-24%\n\nOverall average: approximately 11.5%",
+		"citations": null,
+		"country": "US",
+		"web_search_triggered": true,
+		"index": 3
+	}
+]
+

@@ -1,0 +1,23 @@
+[
+	{
+		"error": "Request timeout after 60 seconds",
+		"input": {
+			"url": "https://chatgpt.com/",
+			"prompt": "What are the top credit unions?",
+			"country": "US",
+			"index": 1,
+			"web_search": true,
+			"additional_prompt": ""
+		}
+	},
+	{
+		"url": "https://chatgpt.com/",
+		"prompt": "Which banks have the best rates?",
+		"answer_text_markdown": "Banks with the best rates include Chase and Bank of America.",
+		"citations": null,
+		"country": "US",
+		"web_search_triggered": true,
+		"index": 2
+	}
+]
+
