@@ -26,6 +26,7 @@ type Config struct {
 	PerplexityDatasetID       string
 	GeminiDatasetID           string
 	LinkupAPIKey              string
+	EnableScheduledPipelines  bool
 	Database                  DatabaseConfig
 }
 
@@ -61,6 +62,7 @@ func Load() *Config {
 		PerplexityDatasetID:       os.Getenv("PERPLEXITY_DATASET_ID"),
 		GeminiDatasetID:           os.Getenv("GEMINI_DATASET_ID"),
 		LinkupAPIKey:              os.Getenv("LINKUP_API_KEY"),
+		EnableScheduledPipelines:  getEnvBool("ENABLE_SCHEDULED_PIPELINES", true),
 	}
 
 	// Parse database configuration
@@ -130,6 +132,18 @@ func getEnvInt(key string, defaultValue int) int {
 	if value := os.Getenv(key); value != "" {
 		if intVal, err := strconv.Atoi(value); err == nil {
 			return intVal
+		}
+	}
+	return defaultValue
+}
+
+func getEnvBool(key string, defaultValue bool) bool {
+	if value := os.Getenv(key); value != "" {
+		switch value {
+		case "1", "true", "TRUE", "True", "yes", "YES", "Yes", "on", "ON", "On":
+			return true
+		case "0", "false", "FALSE", "False", "no", "NO", "No", "off", "OFF", "Off":
+			return false
 		}
 	}
 	return defaultValue

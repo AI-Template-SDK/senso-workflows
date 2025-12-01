@@ -47,6 +47,8 @@ type RepositoryManager struct {
 	NetworkScheduleRepo interfaces.NetworkScheduleRepository
 	// Network location repository
 	NetworkLocationRepo interfaces.NetworkLocationRepository
+	// Network model repository
+	NetworkModelRepo interfaces.NetworkModelRepository
 }
 
 // NewRepositoryManager creates a new repository manager with all repositories
@@ -82,6 +84,8 @@ func NewRepositoryManager(db *database.Client) *RepositoryManager {
 		NetworkScheduleRepo: postgresql.NewNetworkScheduleRepo(db),
 		// Network location repository
 		NetworkLocationRepo: postgresql.NewNetworkLocationRepo(db),
+		// Network model repository
+		NetworkModelRepo: postgresql.NewNetworkModelRepo(db),
 	}
 }
 

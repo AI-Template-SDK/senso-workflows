@@ -884,13 +884,28 @@ func (s *questionRunnerService) GetNetworkDetails(ctx context.Context, networkID
 		return nil, fmt.Errorf("failed to get network questions: %w", err)
 	}
 
-	// HARDCODED: Networks run on these 3 models (gpt-4.1, chatgpt, perplexity)
-	// Model IDs don't matter since they're stored as NULL in question_runs for network questions
-	hardcodedModels := []*models.GeoModel{
-		///{GeoModelID: uuid.New(), Name: "gpt-4.1", CreatedAt: time.Now(), UpdatedAt: time.Now()},
-		{GeoModelID: uuid.New(), Name: "chatgpt", CreatedAt: time.Now(), UpdatedAt: time.Now()},
-		{GeoModelID: uuid.New(), Name: "perplexity", CreatedAt: time.Now(), UpdatedAt: time.Now()},
-		{GeoModelID: uuid.New(), Name: "gemini", CreatedAt: time.Now(), UpdatedAt: time.Now()},
+	// Get network models from networkmodels table
+	modelNames, err := s.repos.NetworkModelRepo.GetByNetworkID(ctx, networkUUID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get network models: %w", err)
+	}
+
+	var geoModels []*models.GeoModel
+	if len(modelNames) == 0 {
+		// Fall back to default models if no network models configured
+		fmt.Printf("[GetNetworkDetails] No models found for network %s, falling back to default models\n", networkID)
+		modelNames = []string{"chatgpt", "perplexity", "gemini"}
+	}
+
+	// Convert model names to GeoModel objects
+	geoModels = make([]*models.GeoModel, len(modelNames))
+	for i, name := range modelNames {
+		geoModels[i] = &models.GeoModel{
+			GeoModelID: uuid.New(), // Generate a temporary ID (not stored in DB for network questions)
+			Name:       name,
+			CreatedAt:  time.Now(),
+			UpdatedAt:  time.Now(),
+		}
 	}
 
 	// Fetch network locations from the network_locations table
@@ -931,14 +946,14 @@ func (s *questionRunnerService) GetNetworkDetails(ctx context.Context, networkID
 
 	networkDetails := &NetworkDetails{
 		Network:   network,
-		Models:    hardcodedModels,
+		Models:    geoModels,
 		Locations: locations,
 		Questions: questions,
 	}
 
 	fmt.Printf("[GetNetworkDetails] Successfully loaded network with %d models, %d locations, %d questions\n",
-		len(hardcodedModels), len(locations), len(questions))
-	fmt.Printf("[GetNetworkDetails] NOTE: Using 3 hardcoded models + network locations from network_locations table (location IDs not stored in DB for network questions)\n")
+		len(geoModels), len(locations), len(questions))
+	fmt.Printf("[GetNetworkDetails] NOTE: Using %d models from networkmodels table + network locations from network_locations table (location IDs not stored in DB for network questions)\n", len(geoModels))
 
 	return networkDetails, nil
 }
