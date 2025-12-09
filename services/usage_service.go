@@ -193,15 +193,17 @@ func (s *usageService) chargeRunsInTx(ctx context.Context, tx *sqlx.Tx, orgID, p
 	for _, run := range runs {
 		// Idempotency check: Has this run already been charged?
 		sourceIDStr := run.QuestionRunID.String()
-		existing, err := s.repos.CreditLedgerRepo.GetBySourceIDAndTypeInTx(ctx, tx, sourceIDStr, "question_run")
-		if err != nil && err != sql.ErrNoRows {
-			return 0, fmt.Errorf("failed to check for existing ledger entry for run %s: %w", run.QuestionRunID, err)
-		}
+		/*
+			existing, err := s.repos.CreditLedgerRepo.GetBySourceIDAndTypeInTx(ctx, tx, sourceIDStr, "question_run")
+			if err != nil && err != sql.ErrNoRows {
+				return 0, fmt.Errorf("failed to check for existing ledger entry for run %s: %w", run.QuestionRunID, err)
+			}
 
-		if existing != nil {
-			// This run has already been charged, skip it.
-			continue
-		}
+			if existing != nil {
+				// This run has already been charged, skip it.
+				continue
+			}
+		*/
 
 		// Create metadata for the ledger entry
 		metadata := map[string]string{
