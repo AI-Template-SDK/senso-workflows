@@ -371,6 +371,13 @@ func (p *brightDataProvider) RunQuestionBatch(ctx context.Context, queries []str
 		return nil, fmt.Errorf("batch size %d exceeds maximum of 20", len(queries))
 	}
 
+	// Inject localized instructions into each prompt before submission
+	localizedQueries := make([]string, len(queries))
+	for i, query := range queries {
+		localizedQueries[i] = p.buildLocalizedPrompt(query, location)
+	}
+	queries = localizedQueries
+
 	// 1. Submit batch job to BrightData
 	snapshotID, err := p.submitBatchJob(ctx, queries, location, websearch)
 	if err != nil {
@@ -749,6 +756,35 @@ func (p *brightDataProvider) isStatusResponse(bodyBytes []byte) (bool, string, s
 	}
 
 	return false, "", ""
+}
+
+func (p *brightDataProvider) buildLocalizedPrompt(query string, location *workflowModels.Location) string {
+	locationDescription := formatLocationForPrompt(location)
+	return fmt.Sprintf("Ensure your response is localized to %s. Answer the following question: %s",
+		locationDescription, query)
+}
+
+func formatLocationForPrompt(location *workflowModels.Location) string {
+	if location == nil {
+		return "the relevant region and country"
+	}
+
+	var parts []string
+	if location.City != nil && *location.City != "" {
+		parts = append(parts, *location.City)
+	}
+	if location.Region != nil && *location.Region != "" {
+		parts = append(parts, *location.Region)
+	}
+	if location.Country != "" {
+		parts = append(parts, location.Country)
+	}
+
+	if len(parts) == 0 {
+		return "the relevant region and country"
+	}
+
+	return strings.Join(parts, ", ")
 }
 
 // fixCitationsInResponse fixes citation markers in the response text by converting
