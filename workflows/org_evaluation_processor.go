@@ -114,13 +114,13 @@ func (p *OrgEvaluationProcessor) ProcessOrgEvaluation() inngestgo.ServableFuncti
 				}
 			}
 
-			// ** Step 1.5 - Check Partner Balance **
+			// ** Step 1.5 - Check Org Balance **
 			// If batch is already completed, skip balance check
 			if batchStatus == "completed" {
 				fmt.Printf("[ProcessOrgEvaluation] Batch %s already completed, skipping balance check.\n", batchID)
 			} else {
 				_, err = step.Run(ctx, "check-balance", func(ctx context.Context) (interface{}, error) {
-					fmt.Printf("[ProcessOrgEvaluation] Step 1.5: Checking partner balance for org %s\n", orgID)
+					fmt.Printf("[ProcessOrgEvaluation] Step 1.5: Checking org balance for org %s\n", orgID)
 					orgUUID, err := uuid.Parse(orgID)
 					if err != nil {
 						return nil, fmt.Errorf("invalid org ID: %w", err)
@@ -140,10 +140,10 @@ func (p *OrgEvaluationProcessor) ProcessOrgEvaluation() inngestgo.ServableFuncti
 					err = p.usageService.CheckBalance(ctx, orgUUID, totalCost)
 					if err != nil {
 						// This will fail the workflow step, preventing execution
-						return nil, fmt.Errorf("partner balance check failed: %w", err)
+						return nil, fmt.Errorf("org balance check failed: %w", err)
 					}
 
-					fmt.Printf("[ProcessOrgEvaluation] ✅ Partner has sufficient balance for %d runs (%.2f cost)\n", totalQuestions, totalCost)
+					fmt.Printf("[ProcessOrgEvaluation] ✅ Org has sufficient balance for %d runs (%.2f cost)\n", totalQuestions, totalCost)
 					return map[string]interface{}{"status": "ok", "checked_cost": totalCost}, nil
 				})
 				if err != nil {

@@ -128,9 +128,9 @@ func (p *NetworkOrgMissingProcessor) ProcessNetworkOrgMissing() inngestgo.Servab
 				}, nil
 			}
 
-			// Step 2.5 - Check Partner Balance
+			// Step 2.5 - Check Org Balance
 			_, err = step.Run(ctx, "check-balance", func(ctx context.Context) (interface{}, error) {
-				fmt.Printf("[ProcessNetworkOrgMissing] Step 2.5: Checking partner balance for org %s\n", orgID)
+				fmt.Printf("[ProcessNetworkOrgMissing] Step 2.5: Checking org balance for org %s\n", orgID)
 				orgUUID, err := uuid.Parse(orgID)
 				if err != nil {
 					return nil, fmt.Errorf("invalid org ID: %w", err)

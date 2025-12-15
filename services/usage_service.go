@@ -38,7 +38,7 @@ func NewUsageService(repos *RepositoryManager) UsageService {
 }
 
 // ** ADDED: CheckBalance method implementation **
-// CheckBalance verifies if the org's partner has enough balance to cover a cost.
+// CheckBalance verifies if the org has enough balance to cover a cost.
 func (s *usageService) CheckBalance(ctx context.Context, orgID uuid.UUID, cost float64) error {
 	if cost <= 0 {
 		// This check is for a *cost*, so it must be positive.
@@ -50,6 +50,7 @@ func (s *usageService) CheckBalance(ctx context.Context, orgID uuid.UUID, cost f
 	}
 
 	// 1. Get Org to find PartnerID
+
 	org, err := s.repos.OrgRepo.GetByID(ctx, orgID)
 	if err != nil {
 		return fmt.Errorf("failed to get org %s: %w", orgID, err)
@@ -62,19 +63,19 @@ func (s *usageService) CheckBalance(ctx context.Context, orgID uuid.UUID, cost f
 		return fmt.Errorf("org %s is not associated with a partner", orgID)
 	}
 
-	// 2. Get Partner Balance
-	balance, err := s.repos.CreditBalanceRepo.GetByPartnerID(ctx, org.PartnerID)
+	// 2. Get Org Balance
+	balance, err := s.repos.CreditBalanceRepo.GetByOrgID(ctx, orgID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			// No balance record means 0 balance
-			return fmt.Errorf("insufficient credits for partner %s (balance: 0.00, cost: %.2f): %w", org.PartnerID, cost, postgresql.ErrInsufficientCredits)
+			return fmt.Errorf("insufficient credits for org %s (balance: 0.00, cost: %.2f): %w", orgID, cost, postgresql.ErrInsufficientCredits)
 		}
-		return fmt.Errorf("failed to get credit balance for partner %s: %w", org.PartnerID, err)
+		return fmt.Errorf("failed to get credit balance for partner %s: %w", orgID, err)
 	}
 
 	// 3. Check Balance
 	if balance.CurrentBalance < cost {
-		return fmt.Errorf("insufficient credits for partner %s (balance: %.2f, cost: %.2f): %w", org.PartnerID, balance.CurrentBalance, cost, postgresql.ErrInsufficientCredits)
+		return fmt.Errorf("insufficient credits for org %s (balance: %.2f, cost: %.2f): %w", orgID, balance.CurrentBalance, cost, postgresql.ErrInsufficientCredits)
 	}
 
 	fmt.Printf("[CheckBalance] Org %s (Partner %s) has sufficient balance (%.2f) for cost (%.2f)\n", orgID, org.PartnerID, balance.CurrentBalance, cost)
@@ -231,13 +232,13 @@ func (s *usageService) chargeRunsInTx(ctx context.Context, tx *sqlx.Tx, orgID, p
 			return 0, fmt.Errorf("failed to create ledger entry for run %s: %w", run.QuestionRunID, err)
 		}
 
-		// 2. ** ADDED: Deduct from the partner's balance **
-		// We pass `nil` for orgID because this deduction is for the partner.
-		if _, err := s.repos.CreditBalanceRepo.DeductInTx(ctx, tx, nil, &partnerID, deductCost); err != nil {
+		// 2. ** ADDED: Deduct from the org's balance **
+		// We pass `nil` for partnerID because this deduction is for the org.
+		if _, err := s.repos.CreditBalanceRepo.DeductInTx(ctx, tx, &orgID, nil, deductCost); err != nil {
 			// If this fails (e.g., insufficient credits), the transaction will be rolled back.
 			// This correctly handles the case where the balance was sufficient at the start
 			// but was consumed by parallel runs.
-			return 0, fmt.Errorf("failed to deduct from partner balance for run %s: %w", run.QuestionRunID, err)
+			return 0, fmt.Errorf("failed to deduct from org balance for run %s: %w", run.QuestionRunID, err)
 		}
 
 		chargedCount++
