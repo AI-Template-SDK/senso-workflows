@@ -249,8 +249,9 @@ func main() {
 
 	var provider services.AIProvider
 	if !*dryRun {
-		if strings.TrimSpace(cfg.OpenAIAPIKey) == "" {
-			log.Fatalf("OPENAI_API_KEY is required for live runs (web search uses /v1/responses on api.openai.com)")
+		// Azure-only: web search is required and must be executed via Azure OpenAI.
+		if strings.TrimSpace(cfg.AzureOpenAIEndpoint) == "" || strings.TrimSpace(cfg.AzureOpenAIKey) == "" || strings.TrimSpace(cfg.AzureOpenAIDeploymentName) == "" {
+			log.Fatalf("AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_KEY, and AZURE_OPENAI_DEPLOYMENT_NAME are required for live runs (Azure-only; web search required)")
 		}
 		provider = services.NewOpenAIProvider(cfg, *apiModel, services.NewCostService())
 	}
@@ -266,7 +267,7 @@ func main() {
 	log.Printf("[openai_network_fixer] networks=%d dry_run=%t concurrency=%d write_model=%s api_model=%s", len(networkIDs), *dryRun, *concurrency, *writeModel, *apiModel)
 	if *dryRun {
 		log.Printf("[openai_network_fixer] DRY RUN MODE: no DB writes, no OpenAI calls will be made")
-		log.Printf("[openai_network_fixer] To execute for real: OPENAI_API_KEY=... go run ./cmd/openai_network_fixer --dry-run=false --write-model %s --api-model %s --concurrency %d", *writeModel, *apiModel, *concurrency)
+		log.Printf("[openai_network_fixer] To execute for real: AZURE_OPENAI_ENDPOINT=... AZURE_OPENAI_KEY=... AZURE_OPENAI_DEPLOYMENT_NAME=... go run ./cmd/openai_network_fixer --dry-run=false --write-model %s --api-model %s --concurrency %d", *writeModel, *apiModel, *concurrency)
 	}
 
 	todayStart := utcTodayStart(time.Now())
