@@ -154,8 +154,8 @@ Associated websites:
 		model = openai.ChatModel(s.cfg.AzureOpenAIDeploymentName)
 		fmt.Printf("[GenerateNameVariations] 🎯 Using Azure SDK with model: %s\n", s.cfg.AzureOpenAIDeploymentName)
 	} else {
-		model = openai.ChatModel("gpt-4.1-mini")
-		fmt.Printf("[GenerateNameVariations] 🎯 Using Standard OpenAI model: gpt-4.1-mini\n")
+		model = openai.ChatModel("gpt-5.2")
+		fmt.Printf("[GenerateNameVariations] 🎯 Using Standard OpenAI model: gpt-5.2\n")
 	}
 
 	schemaParam := openai.ResponseFormatJSONSchemaJSONSchemaParam{

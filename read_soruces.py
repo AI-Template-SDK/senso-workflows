@@ -17,7 +17,7 @@ def describe(value: Any):
     return type(value).__name__
 
 
-with open("sd_midqhnodm1qh7hky9.json", "r") as f:
+with open("sd_mjarv2hx2kod0078ma.json", "r") as f:
     data = json.load(f)
 
 structure = describe(data)
@@ -27,13 +27,22 @@ print(json.dumps(structure, indent=4, sort_keys=True))
 
 for i in data:
     print(i["prompt"])
-    print(i["web_search_triggered"])
+    #print(i["web_search_triggered"])
     print(len(i.get("links_attached") or []))
+    if len(i.get("links_attached") or []) > 0:
+        for link in i.get("links_attached"):
+            print(f"\t{link['url']}")
     print(len(i.get("citations") or []))
+    if len(i.get("citations") or []) > 0:
+        for citation in i.get("citations"):
+            print(f"\t{citation['url']}")
     print(len(i.get("search_sources") or []))
+    if len(i.get("search_sources") or []) > 0:
+        for search_source in i.get("search_sources"):
+            print(f"\t{search_source['url']}")
     print(i["model"])
     #print(i["answer_text_markdown"])
-    with open(f"sd_{i['index']}.html", "w") as f:
-        f.write(i["answer_section_html"])
-    print("-" * 100)
-    print()
+    #with open(f"sd_{i['index']}.html", "w") as f:
+    #    f.write(i["answer_section_html"])
+    #print("-" * 100)
+    #print()

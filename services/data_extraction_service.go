@@ -362,14 +362,20 @@ func (s *dataExtractionService) ExtractNetworkOrgEvaluation(ctx context.Context,
 		websitesList += "\n"
 	}
 
-	prompt := fmt.Sprintf(`You are an expert text extraction specialist. The target organization IS MENTIONED in this text. Your task is to extract ALL text that mentions the organization and determine the overall sentiment.
+	prompt := fmt.Sprintf(`You are an expert text analysis and extraction specialist. You are being run because a preliminary check found potential mentions of the target organization based on name variations. Your primary task is to **verify** if the **specific TARGET ORGANIZATION** is genuinely mentioned (not generic overlap), and then extract relevant details ONLY IF verified.
 
 **TARGET ORGANIZATION:** %s
 **Organization name variations:** %s
 %s
 **QUESTION:** %s
 
-**TASK 1: EXTRACT MENTION TEXT**
+**TASK 0: VERIFY MENTION (CRITICAL FIRST STEP)**
+1. Carefully read the "RESPONSE TO ANALYZE" below.
+2. Determine if the text *specifically* mentions the **TARGET ORGANIZATION** (%s) or one of its highly probable variations.
+3. **CRUCIAL:** Be strict. Ignore mentions of generic terms that overlap with the name. Also ignore mentions of different organizations with similar names.
+4. Set 'is_mention_verified' to true ONLY if you are confident the specific TARGET ORGANIZATION is mentioned. Otherwise set it to false.
+
+**TASK 1: EXTRACT MENTION TEXT (ONLY if is_mention_verified is true)**
 
 Find EVERY occurrence where the target organization is mentioned by name (including variations) and extract the text with perfect formatting preservation.
 
@@ -388,22 +394,30 @@ Find EVERY occurrence where the target organization is mentioned by name (includ
 - **Adjacent context** = If consecutive sentences form one continuous thought about the organization, keep them together
 - **Aggregation** = Use exact delimiter " || " (space-pipe-pipe-space) between separate occurrences
 
-**TASK 2: DETERMINE SENTIMENT**
+If 'is_mention_verified' is false, return empty string for 'mention_text'.
+
+**TASK 2: DETERMINE SENTIMENT (ONLY if is_mention_verified is true)**
 
 Analyze the overall sentiment toward the target organization across all mentions:
 - **positive**: Favorable language, praise, recommendations ("excellent", "best", "recommended", "leading")
 - **negative**: Critical language, problems, warnings ("poor", "issues", "avoid", "problematic")
 - **neutral**: Factual, descriptive, balanced content without clear bias
 
-**TASK 3: CITATION CHECK**
+If 'is_mention_verified' is false, return empty string for 'sentiment'.
+
+**TASK 3: CITATION CHECK (ONLY if is_mention_verified is true)**
 
 Determine if the response contains URLs that relate to this specific organization:
 - Set citation=true if URLs from organization's domains are present OR if external URLs mention the organization
 - Set citation=false if no relevant URLs found
 
-**TASK 4: MENTION RANK**
+If 'is_mention_verified' is false, set citation=false.
+
+**TASK 4: MENTION RANK (ONLY if is_mention_verified is true)**
 
 Assign prominence ranking (1=most prominent, higher numbers=less prominent, 0=not mentioned)
+
+If 'is_mention_verified' is false, set mention_rank=0.
 
 **RESPONSE TO ANALYZE:**
 `+"`"+`
@@ -411,11 +425,11 @@ Assign prominence ranking (1=most prominent, higher numbers=less prominent, 0=no
 `+"`"+`
 
 **OUTPUT REQUIREMENTS:**
-- mentioned: true (we already confirmed it's mentioned)
+- is_mention_verified: boolean
 - mention_text: ALL extracted text with perfect formatting, separated by " || "
 - sentiment: exactly one of "positive", "negative", or "neutral" (lowercase)
 - citation: true or false
-- mention_rank: integer (1 for most prominent)`, "`"+orgName+"`", nameVariationsStr, websitesList, questionText, responseText)
+- mention_rank: integer (1 for most prominent, 0 if not verified)`, "`"+orgName+"`", nameVariationsStr, websitesList, questionText, "`"+orgName+"`", responseText)
 
 	// Use Azure or standard OpenAI with gpt-4.1
 	var model openai.ChatModel
@@ -428,8 +442,8 @@ Assign prominence ranking (1=most prominent, higher numbers=less prominent, 0=no
 	}
 
 	schemaParam := openai.ResponseFormatJSONSchemaJSONSchemaParam{
-		Name:        "network_org_evaluation_extraction",
-		Description: openai.String("Extract network organization evaluation data from AI response"),
+		Name:        "network_org_mention_verification_extraction",
+		Description: openai.String("Verify specific org mention and extract network org evaluation data ONLY IF verified"),
 		Schema:      GenerateSchema[NetworkOrgEvaluationResponse](),
 		Strict:      openai.Bool(true),
 	}
@@ -439,7 +453,7 @@ Assign prominence ranking (1=most prominent, higher numbers=less prominent, 0=no
 	// Create the extraction request with structured output
 	params := openai.ChatCompletionNewParams{
 		Messages: []openai.ChatCompletionMessageParamUnion{
-			openai.SystemMessage("You are an expert text extraction specialist. Extract mention text with perfect formatting and determine sentiment. The organization is already confirmed to be mentioned."),
+			openai.SystemMessage("You are an expert text analysis specialist. Verify if the specific target organization is mentioned (distinguishing from generic terms). If verified, extract mention text, sentiment, citation flag, and mention rank accurately. If not verified, return false and empty/zero values for other fields."),
 			openai.UserMessage(prompt),
 		},
 		Model: model,
@@ -487,15 +501,16 @@ Assign prominence ranking (1=most prominent, higher numbers=less prominent, 0=no
 
 	// Create the network org evaluation model
 	now := time.Now()
+	mentionedVerified := extractedData.IsMentionVerified && strings.TrimSpace(extractedData.MentionText) != ""
 	networkOrgEval := &models.NetworkOrgEval{
 		NetworkOrgEvalID: uuid.New(),
 		QuestionRunID:    questionRunID,
 		OrgID:            orgID,
-		Mentioned:        true, // We already know it's mentioned from pre-filtering
-		Citation:         extractedData.Citation,
-		Sentiment:        stringPtr(extractedData.Sentiment),
-		MentionText:      stringPtr(extractedData.MentionText),
-		MentionRank:      intPtr(extractedData.MentionRank),
+		Mentioned:        mentionedVerified,
+		Citation:         mentionedVerified && extractedData.Citation,
+		Sentiment:        nil,
+		MentionText:      nil,
+		MentionRank:      nil,
 		InputTokens:      intPtr(inputTokens),
 		OutputTokens:     intPtr(outputTokens),
 		TotalCost:        float64Ptr(totalCost),
@@ -503,8 +518,20 @@ Assign prominence ranking (1=most prominent, higher numbers=less prominent, 0=no
 		UpdatedAt:        now,
 	}
 
-	fmt.Printf("[ExtractNetworkOrgEvaluation] ✅ Created network org evaluation: mentioned=true, sentiment=%s, citation=%t, mention_rank=%d\n",
-		extractedData.Sentiment, extractedData.Citation, extractedData.MentionRank)
+	if mentionedVerified {
+		networkOrgEval.MentionText = stringPtr(extractedData.MentionText)
+		if strings.TrimSpace(extractedData.Sentiment) != "" {
+			networkOrgEval.Sentiment = stringPtr(extractedData.Sentiment)
+		}
+		if extractedData.MentionRank > 0 {
+			networkOrgEval.MentionRank = intPtr(extractedData.MentionRank)
+		}
+		fmt.Printf("[ExtractNetworkOrgEvaluation] ✅ Mention VERIFIED by LLM. Mentioned=true (citation=%t, mention_rank=%d)\n",
+			networkOrgEval.Citation, extractedData.MentionRank)
+	} else {
+		networkOrgEval.Citation = false
+		fmt.Printf("[ExtractNetworkOrgEvaluation] ⚠️ Mention NOT VERIFIED by LLM. Mentioned=false\n")
+	}
 
 	return &NetworkOrgEvaluationResult{
 		Evaluation:   networkOrgEval,
@@ -1416,14 +1443,15 @@ The brand name is %s
 Associated websites:
 %s`, "`"+orgName+"`", websitesFormatted)
 
-	// Use gpt-4.1-mini for name variations (cost-effective)
+	// Use gpt-5.2 for name variations (consistent across pipelines)
 	var model openai.ChatModel
 	if s.cfg.AzureOpenAIDeploymentName != "" {
-		model = openai.ChatModel("gpt-5")
-		fmt.Printf("[generateNameVariations] 🎯 Using Azure SDK with model: gpt-4.1-mini\n")
+		// For Azure, the "model" parameter must be the deployment name (configure it to gpt-5.2)
+		model = openai.ChatModel(s.cfg.AzureOpenAIDeploymentName)
+		fmt.Printf("[generateNameVariations] 🎯 Using Azure OpenAI deployment: %s\n", s.cfg.AzureOpenAIDeploymentName)
 	} else {
-		model = openai.ChatModel("gpt-5")
-		fmt.Printf("[generateNameVariations] 🎯 Using Standard OpenAI model: gpt-4.1-mini\n")
+		model = openai.ChatModel("gpt-5.2")
+		fmt.Printf("[generateNameVariations] 🎯 Using Standard OpenAI model: gpt-5.2\n")
 	}
 
 	schemaParam := openai.ResponseFormatJSONSchemaJSONSchemaParam{
@@ -1486,10 +1514,11 @@ Associated websites:
 
 // Response types for network org extraction
 type NetworkOrgEvaluationResponse struct {
-	MentionText string `json:"mention_text"`
-	Sentiment   string `json:"sentiment"`
-	Citation    bool   `json:"citation"`
-	MentionRank int    `json:"mention_rank"`
+	IsMentionVerified bool   `json:"is_mention_verified"`
+	MentionText       string `json:"mention_text"`
+	Sentiment         string `json:"sentiment"`
+	Citation          bool   `json:"citation"`
+	MentionRank       int    `json:"mention_rank"`
 }
 
 // Note: NameListResponse and CompetitorListResponse are defined in org_evaluation_service.go
