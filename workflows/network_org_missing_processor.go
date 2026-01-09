@@ -137,10 +137,10 @@ func (p *NetworkOrgMissingProcessor) ProcessNetworkOrgMissing() inngestgo.Servab
 				}
 
 				// Calculate total cost
-				runCost := -services.DefaultQuestionRunCost // 0.05
-				totalCost := float64(questionCount) * runCost
+				// runCost := -services.DefaultQuestionRunCost // 0.05
+				// totalCost := float64(questionCount) * runCost
 
-				err = p.usageService.CheckBalance(ctx, orgUUID, totalCost)
+				totalCost, err := p.usageService.CheckBalance(ctx, orgUUID, questionCount, "network")
 				if err != nil {
 					// This will fail the workflow step, preventing execution
 					return nil, fmt.Errorf("partner balance check failed: %w", err)
@@ -270,7 +270,7 @@ func (p *NetworkOrgMissingProcessor) ProcessNetworkOrgMissing() inngestgo.Servab
 				}
 
 				// Call the usage service to charge for each individual successful run
-				chargedCount, err := p.usageService.TrackIndividualRuns(ctx, orgUUID, processedRunIDs)
+				chargedCount, err := p.usageService.TrackIndividualRuns(ctx, orgUUID, processedRunIDs, "network")
 				if err != nil {
 					return nil, fmt.Errorf("failed to track usage for individual runs: %w", err)
 				}

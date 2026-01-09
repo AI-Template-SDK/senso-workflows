@@ -129,15 +129,15 @@ func (p *OrgEvaluationProcessor) ProcessOrgEvaluation() inngestgo.ServableFuncti
 					// Calculate total cost
 					// Note: This checks the cost for ALL questions in the batch.
 					// This is safe, as the usage tracking is idempotent.
-					runCost := -services.DefaultQuestionRunCost // 0.05
-					totalCost := float64(totalQuestions) * runCost
+					// runCost := -services.DefaultQuestionRunCost // 0.05
+					// totalCost := float64(totalQuestions) * runCost
 
-					if totalCost == 0 {
+					if totalQuestions == 0 {
 						fmt.Printf("[ProcessOrgEvaluation] No questions to run, skipping balance check.\n")
 						return map[string]interface{}{"status": "ok", "checked_cost": 0}, nil
 					}
 
-					err = p.usageService.CheckBalance(ctx, orgUUID, totalCost)
+					totalCost, err := p.usageService.CheckBalance(ctx, orgUUID, totalQuestions, "org")
 					if err != nil {
 						// This will fail the workflow step, preventing execution
 						return nil, fmt.Errorf("partner balance check failed: %w", err)
@@ -240,7 +240,7 @@ func (p *OrgEvaluationProcessor) ProcessOrgEvaluation() inngestgo.ServableFuncti
 
 				// Call the usage service to create idempotent ledger entries
 				// This service internally fetches all successful runs for the batch and charges for them.
-				chargedCount, err := p.usageService.TrackBatchUsage(ctx, orgUUID, batchUUID)
+				chargedCount, err := p.usageService.TrackBatchUsage(ctx, orgUUID, batchUUID, "org")
 				if err != nil {
 					return nil, fmt.Errorf("failed to track usage: %w", err)
 				}
