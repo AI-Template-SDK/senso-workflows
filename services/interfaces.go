@@ -49,6 +49,8 @@ type RepositoryManager struct {
 	NetworkLocationRepo interfaces.NetworkLocationRepository
 	// Network model repository
 	NetworkModelRepo interfaces.NetworkModelRepository
+	// Pricing Config repository
+	PricingConfigRepo interfaces.PricingConfigRepository
 }
 
 // NewRepositoryManager creates a new repository manager with all repositories
@@ -86,6 +88,8 @@ func NewRepositoryManager(db *database.Client) *RepositoryManager {
 		NetworkLocationRepo: postgresql.NewNetworkLocationRepo(db),
 		// Network model repository
 		NetworkModelRepo: postgresql.NewNetworkModelRepo(db),
+		// Pricing Config repository
+		PricingConfigRepo: postgresql.NewPricingConfigRepo(db),
 	}
 }
 
