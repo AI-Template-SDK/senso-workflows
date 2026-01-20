@@ -68,16 +68,14 @@ func (s *usageService) CheckBalance(ctx context.Context, orgID uuid.UUID, totalQ
 	var cost float64
 	estRunPrice := DefaultQuestionRunCost // Fallback cost
 	cost = (estRunPrice) * float64(totalQuestions)
-	config, err := s.repos.PricingConfigRepo.GetByPartnerIDAndAction(ctx, org.PartnerID, "question_run")
+	config, err := s.repos.WholesalePricingConfigRepo.GetByPartnerIDAndAction(ctx, org.PartnerID, "question_run")
 	if err == nil {
-		if config.WholesaleFixedPrice != nil {
-			estRunPrice = config.WholesaleFixedPrice
-			cost = estRunPrice * float64(totalQuestions)
-		}
+		estRunPrice = config.WholesaleFixedPrice
+		cost = estRunPrice * float64(totalQuestions)
 	}
 
 	// 3. Get Payer Balance
-	var balance models.CreditBalance
+	var balance *models.CreditBalance
 	if questionType == QuestionTypeOrg && !org.IsFreeTier {
 		balance, err = s.repos.CreditBalanceRepo.GetByOrgID(ctx, orgID)
 		if err != nil {
@@ -101,6 +99,9 @@ func (s *usageService) CheckBalance(ctx context.Context, orgID uuid.UUID, totalQ
 	}
 
 	// 4. Check Balance
+	if balance == nil {
+		return cost, fmt.Errorf("credit balance not found for questionType=%s (org=%s, partner=%s)", questionType, orgID, org.PartnerID)
+	}
 	if balance.CurrentBalance < cost {
 		if questionType == QuestionTypeOrg {
 			return cost, fmt.Errorf("insufficient credits for org %s (balance: %.2f, cost: %.2f): %w", orgID, balance.CurrentBalance, cost, postgresql.ErrInsufficientCredits)
@@ -265,7 +266,7 @@ func (s *usageService) GetMarginBasedCost(ctx context.Context, run *models.Quest
 
 	totalCost := runCost + evalCost
 	if totalCost > 0 {
-		config, err := s.repos.PricingConfigRepo.GetByPartnerIDAndAction(ctx, partnerID, "question_run")
+		config, err := s.repos.WholesalePricingConfigRepo.GetByPartnerIDAndAction(ctx, partnerID, "question_run")
 		if err == nil {
 			if config.WholesaleMarginPct != nil {
 				margin = *config.WholesaleMarginPct
@@ -333,11 +334,12 @@ func (s *usageService) chargeRunsInTx(ctx context.Context, tx *sqlx.Tx, orgID, p
 		if err != nil {
 			return 0, fmt.Errorf("failed to get org for question run %s: %w", orgID, err)
 		}
-		chargePartnerBalance := questionType == QuestionTypeNetwork || (questionType == QuestionTypeOrg && org.isFreeTier)
+		chargePartnerBalance := questionType == QuestionTypeNetwork || (questionType == QuestionTypeOrg && org.IsFreeTier)
 
 		if !chargePartnerBalance {
 			// Charge the Org
 			// Create the new ledger entry with BOTH org_id and partner_id
+			payerType := "ORG"
 			entry := &models.CreditLedger{
 				EntryID:    uuid.New(),
 				OrgID:      &orgID,
@@ -346,7 +348,7 @@ func (s *usageService) chargeRunsInTx(ctx context.Context, tx *sqlx.Tx, orgID, p
 				SourceType: "question_run",   // As per migration 000027
 				SourceID:   &sourceIDStr,
 				Metadata:   metadataJSON,
-				PayerType:  "ORG",
+				PayerType:  &payerType,
 				CreatedAt:  time.Now(),
 			}
 
@@ -368,6 +370,7 @@ func (s *usageService) chargeRunsInTx(ctx context.Context, tx *sqlx.Tx, orgID, p
 
 			// Create the new ledger entry with BOTH org_id and partner_id
 			// Network Questions always charge the Partner
+			payerType := "PARTNER"
 			entry := &models.CreditLedger{
 				EntryID:    uuid.New(),
 				OrgID:      &orgID,
@@ -376,7 +379,7 @@ func (s *usageService) chargeRunsInTx(ctx context.Context, tx *sqlx.Tx, orgID, p
 				SourceType: "question_run",   // As per migration 000027
 				SourceID:   &sourceIDStr,
 				Metadata:   metadataJSON,
-				PayerType:  "PARTNER",
+				PayerType:  &payerType,
 				CreatedAt:  time.Now(),
 			}
 
