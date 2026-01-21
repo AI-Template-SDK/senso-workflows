@@ -2017,54 +2017,23 @@ func (s *orgEvaluationService) GetOrCreateTodaysBatch(ctx context.Context, orgID
 	today := time.Now().UTC()
 	todayStart := time.Date(today.Year(), today.Month(), today.Day(), 0, 0, 0, 0, time.UTC)
 
-	// Get all org questions and check their batches
-	questions, err := s.repos.GeoQuestionRepo.GetByOrgWithTags(ctx, orgID)
+	// Fetch batches directly for this org (do not infer from question runs)
+	batches, err := s.repos.QuestionRunBatchRepo.GetByOrg(ctx, orgID)
 	if err != nil {
-		fmt.Printf("[GetOrCreateTodaysBatch] Warning: Failed to get org questions: %v\n", err)
-	} else if len(questions) > 0 {
-		// Check ALL questions' runs to find batches (not just first question)
-		seenBatches := make(map[uuid.UUID]bool)
-		for _, questionWithTags := range questions {
-			runs, err := s.repos.QuestionRunRepo.GetByQuestion(ctx, questionWithTags.Question.GeoQuestionID)
-			if err != nil {
+		fmt.Printf("[GetOrCreateTodaysBatch] Warning: Failed to get org batches: %v\n", err)
+	} else {
+		for _, batch := range batches {
+			if batch == nil {
 				continue
 			}
-
-			// Check batches from these runs
-			for _, run := range runs {
-				if run.BatchID != nil && !seenBatches[*run.BatchID] {
-					seenBatches[*run.BatchID] = true
-					batch, err := s.repos.QuestionRunBatchRepo.GetByID(ctx, *run.BatchID)
-					if err != nil {
-						fmt.Printf("[GetOrCreateTodaysBatch] ⚠️  Skipping batch %s - failed to fetch from database: %v\n", *run.BatchID, err)
-						continue
-					}
-
-					// Verify batch still exists and is valid
-					if batch == nil {
-						fmt.Printf("[GetOrCreateTodaysBatch] ⚠️  Skipping batch %s - batch is nil\n", *run.BatchID)
-						continue
-					}
-
-					// Check if this is an org batch from today for THIS org
-					// Return ANY batch from today (even completed) to avoid duplicates
-					if batch.OrgID != nil && *batch.OrgID == orgID &&
-						batch.CreatedAt.After(todayStart) {
-						// Double-check: verify batch actually exists in database with a fresh query
-						verifyBatch, verifyErr := s.repos.QuestionRunBatchRepo.GetByID(ctx, batch.BatchID)
-						if verifyErr != nil || verifyBatch == nil {
-							fmt.Printf("[GetOrCreateTodaysBatch] ⚠️  Batch %s found in question runs but doesn't exist in database, skipping\n", batch.BatchID)
-							continue
-						}
-
-						fmt.Printf("[GetOrCreateTodaysBatch] ✅ Found existing batch %s from today (status: %s, completed: %d/%d)\n",
-							batch.BatchID, batch.Status, batch.CompletedQuestions, batch.TotalQuestions)
-						return batch, true, nil
-					}
-				}
+			// Return ANY batch from today (even completed) to avoid duplicates
+			if batch.CreatedAt.After(todayStart) {
+				fmt.Printf("[GetOrCreateTodaysBatch] ✅ Found existing batch %s from today (status: %s, completed: %d/%d)\n",
+					batch.BatchID, batch.Status, batch.CompletedQuestions, batch.TotalQuestions)
+				return batch, true, nil
 			}
 		}
-		fmt.Printf("[GetOrCreateTodaysBatch] Checked %d questions and %d unique batches, none found from today\n", len(questions), len(seenBatches))
+		fmt.Printf("[GetOrCreateTodaysBatch] Checked %d batches, none found from today\n", len(batches))
 	}
 
 	// No existing batch found, create new one
