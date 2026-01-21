@@ -396,6 +396,12 @@ func (p *perplexityProvider) mapLocationToCountry(location *workflowModels.Locat
 	return "US"
 }
 
+func (p *perplexityProvider) buildLocalizedPrompt(query string, location *workflowModels.Location) string {
+	locationDescription := formatLocationForPrompt(location)
+	return fmt.Sprintf("Ensure your response is localized to %s. Answer the following question: %s",
+		locationDescription, query)
+}
+
 // SupportsBatching returns true for Perplexity (supports batch processing via BrightData)
 func (p *perplexityProvider) SupportsBatching() bool {
 	return true
@@ -413,6 +419,13 @@ func (p *perplexityProvider) RunQuestionBatch(ctx context.Context, queries []str
 	if len(queries) > 20 {
 		return nil, fmt.Errorf("batch size %d exceeds maximum of 20", len(queries))
 	}
+
+	// Inject localized instructions into each prompt before submission
+	localizedQueries := make([]string, len(queries))
+	for i, query := range queries {
+		localizedQueries[i] = p.buildLocalizedPrompt(query, location)
+	}
+	queries = localizedQueries
 
 	// 1. Submit batch job to Perplexity
 	snapshotID, err := p.submitBatchJob(ctx, queries, location)

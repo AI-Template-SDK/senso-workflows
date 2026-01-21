@@ -21,7 +21,6 @@ type openAIProvider struct {
 	client      *openai.Client
 	model       string
 	costService CostService
-	apiKey      string
 	cfg         *config.Config // Added for Azure deployment name
 }
 
@@ -55,8 +54,7 @@ func NewOpenAIProvider(cfg *config.Config, model string, costService CostService
 		client:      &client,
 		model:       model,
 		costService: costService,
-		apiKey:      cfg.OpenAIAPIKey, // Keep for web search API calls
-		cfg:         cfg,              // Store config for Azure deployment name
+		cfg:         cfg, // Store config for Azure deployment name
 	}
 }
 
@@ -224,6 +222,14 @@ func (p *openAIProvider) RunQuestion(ctx context.Context, query string, websearc
 
 // runWebSearch uses OpenAI's web search API directly
 func (p *openAIProvider) runWebSearch(ctx context.Context, query string, location *models.Location) (*AIResponse, error) {
+	// Azure-only: web search is required and must be routed via Azure OpenAI's Responses API.
+	if p.cfg == nil || strings.TrimSpace(p.cfg.AzureOpenAIEndpoint) == "" || strings.TrimSpace(p.cfg.AzureOpenAIKey) == "" {
+		return nil, fmt.Errorf("azure openai is not configured (AZURE_OPENAI_ENDPOINT/AZURE_OPENAI_KEY); web search is required")
+	}
+	if location == nil {
+		return nil, fmt.Errorf("location is required for web search")
+	}
+
 	// Convert our location to web search format
 	userLocation := WebUserLocation{
 		Type:    "approximate",
@@ -237,8 +243,18 @@ func (p *openAIProvider) runWebSearch(ctx context.Context, query string, locatio
 	}
 
 	// Prepare the request
+	// For Azure OpenAI, the 'model' field should be your deployment name. We prefer the configured
+	// deployment name, but allow overriding via the provider's configured model (e.g. --api-model).
+	modelName := strings.TrimSpace(p.model)
+	if strings.TrimSpace(p.cfg.AzureOpenAIDeploymentName) != "" {
+		modelName = strings.TrimSpace(p.cfg.AzureOpenAIDeploymentName)
+	}
+	if modelName == "" {
+		return nil, fmt.Errorf("azure openai deployment name is empty (AZURE_OPENAI_DEPLOYMENT_NAME)")
+	}
+
 	requestBody := WebSearchRequest{
-		Model: p.model,
+		Model: modelName,
 		Tools: []WebSearchTool{
 			{
 				Type:         "web_search_preview",
@@ -253,14 +269,17 @@ func (p *openAIProvider) runWebSearch(ctx context.Context, query string, locatio
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	// Make the HTTP request to OpenAI web search API
-	req, err := http.NewRequestWithContext(ctx, "POST", "https://api.openai.com/v1/responses", bytes.NewBuffer(jsonData))
+	// Make the HTTP request to Azure OpenAI Responses API (OpenAI-compatible).
+	// Example: https://YOUR-RESOURCE-NAME.openai.azure.com/openai/v1/responses
+	endpoint := strings.TrimRight(strings.TrimSpace(p.cfg.AzureOpenAIEndpoint), "/")
+	url := endpoint + "/openai/v1/responses"
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+p.apiKey)
+	req.Header.Set("api-key", strings.TrimSpace(p.cfg.AzureOpenAIKey))
 
 	client := &http.Client{}
 	resp, err := client.Do(req)
@@ -270,7 +289,14 @@ func (p *openAIProvider) runWebSearch(ctx context.Context, query string, locatio
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("web search API returned status %d", resp.StatusCode)
+		// Best-effort read a small amount of response for debugging.
+		var bodyBuf bytes.Buffer
+		_, _ = bodyBuf.ReadFrom(resp.Body)
+		bodyStr := bodyBuf.String()
+		if len(bodyStr) > 2000 {
+			bodyStr = bodyStr[:2000] + "...(truncated)"
+		}
+		return nil, fmt.Errorf("web search API returned status %d: %s", resp.StatusCode, bodyStr)
 	}
 
 	// Parse the response
@@ -303,7 +329,7 @@ func (p *openAIProvider) runWebSearch(ctx context.Context, query string, locatio
 		Response:                responseText,
 		InputTokens:             webSearchResp.Usage.InputTokens,
 		OutputTokens:            webSearchResp.Usage.OutputTokens,
-		Cost:                    p.costService.CalculateCost(p.GetProviderName(), p.model, webSearchResp.Usage.InputTokens, webSearchResp.Usage.OutputTokens, true),
+		Cost:                    p.costService.CalculateCost(p.GetProviderName(), modelName, webSearchResp.Usage.InputTokens, webSearchResp.Usage.OutputTokens, true),
 		ShouldProcessEvaluation: true,
 	}
 
@@ -347,33 +373,12 @@ func (p *openAIProvider) formatLocation(location *models.Location) string {
 func (p *openAIProvider) RunQuestionWebSearch(ctx context.Context, query string) (*AIResponse, error) {
 	fmt.Printf("[RunQuestionWebSearch] 🚀 Making web search AI call for query: %s", query)
 
-	// For network questions, we need to use the standard OpenAI API (not Azure) with web search
 	// Create a neutral location for the API call (required for web search)
 	neutralLocation := &models.Location{
 		Country: "US", // Default country for web search
 	}
 
-	// Check if we're using Azure (which doesn't support web search)
-	if p.cfg.AzureOpenAIEndpoint != "" && p.cfg.AzureOpenAIKey != "" && p.cfg.AzureOpenAIDeploymentName != "" {
-		// Azure doesn't support web search, so we need to use standard OpenAI for web search
-		// Create a temporary standard OpenAI client for web search
-		standardClient := openai.NewClient(
-			option.WithAPIKey(p.cfg.OpenAIAPIKey),
-		)
-
-		// Create a temporary provider for web search
-		tempProvider := &openAIProvider{
-			client:      &standardClient,
-			model:       p.model,
-			costService: p.costService,
-			apiKey:      p.cfg.OpenAIAPIKey,
-			cfg:         &config.Config{OpenAIAPIKey: p.cfg.OpenAIAPIKey}, // Only standard OpenAI config
-		}
-
-		return tempProvider.runWebSearch(ctx, query, neutralLocation)
-	}
-
-	// Use the existing web search method with neutral location
+	// Azure-only web search
 	return p.runWebSearch(ctx, query, neutralLocation)
 }
 

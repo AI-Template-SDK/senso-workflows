@@ -226,9 +226,13 @@ func main() {
 	// Register functions (they auto-register with the client when created)
 	orgProcessor.ProcessOrg()
 	orgEvaluationProcessor.ProcessOrgEvaluation()
-	scheduledProcessor.DailyOrgProcessor()
-	scheduledProcessor.DailyNetworkProcessor()
-	scheduledProcessor.WeeklyLoadAnalyzer()
+	if cfg.EnableScheduledPipelines {
+		scheduledProcessor.DailyOrgProcessor()
+		scheduledProcessor.DailyNetworkProcessor()
+		scheduledProcessor.WeeklyLoadAnalyzer()
+	} else {
+		log.Printf("Scheduled pipelines disabled via ENABLE_SCHEDULED_PIPELINES=false")
+	}
 	networkProcessor.ProcessNetwork()
 	networkOrgProcessor.ProcessNetworkOrg()
 	networkReevalProcessor.ProcessNetworkReeval()

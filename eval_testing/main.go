@@ -502,7 +502,8 @@ func runDeadLinkTest() {
 
 	// Test citations with both user agents
 	fmt.Println("🧪 Testing citations with old (no user agent) and new (browser user agent)...")
-	fmt.Println("This may take a few minutes...\n")
+	fmt.Println("This may take a few minutes...")
+	fmt.Println()
 
 	results := testCitations(citations)
 
@@ -683,7 +684,8 @@ func testURL(client *http.Client, url string, userAgent string) LinkTestStatus {
 // analyzeDeadLinkResults analyzes and displays the test results
 func analyzeDeadLinkResults(results []LinkTestResult) {
 	fmt.Println("📈 ANALYSIS RESULTS")
-	fmt.Println("===================\n")
+	fmt.Println("===================")
+	fmt.Println()
 
 	totalTests := len(results)
 	changedCount := 0
@@ -726,7 +728,8 @@ func analyzeDeadLinkResults(results []LinkTestResult) {
 	if len(changedToAlive) > 0 {
 		fmt.Println("🎉 CITATIONS FIXED BY USER AGENT (Sample of first 10)")
 		fmt.Println("====================================================")
-		fmt.Println("These were flagged as dead without user agent, but are alive with it:\n")
+		fmt.Println("These were flagged as dead without user agent, but are alive with it:")
+		fmt.Println()
 		for i, result := range changedToAlive {
 			if i >= 10 {
 				fmt.Printf("... and %d more\n\n", len(changedToAlive)-10)
@@ -743,7 +746,8 @@ func analyzeDeadLinkResults(results []LinkTestResult) {
 	if len(changedToDead) > 0 {
 		fmt.Println("⚠️  CITATIONS BROKEN BY USER AGENT (Sample of first 10)")
 		fmt.Println("======================================================")
-		fmt.Println("These were alive without user agent, but dead with it:\n")
+		fmt.Println("These were alive without user agent, but dead with it:")
+		fmt.Println()
 		for i, result := range changedToDead {
 			if i >= 10 {
 				fmt.Printf("... and %d more\n\n", len(changedToDead)-10)
