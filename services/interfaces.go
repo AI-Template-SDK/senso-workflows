@@ -238,6 +238,7 @@ type QuestionRunnerService interface {
 	RunNetworkQuestionMatrix(ctx context.Context, networkDetails *NetworkDetails, batchID uuid.UUID) (*NetworkProcessingSummary, error)
 	GetOrCreateNetworkBatch(ctx context.Context, networkID uuid.UUID, totalQuestions int) (*models.QuestionRunBatch, bool, error)
 	StartNetworkBatch(ctx context.Context, batchID uuid.UUID) error
+	FailNetworkBatch(ctx context.Context, batchID uuid.UUID) error
 	UpdateNetworkBatchProgress(ctx context.Context, batchID uuid.UUID, completedCount, failedCount int) error
 	CompleteNetworkBatch(ctx context.Context, batchID uuid.UUID, totalProcessed int, totalFailed int) error
 	CheckQuestionRunExists(ctx context.Context, questionID uuid.UUID, modelName, countryCode string, batchID uuid.UUID) (*models.QuestionRun, error)

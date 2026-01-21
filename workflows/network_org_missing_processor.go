@@ -66,6 +66,9 @@ func (p *NetworkOrgMissingProcessor) ProcessNetworkOrgMissing() inngestgo.Servab
 				}, nil
 			})
 			if err != nil {
+				if reportErr := ReportPipelineFailureToSlack("network org missing workflow", orgID, "unknown", "step 1 (fetch-org-details)", err); reportErr != nil {
+					fmt.Printf("[ProcessNetworkOrgMissing] Warning: Failed to report to Slack: %v\n", reportErr)
+				}
 				return nil, fmt.Errorf("step 1 failed: %w", err)
 			}
 
@@ -87,12 +90,16 @@ func (p *NetworkOrgMissingProcessor) ProcessNetworkOrgMissing() inngestgo.Servab
 				}, nil
 			})
 			if err != nil {
+				if reportErr := ReportPipelineFailureToSlack("network org missing workflow", orgID, "unknown", "step 2 (fetch-missing-question-runs)", err); reportErr != nil {
+					fmt.Printf("[ProcessNetworkOrgMissing] Warning: Failed to report to Slack: %v\n", reportErr)
+				}
 				return nil, fmt.Errorf("step 2 failed: %w", err)
 			}
 
 			// Extract data from results
 			orgDetailsData := orgDetailsResult.(map[string]interface{})
 			questionRunsData := questionRunsResult.(map[string]interface{})
+			orgName := orgDetailsData["org_name"].(string)
 			// Ensure this is parsed as int
 			questionCount, ok := questionRunsData["count"].(int)
 			if !ok {
@@ -100,10 +107,12 @@ func (p *NetworkOrgMissingProcessor) ProcessNetworkOrgMissing() inngestgo.Servab
 				if fCount, fOk := questionRunsData["count"].(float64); fOk {
 					questionCount = int(fCount)
 				} else {
+					if reportErr := ReportPipelineFailureToSlack("network org missing workflow", orgID, orgName, "parse question_runs count", fmt.Errorf("failed to parse question_runs count as integer")); reportErr != nil {
+						fmt.Printf("[ProcessNetworkOrgMissing] Warning: Failed to report to Slack: %v\n", reportErr)
+					}
 					return nil, fmt.Errorf("failed to parse question_runs count as integer")
 				}
 			}
-			orgName := orgDetailsData["org_name"].(string)
 			networkID := orgDetailsData["network_id"].(string)
 			orgWebsites := orgDetailsData["org_websites"].([]interface{})
 
@@ -150,6 +159,9 @@ func (p *NetworkOrgMissingProcessor) ProcessNetworkOrgMissing() inngestgo.Servab
 				return map[string]interface{}{"status": "ok", "checked_cost": totalCost}, nil
 			})
 			if err != nil {
+				if reportErr := ReportPipelineFailureToSlack("network org missing workflow", orgID, orgName, "step 2.5 (check-balance)", err); reportErr != nil {
+					fmt.Printf("[ProcessNetworkOrgMissing] Warning: Failed to report to Slack: %v\n", reportErr)
+				}
 				// Fail the entire workflow if the balance check fails
 				return nil, fmt.Errorf("step 2.5 (check-balance) failed: %w", err)
 			}
@@ -168,6 +180,9 @@ func (p *NetworkOrgMissingProcessor) ProcessNetworkOrgMissing() inngestgo.Servab
 				return variations, nil
 			})
 			if err != nil {
+				if reportErr := ReportPipelineFailureToSlack("network org missing workflow", orgID, orgName, "step 2.5 (generate-name-variations)", err); reportErr != nil {
+					fmt.Printf("[ProcessNetworkOrgMissing] Warning: Failed to report to Slack: %v\n", reportErr)
+				}
 				return nil, fmt.Errorf("step 2.5 failed: %w", err)
 			}
 			nameVariations := nameVariationsResult.([]interface{})

@@ -92,11 +92,15 @@ func (p *OrgEvaluationProcessor) ProcessOrgEvaluation() inngestgo.ServableFuncti
 					"batch_id":        batch.BatchID.String(),
 					"total_questions": totalQuestions,
 					"org_id":          orgID,
+					"org_name":        orgDetails.Org.Name,
 					"is_existing":     isExisting,
 					"batch_status":    batch.Status,
 				}, nil
 			})
 			if err != nil {
+				if reportErr := ReportPipelineFailureToSlack("org evaluation workflow", orgID, "unknown", "step 1 (get-or-create-batch)", err); reportErr != nil {
+					fmt.Printf("[ProcessOrgEvaluation] Warning: Failed to report to Slack: %v\n", reportErr)
+				}
 				return nil, fmt.Errorf("step 1 failed: %w", err)
 			}
 
@@ -104,12 +108,16 @@ func (p *OrgEvaluationProcessor) ProcessOrgEvaluation() inngestgo.ServableFuncti
 			batchID := batchInfo["batch_id"].(string)
 			isExistingBatch := batchInfo["is_existing"].(bool)
 			batchStatus := batchInfo["batch_status"].(string)
+			orgName := batchInfo["org_name"].(string)
 			totalQuestions, ok := batchInfo["total_questions"].(int)
 			if !ok {
 				// Handle potential float64 conversion from JSON
 				if fTotal, fOk := batchInfo["total_questions"].(float64); fOk {
 					totalQuestions = int(fTotal)
 				} else {
+					if reportErr := ReportPipelineFailureToSlack("org evaluation workflow", orgID, orgName, "parse total_questions", fmt.Errorf("failed to parse total_questions as integer")); reportErr != nil {
+						fmt.Printf("[ProcessOrgEvaluation] Warning: Failed to report to Slack: %v\n", reportErr)
+					}
 					return nil, fmt.Errorf("failed to parse total_questions as integer")
 				}
 			}
@@ -147,6 +155,16 @@ func (p *OrgEvaluationProcessor) ProcessOrgEvaluation() inngestgo.ServableFuncti
 					return map[string]interface{}{"status": "ok", "checked_cost": totalCost}, nil
 				})
 				if err != nil {
+					// Best-effort: mark batch as failed if balance check fails
+					batchUUID, parseErr := uuid.Parse(batchID)
+					if parseErr != nil {
+						fmt.Printf("[ProcessOrgEvaluation] Warning: Failed to parse batch ID for failure update: %v\n", parseErr)
+					} else if failErr := p.orgEvaluationService.FailBatch(ctx, batchUUID); failErr != nil {
+						fmt.Printf("[ProcessOrgEvaluation] Warning: Failed to mark batch %s as failed: %v\n", batchID, failErr)
+					}
+					if reportErr := ReportPipelineFailureToSlack("org evaluation workflow", orgID, orgName, "insufficient funds", err); reportErr != nil {
+						fmt.Printf("[ProcessOrgEvaluation] Warning: Failed to report to Slack: %v\n", reportErr)
+					}
 					// Fail the entire workflow if the balance check fails
 					return nil, fmt.Errorf("step 1.5 (check-balance) failed: %w", err)
 				}
@@ -176,6 +194,9 @@ func (p *OrgEvaluationProcessor) ProcessOrgEvaluation() inngestgo.ServableFuncti
 				}, nil
 			})
 			if err != nil {
+				if reportErr := ReportPipelineFailureToSlack("org evaluation workflow", orgID, orgName, "step 2 (start-batch-processing)", err); reportErr != nil {
+					fmt.Printf("[ProcessOrgEvaluation] Warning: Failed to report to Slack: %v\n", reportErr)
+				}
 				return nil, fmt.Errorf("step 2 failed: %w", err)
 			}
 
@@ -220,6 +241,9 @@ func (p *OrgEvaluationProcessor) ProcessOrgEvaluation() inngestgo.ServableFuncti
 				}, nil
 			})
 			if err != nil {
+				if reportErr := ReportPipelineFailureToSlack("org evaluation workflow", orgID, orgName, "step 3 (run-question-matrix-with-evaluation)", err); reportErr != nil {
+					fmt.Printf("[ProcessOrgEvaluation] Warning: Failed to report to Slack: %v\n", reportErr)
+				}
 				return nil, fmt.Errorf("step 3 failed: %w", err)
 			}
 
@@ -276,6 +300,9 @@ func (p *OrgEvaluationProcessor) ProcessOrgEvaluation() inngestgo.ServableFuncti
 				}, nil
 			})
 			if err != nil {
+				if reportErr := ReportPipelineFailureToSlack("org evaluation workflow", orgID, orgName, "step 4 (complete-batch)", err); reportErr != nil {
+					fmt.Printf("[ProcessOrgEvaluation] Warning: Failed to report to Slack: %v\n", reportErr)
+				}
 				return nil, fmt.Errorf("step 4 failed: %w", err)
 			}
 

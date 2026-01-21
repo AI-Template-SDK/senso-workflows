@@ -83,21 +83,31 @@ func (p *NetworkProcessor) ProcessNetwork() inngestgo.ServableFunction {
 					fmt.Printf("[ProcessNetwork] ✅ Created new batch %s with %d total questions\n", batch.BatchID, totalQuestions)
 				}
 
+				networkName := ""
+				if networkDetails.Network != nil {
+					networkName = networkDetails.Network.Name
+				}
+
 				return map[string]interface{}{
 					"batch_id":        batch.BatchID.String(),
 					"total_questions": totalQuestions,
 					"network_id":      networkID,
+					"network_name":    networkName,
 					"is_existing":     isExisting,
 					"batch_status":    batch.Status,
 				}, nil
 			})
 			if err != nil {
+				if reportErr := ReportNetworkFailureToSlack("network questions workflow", networkID, "unknown", "step 1 (get-or-create-batch)", err); reportErr != nil {
+					fmt.Printf("[ProcessNetwork] Warning: Failed to report to Slack: %v\n", reportErr)
+				}
 				return nil, fmt.Errorf("step 1 failed: %w", err)
 			}
 
 			batchInfo := batchData.(map[string]interface{})
 			batchID := batchInfo["batch_id"].(string)
 			isExistingBatch := batchInfo["is_existing"].(bool)
+			networkName := batchInfo["network_name"].(string)
 
 			// Step 2: Start Batch Processing (only if new or pending)
 			_, err = step.Run(ctx, "start-batch-processing", func(ctx context.Context) (interface{}, error) {
@@ -124,6 +134,16 @@ func (p *NetworkProcessor) ProcessNetwork() inngestgo.ServableFunction {
 				}, nil
 			})
 			if err != nil {
+				// Best-effort: mark batch as failed if step 2 fails
+				batchUUID, parseErr := uuid.Parse(batchID)
+				if parseErr != nil {
+					fmt.Printf("[ProcessNetwork] Warning: Failed to parse batch ID for failure update: %v\n", parseErr)
+				} else if failErr := p.questionRunnerService.FailNetworkBatch(ctx, batchUUID); failErr != nil {
+					fmt.Printf("[ProcessNetwork] Warning: Failed to mark batch %s as failed: %v\n", batchID, failErr)
+				}
+				if reportErr := ReportNetworkFailureToSlack("network questions workflow", networkID, networkName, "step 2 (start-batch-processing)", err); reportErr != nil {
+					fmt.Printf("[ProcessNetwork] Warning: Failed to report to Slack: %v\n", reportErr)
+				}
 				return nil, fmt.Errorf("step 2 failed: %w", err)
 			}
 
@@ -170,6 +190,16 @@ func (p *NetworkProcessor) ProcessNetwork() inngestgo.ServableFunction {
 				}, nil
 			})
 			if err != nil {
+				// Best-effort: mark batch as failed if step 3 fails
+				batchUUID, parseErr := uuid.Parse(batchID)
+				if parseErr != nil {
+					fmt.Printf("[ProcessNetwork] Warning: Failed to parse batch ID for failure update: %v\n", parseErr)
+				} else if failErr := p.questionRunnerService.FailNetworkBatch(ctx, batchUUID); failErr != nil {
+					fmt.Printf("[ProcessNetwork] Warning: Failed to mark batch %s as failed: %v\n", batchID, failErr)
+				}
+				if reportErr := ReportNetworkFailureToSlack("network questions workflow", networkID, networkName, "step 3 (run-question-matrix)", err); reportErr != nil {
+					fmt.Printf("[ProcessNetwork] Warning: Failed to report to Slack: %v\n", reportErr)
+				}
 				return nil, fmt.Errorf("step 3 failed: %w", err)
 			}
 
@@ -191,6 +221,16 @@ func (p *NetworkProcessor) ProcessNetwork() inngestgo.ServableFunction {
 				}, nil
 			})
 			if err != nil {
+				// Best-effort: mark batch as failed if step 4 fails
+				batchUUID, parseErr := uuid.Parse(batchID)
+				if parseErr != nil {
+					fmt.Printf("[ProcessNetwork] Warning: Failed to parse batch ID for failure update: %v\n", parseErr)
+				} else if failErr := p.questionRunnerService.FailNetworkBatch(ctx, batchUUID); failErr != nil {
+					fmt.Printf("[ProcessNetwork] Warning: Failed to mark batch %s as failed: %v\n", batchID, failErr)
+				}
+				if reportErr := ReportNetworkFailureToSlack("network questions workflow", networkID, networkName, "step 4 (update-latest-flags)", err); reportErr != nil {
+					fmt.Printf("[ProcessNetwork] Warning: Failed to report to Slack: %v\n", reportErr)
+				}
 				return nil, fmt.Errorf("step 4 failed: %w", err)
 			}
 
@@ -220,6 +260,16 @@ func (p *NetworkProcessor) ProcessNetwork() inngestgo.ServableFunction {
 				}, nil
 			})
 			if err != nil {
+				// Best-effort: mark batch as failed if step 5 fails
+				batchUUID, parseErr := uuid.Parse(batchID)
+				if parseErr != nil {
+					fmt.Printf("[ProcessNetwork] Warning: Failed to parse batch ID for failure update: %v\n", parseErr)
+				} else if failErr := p.questionRunnerService.FailNetworkBatch(ctx, batchUUID); failErr != nil {
+					fmt.Printf("[ProcessNetwork] Warning: Failed to mark batch %s as failed: %v\n", batchID, failErr)
+				}
+				if reportErr := ReportNetworkFailureToSlack("network questions workflow", networkID, networkName, "step 5 (complete-batch)", err); reportErr != nil {
+					fmt.Printf("[ProcessNetwork] Warning: Failed to report to Slack: %v\n", reportErr)
+				}
 				return nil, fmt.Errorf("step 5 failed: %w", err)
 			}
 
@@ -283,6 +333,9 @@ func (p *NetworkProcessor) ProcessNetwork() inngestgo.ServableFunction {
 			if err != nil {
 				// Log the error but don't fail the entire workflow
 				fmt.Printf("[ProcessNetwork] Warning: Step 6 (trigger-org-level-processing) failed: %v\n", err)
+				if reportErr := ReportNetworkFailureToSlack("network questions workflow", networkID, networkName, "step 6 (trigger-org-level-processing)", err); reportErr != nil {
+					fmt.Printf("[ProcessNetwork] Warning: Failed to report to Slack: %v\n", reportErr)
+				}
 				// Don't return error to allow the workflow to complete
 			}
 

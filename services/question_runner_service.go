@@ -967,54 +967,23 @@ func (s *questionRunnerService) GetOrCreateNetworkBatch(ctx context.Context, net
 	today := time.Now().UTC()
 	todayStart := time.Date(today.Year(), today.Month(), today.Day(), 0, 0, 0, 0, time.UTC)
 
-	// Get network questions to find batches (workaround until GetByNetwork exists on batch repo)
-	questions, err := s.repos.GeoQuestionRepo.GetByNetwork(ctx, networkID)
+	// Fetch batches directly for this network (do not infer from question runs)
+	batches, err := s.repos.QuestionRunBatchRepo.GetByNetwork(ctx, networkID)
 	if err != nil {
-		fmt.Printf("[GetOrCreateNetworkBatch] Warning: Failed to get network questions: %v\n", err)
-	} else if len(questions) > 0 {
-		// Check ALL questions' runs to find batches (not just first question)
-		seenBatches := make(map[uuid.UUID]bool)
-		for _, question := range questions {
-			runs, err := s.repos.QuestionRunRepo.GetByQuestion(ctx, question.GeoQuestionID)
-			if err != nil {
+		fmt.Printf("[GetOrCreateNetworkBatch] Warning: Failed to get network batches: %v\n", err)
+	} else {
+		for _, batch := range batches {
+			if batch == nil {
 				continue
 			}
-
-			// Check batches from these runs
-			for _, run := range runs {
-				if run.BatchID != nil && !seenBatches[*run.BatchID] {
-					seenBatches[*run.BatchID] = true
-					batch, err := s.repos.QuestionRunBatchRepo.GetByID(ctx, *run.BatchID)
-					if err != nil {
-						fmt.Printf("[GetOrCreateNetworkBatch] ⚠️  Skipping batch %s - failed to fetch from database: %v\n", *run.BatchID, err)
-						continue
-					}
-
-					// Verify batch still exists and is valid
-					if batch == nil {
-						fmt.Printf("[GetOrCreateNetworkBatch] ⚠️  Skipping batch %s - batch is nil\n", *run.BatchID)
-						continue
-					}
-
-					// Check if this is a network batch from today for THIS network
-					// Return ANY batch from today (even completed) to avoid duplicates
-					if batch.NetworkID != nil && *batch.NetworkID == networkID &&
-						batch.CreatedAt.After(todayStart) {
-						// Double-check: verify batch actually exists in database with a fresh query
-						verifyBatch, verifyErr := s.repos.QuestionRunBatchRepo.GetByID(ctx, batch.BatchID)
-						if verifyErr != nil || verifyBatch == nil {
-							fmt.Printf("[GetOrCreateNetworkBatch] ⚠️  Batch %s found in question runs but doesn't exist in database, skipping\n", batch.BatchID)
-							continue
-						}
-
-						fmt.Printf("[GetOrCreateNetworkBatch] ✅ Found existing batch %s from today (status: %s, completed: %d/%d)\n",
-							batch.BatchID, batch.Status, batch.CompletedQuestions, batch.TotalQuestions)
-						return batch, true, nil
-					}
-				}
+			// Return ANY batch from today (even completed) to avoid duplicates
+			if batch.CreatedAt.After(todayStart) {
+				fmt.Printf("[GetOrCreateNetworkBatch] ✅ Found existing batch %s from today (status: %s, completed: %d/%d)\n",
+					batch.BatchID, batch.Status, batch.CompletedQuestions, batch.TotalQuestions)
+				return batch, true, nil
 			}
 		}
-		fmt.Printf("[GetOrCreateNetworkBatch] Checked %d questions and %d unique batches, none found from today\n", len(questions), len(seenBatches))
+		fmt.Printf("[GetOrCreateNetworkBatch] Checked %d batches, none found from today\n", len(batches))
 	}
 
 	// No existing batch found, create new one
@@ -1061,6 +1030,26 @@ func (s *questionRunnerService) StartNetworkBatch(ctx context.Context, batchID u
 	}
 
 	fmt.Printf("[StartNetworkBatch] ✅ Batch %s marked as running\n", batchID)
+	return nil
+}
+
+// FailNetworkBatch updates batch status to failed.
+func (s *questionRunnerService) FailNetworkBatch(ctx context.Context, batchID uuid.UUID) error {
+	fmt.Printf("[FailNetworkBatch] Marking batch as failed: %s\n", batchID)
+
+	batch, err := s.repos.QuestionRunBatchRepo.GetByID(ctx, batchID)
+	if err != nil {
+		return fmt.Errorf("failed to fetch batch: %w", err)
+	}
+
+	batch.Status = "failed"
+	batch.UpdatedAt = time.Now()
+
+	if err := s.repos.QuestionRunBatchRepo.Update(ctx, batch); err != nil {
+		return fmt.Errorf("failed to mark batch as failed: %w", err)
+	}
+
+	fmt.Printf("[FailNetworkBatch] ✅ Batch %s marked as failed\n", batchID)
 	return nil
 }
 
