@@ -255,35 +255,36 @@ func (p *NetworkOrgMissingProcessor) ProcessNetworkOrgMissing() inngestgo.Servab
 				processedRunIDs = append(processedRunIDs, runUUID)
 			}
 
-			// Step 4: Track Usage for Processed Runs
-			usageData, err := step.Run(ctx, "track-usage", func(ctx context.Context) (interface{}, error) {
-				fmt.Printf("[ProcessNetworkOrgMissing] Step 4: Tracking usage for org: %s\n", orgID)
-
-				orgUUID, err := uuid.Parse(orgID)
-				if err != nil {
-					return nil, fmt.Errorf("invalid org ID: %w", err)
-				}
-
-				if len(processedRunIDs) == 0 {
-					fmt.Printf("[ProcessNetworkOrgMissing] No runs were successfully processed, skipping usage tracking.\n")
-					return map[string]interface{}{"charged_runs": 0}, nil
-				}
-
-				// Call the usage service to charge for each individual successful run
-				chargedCount, err := p.usageService.TrackIndividualRuns(ctx, orgUUID, processedRunIDs, "network")
-				if err != nil {
-					return nil, fmt.Errorf("failed to track usage for individual runs: %w", err)
-				}
-
-				fmt.Printf("[ProcessNetworkOrgMissing] ✅ Usage tracking completed: %d new runs charged\n", chargedCount)
-				return map[string]interface{}{
-					"charged_runs": chargedCount,
-				}, nil
-			})
-			if err != nil {
-				// Log the error but don't fail the entire pipeline
-				fmt.Printf("[ProcessNetworkOrgMissing] Warning: Step 4 (track-usage) failed: %v\n", err)
-			}
+			// Step 4: Track Usage for Processed Runs (temporarily disabled)
+			// usageData, err := step.Run(ctx, "track-usage", func(ctx context.Context) (interface{}, error) {
+			// 	fmt.Printf("[ProcessNetworkOrgMissing] Step 4: Tracking usage for org: %s\n", orgID)
+			//
+			// 	orgUUID, err := uuid.Parse(orgID)
+			// 	if err != nil {
+			// 		return nil, fmt.Errorf("invalid org ID: %w", err)
+			// 	}
+			//
+			// 	if len(processedRunIDs) == 0 {
+			// 		fmt.Printf("[ProcessNetworkOrgMissing] No runs were successfully processed, skipping usage tracking.\n")
+			// 		return map[string]interface{}{"charged_runs": 0}, nil
+			// 	}
+			//
+			// 	// Call the usage service to charge for each individual successful run
+			// 	chargedCount, err := p.usageService.TrackIndividualRuns(ctx, orgUUID, processedRunIDs, "network")
+			// 	if err != nil {
+			// 		return nil, fmt.Errorf("failed to track usage for individual runs: %w", err)
+			// 	}
+			//
+			// 	fmt.Printf("[ProcessNetworkOrgMissing] ✅ Usage tracking completed: %d new runs charged\n", chargedCount)
+			// 	return map[string]interface{}{
+			// 		"charged_runs": chargedCount,
+			// 	}, nil
+			// })
+			// if err != nil {
+			// 	// Log the error but don't fail the entire pipeline
+			// 	fmt.Printf("[ProcessNetworkOrgMissing] Warning: Step 4 (track-usage) failed: %v\n", err)
+			// }
+			var usageData interface{}
 
 			// Final Result Summary
 			finalResult := map[string]interface{}{

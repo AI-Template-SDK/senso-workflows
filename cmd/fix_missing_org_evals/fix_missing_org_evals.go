@@ -157,13 +157,17 @@ type evalJob struct {
 }
 
 type evalResult struct {
-	processed        int
-	created          int
-	skippedExisting  int
-	missingRuns      int
-	emptyResponses   int
-	failedResponses  int
-	errors           int
+	processed          int
+	created            int
+	skippedExisting    int
+	missingRuns        int
+	emptyResponses     int
+	failedResponses    int
+	createdCompetitors int
+	createdCitations   int
+	skippedCompetitors int
+	skippedCitations   int
+	errors             int
 }
 
 func processJob(
@@ -201,9 +205,9 @@ func processJob(
 		res.errors++
 		return res
 	}
-	if len(evals) > 0 {
+	hasEval := len(evals) > 0
+	if hasEval {
 		res.skippedExisting++
-		return res
 	}
 
 	if job.run.ResponseText == nil || strings.TrimSpace(*job.run.ResponseText) == "" {
@@ -216,33 +220,107 @@ func processJob(
 	isFailedPlaceholder := responseText == "Question run failed for this model and location"
 
 	if dryRun {
-		action := "would_create_eval"
-		if isFailedPlaceholder {
-			action = "would_create_minimal_eval_for_failed_run"
+		if !hasEval {
+			action := "would_create_eval"
+			if isFailedPlaceholder {
+				action = "would_create_minimal_eval_for_failed_run"
+			}
+			log.Printf("[fix_missing_org_evals] org=%s run=%s %s", job.row.orgID, job.row.runID, action)
+			res.created++
+		} else {
+			log.Printf("[fix_missing_org_evals] org=%s run=%s eval_exists_skip", job.row.orgID, job.row.runID)
 		}
-		log.Printf("[fix_missing_org_evals] org=%s run=%s %s", job.row.orgID, job.row.runID, action)
-		res.created++
+		if !isFailedPlaceholder {
+			log.Printf("[fix_missing_org_evals] org=%s run=%s would_extract_competitors_and_citations", job.row.orgID, job.row.runID)
+		}
 		return res
 	}
 
+	if !hasEval {
+		if isFailedPlaceholder {
+			now := time.Now()
+			orgEval := &models.OrgEval{
+				OrgEvalID:     uuid.New(),
+				QuestionRunID: job.row.runID,
+				OrgID:         orgUUID,
+				Mentioned:     false,
+				Citation:      false,
+				CreatedAt:     now,
+				UpdatedAt:     now,
+			}
+			if err := repos.OrgEvalRepo.Create(ctx, orgEval); err != nil {
+				log.Printf("[fix_missing_org_evals] org=%s run=%s ERROR create minimal eval: %v", job.row.orgID, job.row.runID, err)
+				res.errors++
+				return res
+			}
+			res.failedResponses++
+			res.created++
+		} else {
+			orgCtx, err := cache.get(ctx, job.row.orgID, func() (*orgContext, error) {
+				orgDetails, err := orgService.GetOrgDetails(ctx, job.row.orgID)
+				if err != nil {
+					return nil, fmt.Errorf("get org details: %w", err)
+				}
+				nameVariations, err := orgEvaluationService.GenerateNameVariations(ctx, orgDetails.Org.Name, orgDetails.Websites)
+				if err != nil {
+					return nil, fmt.Errorf("generate name variations: %w", err)
+				}
+				return &orgContext{
+					orgUUID:        orgUUID,
+					orgName:        orgDetails.Org.Name,
+					websites:       orgDetails.Websites,
+					nameVariations: nameVariations,
+				}, nil
+			})
+			if err != nil {
+				log.Printf("[fix_missing_org_evals] org=%s run=%s ERROR loading org context: %v", job.row.orgID, job.row.runID, err)
+				res.errors++
+				return res
+			}
+
+			mentioned := false
+			responseLower := strings.ToLower(responseText)
+			for _, name := range orgCtx.nameVariations {
+				if strings.Contains(responseLower, strings.ToLower(name)) {
+					mentioned = true
+					break
+				}
+			}
+
+			if mentioned {
+				evalResult, err := orgEvaluationService.ExtractOrgEvaluation(ctx, job.row.runID, orgCtx.orgUUID, orgCtx.orgName, orgCtx.websites, orgCtx.nameVariations, responseText)
+				if err != nil {
+					log.Printf("[fix_missing_org_evals] org=%s run=%s ERROR extract org eval: %v", job.row.orgID, job.row.runID, err)
+					res.errors++
+					return res
+				}
+				if err := repos.OrgEvalRepo.Create(ctx, evalResult.Evaluation); err != nil {
+					log.Printf("[fix_missing_org_evals] org=%s run=%s ERROR store org eval: %v", job.row.orgID, job.row.runID, err)
+					res.errors++
+					return res
+				}
+			} else {
+				now := time.Now()
+				orgEval := &models.OrgEval{
+					OrgEvalID:     uuid.New(),
+					QuestionRunID: job.row.runID,
+					OrgID:         orgUUID,
+					Mentioned:     false,
+					Citation:      false,
+					CreatedAt:     now,
+					UpdatedAt:     now,
+				}
+				if err := repos.OrgEvalRepo.Create(ctx, orgEval); err != nil {
+					log.Printf("[fix_missing_org_evals] org=%s run=%s ERROR store minimal eval: %v", job.row.orgID, job.row.runID, err)
+					res.errors++
+					return res
+				}
+			}
+
+			res.created++
+		}
+	}
 	if isFailedPlaceholder {
-		now := time.Now()
-		orgEval := &models.OrgEval{
-			OrgEvalID:     uuid.New(),
-			QuestionRunID: job.row.runID,
-			OrgID:         orgUUID,
-			Mentioned:     false,
-			Citation:      false,
-			CreatedAt:     now,
-			UpdatedAt:     now,
-		}
-		if err := repos.OrgEvalRepo.Create(ctx, orgEval); err != nil {
-			log.Printf("[fix_missing_org_evals] org=%s run=%s ERROR create minimal eval: %v", job.row.orgID, job.row.runID, err)
-			res.errors++
-			return res
-		}
-		res.failedResponses++
-		res.created++
 		return res
 	}
 
@@ -268,58 +346,68 @@ func processJob(
 		return res
 	}
 
-	mentioned := false
-	responseLower := strings.ToLower(responseText)
-	for _, name := range orgCtx.nameVariations {
-		if strings.Contains(responseLower, strings.ToLower(name)) {
-			mentioned = true
-			break
-		}
+	competitors, err := repos.OrgCompetitorRepo.GetByQuestionRunAndOrg(ctx, job.row.runID, orgCtx.orgUUID)
+	if err != nil {
+		log.Printf("[fix_missing_org_evals] org=%s run=%s ERROR checking competitors: %v", job.row.orgID, job.row.runID, err)
+		res.errors++
+		return res
 	}
-
-	if mentioned {
-		evalResult, err := orgEvaluationService.ExtractOrgEvaluation(ctx, job.row.runID, orgCtx.orgUUID, orgCtx.orgName, orgCtx.websites, orgCtx.nameVariations, responseText)
-		if err != nil {
-			log.Printf("[fix_missing_org_evals] org=%s run=%s ERROR extract org eval: %v", job.row.orgID, job.row.runID, err)
-			res.errors++
-			return res
-		}
-		if err := repos.OrgEvalRepo.Create(ctx, evalResult.Evaluation); err != nil {
-			log.Printf("[fix_missing_org_evals] org=%s run=%s ERROR store org eval: %v", job.row.orgID, job.row.runID, err)
-			res.errors++
-			return res
-		}
+	if len(competitors) > 0 {
+		res.skippedCompetitors++
 	} else {
-		now := time.Now()
-		orgEval := &models.OrgEval{
-			OrgEvalID:     uuid.New(),
-			QuestionRunID: job.row.runID,
-			OrgID:         orgUUID,
-			Mentioned:     false,
-			Citation:      false,
-			CreatedAt:     now,
-			UpdatedAt:     now,
-		}
-		if err := repos.OrgEvalRepo.Create(ctx, orgEval); err != nil {
-			log.Printf("[fix_missing_org_evals] org=%s run=%s ERROR store minimal eval: %v", job.row.orgID, job.row.runID, err)
+		competitorResult, err := orgEvaluationService.ExtractCompetitors(ctx, job.row.runID, orgCtx.orgUUID, orgCtx.orgName, responseText)
+		if err != nil {
+			log.Printf("[fix_missing_org_evals] org=%s run=%s ERROR extract competitors: %v", job.row.orgID, job.row.runID, err)
 			res.errors++
 			return res
 		}
+		for _, competitor := range competitorResult.Competitors {
+			if err := repos.OrgCompetitorRepo.Create(ctx, competitor); err != nil {
+				log.Printf("[fix_missing_org_evals] org=%s run=%s ERROR store competitor %s: %v", job.row.orgID, job.row.runID, competitor.Name, err)
+				res.errors++
+				return res
+			}
+			res.createdCompetitors++
+		}
 	}
 
-	res.created++
+	citations, err := repos.OrgCitationRepo.GetByQuestionRunAndOrg(ctx, job.row.runID, orgCtx.orgUUID)
+	if err != nil {
+		log.Printf("[fix_missing_org_evals] org=%s run=%s ERROR checking citations: %v", job.row.orgID, job.row.runID, err)
+		res.errors++
+		return res
+	}
+	if len(citations) > 0 {
+		res.skippedCitations++
+	} else {
+		citationResult, err := orgEvaluationService.ExtractCitations(ctx, job.row.runID, orgCtx.orgUUID, responseText, orgCtx.websites)
+		if err != nil {
+			log.Printf("[fix_missing_org_evals] org=%s run=%s ERROR extract citations: %v", job.row.orgID, job.row.runID, err)
+			res.errors++
+			return res
+		}
+		for _, citation := range citationResult.Citations {
+			if err := repos.OrgCitationRepo.Create(ctx, citation); err != nil {
+				log.Printf("[fix_missing_org_evals] org=%s run=%s ERROR store citation %s: %v", job.row.orgID, job.row.runID, citation.URL, err)
+				res.errors++
+				return res
+			}
+			res.createdCitations++
+		}
+	}
+
 	return res
 }
 
 func main() {
 	var (
-		csvPath     = flag.String("csv", filepath.Join(".", "runs_missing_evals.csv"), "path to CSV with org_id,question_run_id,eval_count columns")
-		dryRun      = flag.Bool("dry-run", true, "if true, do not write to DB or call OpenAI (prints what would happen)")
-		orgIDArg    = flag.String("org-id", "", "optional org UUID to scope the run")
-		maxRuns     = flag.Int("max-runs", 0, "optional max runs to process across all orgs (0 = all)")
-		timeout     = flag.Duration("timeout", 60*time.Minute, "overall timeout for the script")
-		concurrency = flag.Int("concurrency", 20, "number of concurrent extractions to run")
-	progressEvery = flag.Int("progress-every", 50, "log progress every N processed rows")
+		csvPath       = flag.String("csv", filepath.Join(".", "runs_missing_evals.csv"), "path to CSV with org_id,question_run_id,eval_count columns")
+		dryRun        = flag.Bool("dry-run", true, "if true, do not write to DB or call OpenAI (prints what would happen)")
+		orgIDArg      = flag.String("org-id", "", "optional org UUID to scope the run")
+		maxRuns       = flag.Int("max-runs", 0, "optional max runs to process across all orgs (0 = all)")
+		timeout       = flag.Duration("timeout", 60*time.Minute, "overall timeout for the script")
+		concurrency   = flag.Int("concurrency", 20, "number of concurrent extractions to run")
+		progressEvery = flag.Int("progress-every", 50, "log progress every N processed rows")
 	)
 	flag.Parse()
 
@@ -446,9 +534,13 @@ func main() {
 		total.missingRuns += res.missingRuns
 		total.emptyResponses += res.emptyResponses
 		total.failedResponses += res.failedResponses
+		total.createdCompetitors += res.createdCompetitors
+		total.createdCitations += res.createdCitations
+		total.skippedCompetitors += res.skippedCompetitors
+		total.skippedCitations += res.skippedCitations
 		total.errors += res.errors
 	}
 
-	log.Printf("[fix_missing_org_evals] complete processed=%d created=%d skipped_existing=%d missing_runs=%d empty_responses=%d failed_placeholders=%d errors=%d",
-		total.processed, total.created, total.skippedExisting, total.missingRuns, total.emptyResponses, total.failedResponses, total.errors)
+	log.Printf("[fix_missing_org_evals] complete processed=%d created=%d skipped_existing=%d missing_runs=%d empty_responses=%d failed_placeholders=%d competitors=%d citations=%d skipped_competitors=%d skipped_citations=%d errors=%d",
+		total.processed, total.created, total.skippedExisting, total.missingRuns, total.emptyResponses, total.failedResponses, total.createdCompetitors, total.createdCitations, total.skippedCompetitors, total.skippedCitations, total.errors)
 }

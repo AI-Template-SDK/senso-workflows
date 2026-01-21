@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/rand"
-	"net/http"
 	"net/url"
 	"strings"
 	"time"
@@ -534,21 +533,6 @@ func (s *orgEvaluationService) ExtractCitations(ctx context.Context, questionRun
 	seenURLs := make(map[string]bool)
 	now := time.Now()
 
-	// Create an HTTP client once for reuse
-	httpClient := &http.Client{
-		Timeout: 5 * time.Second, // 5-second timeout for dead link checks
-	}
-
-	// Rotate between multiple browser user agents to avoid being flagged as a bot
-	userAgents := []string{
-		"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-		"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-		"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-		"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Safari/605.1.15",
-		"Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0",
-	}
-	userAgentIndex := 0
-
 	// Image extensions to skip
 	imageExtensions := []string{
 		".png", ".jpg", ".jpeg", ".gif", ".bmp", ".svg", ".webp",
@@ -627,32 +611,8 @@ func (s *orgEvaluationService) ExtractCitations(ctx context.Context, questionRun
 			UpdatedAt:     now,
 		}
 
-		// --- CHANGE 2: Modify dead link check to *flag* instead of *skip* ---
-		// 8. Check for dead links (ENG-30) with GET request and rotating user agents
-		req, err := http.NewRequestWithContext(ctx, "GET", finalURL, nil)
-		if err != nil {
-			fmt.Printf("[ExtractCitations] ⚠️ Flagging dead link (invalid request): %s\n", finalURL)
-			citation.DeadLink = true
-		} else {
-			// Rotate through user agents
-			req.Header.Set("User-Agent", userAgents[userAgentIndex%len(userAgents)])
-			userAgentIndex++
-
-			resp, err := httpClient.Do(req)
-			if err != nil {
-				// Network error, treat as dead
-				fmt.Printf("[ExtractCitations] ⚠️ Flagging dead link (network error): %s\n", finalURL)
-				citation.DeadLink = true
-			} else {
-				resp.Body.Close() // Must close the body!
-
-				if resp.StatusCode >= 400 {
-					// HTTP error (404, 500, etc.)
-					fmt.Printf("[ExtractCitations] ⚠️ Flagging dead link (status %d): %s\n", resp.StatusCode, finalURL)
-					citation.DeadLink = true
-				}
-			}
-		}
+		// NOTE: Dead-link GET checks are temporarily disabled to avoid slowdowns.
+		// citation.DeadLink remains false unless set elsewhere.
 
 		// --- CHANGE 3: Always add the citation (dead or not) ---
 		// The `continue` statements for dead links are gone.
