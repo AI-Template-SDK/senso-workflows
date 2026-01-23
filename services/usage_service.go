@@ -16,7 +16,7 @@ import (
 )
 
 // DefaultQuestionRunCost is the standard hard-coded cost for a single successful question run
-const DefaultQuestionRunCost = 0.1
+const DefaultQuestionRunCost = 0.05
 
 const (
 	QuestionTypeOrg     = "org"
@@ -267,16 +267,14 @@ func (s *usageService) GetMarginBasedCost(ctx context.Context, run *models.Quest
 	totalCost := runCost + evalCost
 	if totalCost > 0 {
 		config, err := s.repos.WholesalePricingConfigRepo.GetByPartnerIDAndAction(ctx, partnerID, "question_run")
-		if err == nil {
+		if err == nil && config != nil && config.ConfigID != uuid.Nil {
 			if config.WholesaleMarginPct != nil {
 				margin = *config.WholesaleMarginPct
+				if margin < 1 && margin > 0 {
+					salesPrice = totalCost / (1 - margin)
+					mode = "dynamic"
+				}
 			}
-			if margin >= 1 || margin < 0 {
-				return 0, 0, 0, mode, fmt.Errorf("partner margin for this org is invalid. Must be between 0 and 1. %s", orgID)
-			}
-
-			salesPrice = totalCost / (1 - margin)
-			mode = "dynamic"
 		}
 	}
 
