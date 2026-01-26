@@ -131,6 +131,7 @@ func (s *usageService) TrackBatchUsage(ctx context.Context, orgID uuid.UUID, bat
 		return 0, fmt.Errorf("org %s is not associated with a partner, cannot track usage", orgID)
 	}
 	partnerID := org.PartnerID
+	orgIsFreeTier := org.IsFreeTier
 
 	// Get all question runs for the batch.
 	runs, err := s.repos.QuestionRunRepo.GetByBatch(ctx, batchID)
@@ -151,7 +152,7 @@ func (s *usageService) TrackBatchUsage(ctx context.Context, orgID uuid.UUID, bat
 	defer tx.Rollback() // Rollback on error
 
 	// ** MODIFIED: Pass partnerID to chargeRunsInTx **
-	chargedCount, err := s.chargeRunsInTx(ctx, tx, orgID, partnerID, runs, questionType)
+	chargedCount, err := s.chargeRunsInTx(ctx, tx, orgID, partnerID, orgIsFreeTier, runs, questionType)
 	if err != nil {
 		return 0, err // Error already formatted
 	}
@@ -187,6 +188,7 @@ func (s *usageService) TrackIndividualRuns(ctx context.Context, orgID uuid.UUID,
 		return 0, fmt.Errorf("org %s is not associated with a partner, cannot track usage", orgID)
 	}
 	partnerID := org.PartnerID
+	orgIsFreeTier := org.IsFreeTier
 
 	// Fetch the full QuestionRun models from the IDs
 	runs, err := s.repos.QuestionRunRepo.GetByIDs(ctx, runIDs)
@@ -202,7 +204,7 @@ func (s *usageService) TrackIndividualRuns(ctx context.Context, orgID uuid.UUID,
 	defer tx.Rollback() // Rollback on error
 
 	// ** MODIFIED: Pass partnerID to chargeRunsInTx **
-	chargedCount, err := s.chargeRunsInTx(ctx, tx, orgID, partnerID, runs, questionType)
+	chargedCount, err := s.chargeRunsInTx(ctx, tx, orgID, partnerID, orgIsFreeTier, runs, questionType)
 	if err != nil {
 		return 0, err // Error already formatted
 	}
@@ -288,8 +290,12 @@ func (s *usageService) GetMarginBasedCost(ctx context.Context, run *models.Quest
 
 // ** MODIFIED: Updated signature to accept partnerID **
 // chargeRunsInTx is an internal helper to process a list of runs within a transaction.
-func (s *usageService) chargeRunsInTx(ctx context.Context, tx *sqlx.Tx, orgID, partnerID uuid.UUID, runs []*models.QuestionRun, questionType string) (int, error) {
+func (s *usageService) chargeRunsInTx(ctx context.Context, tx *sqlx.Tx, orgID, partnerID uuid.UUID, orgIsFreeTier bool, runs []*models.QuestionRun, questionType string) (int, error) {
 	chargedCount := 0
+	totalCharge := 0.0
+
+	// Decide payer behavior once (avoid per-run org fetch)
+	chargePartnerBalance := questionType == QuestionTypeNetwork || (questionType == QuestionTypeOrg && orgIsFreeTier)
 
 	for _, run := range runs {
 		// Idempotency check: Has this run already been charged?
@@ -327,13 +333,6 @@ func (s *usageService) chargeRunsInTx(ctx context.Context, tx *sqlx.Tx, orgID, p
 		}
 		metadataJSON, _ := json.Marshal(metadata)
 
-		// 2. Check if org is free tier
-		org, err := s.repos.OrgRepo.GetByID(ctx, orgID)
-		if err != nil {
-			return 0, fmt.Errorf("failed to get org for question run %s: %w", orgID, err)
-		}
-		chargePartnerBalance := questionType == QuestionTypeNetwork || (questionType == QuestionTypeOrg && org.IsFreeTier)
-
 		if !chargePartnerBalance {
 			// Charge the Org
 			// Create the new ledger entry with BOTH org_id and partner_id
@@ -354,16 +353,8 @@ func (s *usageService) chargeRunsInTx(ctx context.Context, tx *sqlx.Tx, orgID, p
 			if err := s.repos.CreditLedgerRepo.CreateInTx(ctx, tx, entry); err != nil {
 				return 0, fmt.Errorf("failed to create ledger entry for run %s: %w", run.QuestionRunID, err)
 			}
-
-			// 4. Deduct from the partner's balance
-			// We pass `nil` for orgID because this deduction is for the partner.
-			if _, err := s.repos.CreditBalanceRepo.DeductInTx(ctx, tx, nil, &partnerID, marginBasedCost); err != nil {
-				// If this fails (e.g., insufficient credits), the transaction will be rolled back.
-				// This correctly handles the case where the balance was sufficient at the start
-				// but was consumed by parallel runs.
-				return 0, fmt.Errorf("failed to deduct from partner balance for run %s: %w", run.QuestionRunID, err)
-			}
 			chargedCount++
+			totalCharge += marginBasedCost
 		} else {
 
 			// Create the new ledger entry with BOTH org_id and partner_id
@@ -385,18 +376,19 @@ func (s *usageService) chargeRunsInTx(ctx context.Context, tx *sqlx.Tx, orgID, p
 			if err := s.repos.CreditLedgerRepo.CreateInTx(ctx, tx, entry); err != nil {
 				return 0, fmt.Errorf("failed to create ledger entry for run %s: %w", run.QuestionRunID, err)
 			}
-
-			// 3. ** ADDED: Deduct from the partner's balance **
-			// We pass `nil` for orgID because this deduction is for the partner.
-			if _, err := s.repos.CreditBalanceRepo.DeductInTx(ctx, tx, nil, &partnerID, marginBasedCost); err != nil {
-				// If this fails (e.g., insufficient credits), the transaction will be rolled back.
-				// This correctly handles the case where the balance was sufficient at the start
-				// but was consumed by parallel runs.
-				return 0, fmt.Errorf("failed to deduct from partner balance for run %s: %w", run.QuestionRunID, err)
-			}
 			chargedCount++
+			totalCharge += marginBasedCost
 		}
 
 	}
+
+	// Single balance update at the end to reduce row-lock contention.
+	// We pass `nil` for orgID because this deduction is for the partner.
+	if chargedCount > 0 && totalCharge > 0 {
+		if _, err := s.repos.CreditBalanceRepo.DeductInTx(ctx, tx, nil, &partnerID, totalCharge); err != nil {
+			return 0, fmt.Errorf("failed to deduct from partner balance for batch (charged_runs=%d total_charge=%.6f): %w", chargedCount, totalCharge, err)
+		}
+	}
+
 	return chargedCount, nil
 }
