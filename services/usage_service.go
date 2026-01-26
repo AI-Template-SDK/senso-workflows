@@ -300,17 +300,17 @@ func (s *usageService) chargeRunsInTx(ctx context.Context, tx *sqlx.Tx, orgID, p
 	for _, run := range runs {
 		// Idempotency check: Has this run already been charged?
 		sourceIDStr := run.QuestionRunID.String()
-		// Removed: Outdated Idempotency check
-		/*
-			existing, err := s.repos.CreditLedgerRepo.GetBySourceIDAndTypeInTx(ctx, tx, sourceIDStr, "question_run")
-			if err != nil && err != sql.ErrNoRows {
-				return 0, fmt.Errorf("failed to check for existing ledger entry for run %s: %w", run.QuestionRunID, err)
-			}
+		// Idempotency check
 
-			if existing != nil {
-				// This run has already been charged, skip it.
-				continue
-		}*/
+		existing, err := s.repos.CreditLedgerRepo.GetBySourceIDAndOrgIDAndTypeInTx(ctx, tx, sourceIDStr, orgID, "question_run")
+		if err != nil && err != sql.ErrNoRows {
+			return 0, fmt.Errorf("failed to check for existing ledger entry for run %s: %w", run.QuestionRunID, err)
+		}
+
+		if existing != nil {
+			// This run has already been charged, skip it.
+			continue
+		}
 
 		// 1. Get Margin Based Run Cost
 		marginBasedCost, actualCost, marginPct, mode, err := s.GetMarginBasedCost(ctx, run, orgID, partnerID, questionType)
