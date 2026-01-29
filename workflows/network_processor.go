@@ -16,6 +16,7 @@ import (
 
 type NetworkProcessor struct {
 	questionRunnerService services.QuestionRunnerService
+	usageService          services.UsageService
 	repos                 *services.RepositoryManager
 	client                inngestgo.Client
 	cfg                   *config.Config
@@ -23,11 +24,13 @@ type NetworkProcessor struct {
 
 func NewNetworkProcessor(
 	questionRunnerService services.QuestionRunnerService,
+	usageService services.UsageService,
 	repos *services.RepositoryManager,
 	cfg *config.Config,
 ) *NetworkProcessor {
 	return &NetworkProcessor{
 		questionRunnerService: questionRunnerService,
+		usageService:          usageService,
 		repos:                 repos,
 		cfg:                   cfg,
 	}
@@ -67,6 +70,28 @@ func (p *NetworkProcessor) ProcessNetwork() inngestgo.ServableFunction {
 
 				// Calculate total questions: questions × models × locations
 				totalQuestions := len(networkDetails.Questions) * len(networkDetails.Models) * len(networkDetails.Locations)
+
+				// Step 1.5 Check Partner Balance
+				_, err = step.Run(ctx, "check-balance", func(ctx context.Context) (interface{}, error) {
+					orgIDs, err := p.repos.OrgRepo.GetByNetworkID(ctx, networkUUID)
+					if err != nil {
+						return nil, fmt.Errorf("failed to get organizations for network: %w", err)
+					}
+					evalCount := len(orgIDs) * totalQuestions
+					totalCost, err := p.usageService.CheckBalanceForNetwork(ctx, networkUUID, evalCount)
+					if err != nil {
+						return nil, fmt.Errorf("partner balance check failed: %w", err)
+					}
+					fmt.Printf("[ProcessNetworkOrgMissing] ✅ Partner has sufficient balance for %d runs (%.2f cost)\n", evalCount, totalCost)
+					return map[string]interface{}{"status": "ok", "checked_cost": totalCost}, nil
+				})
+				if err != nil {
+					if reportErr := ReportNetworkFailureToSlack("network workflow", networkID, "", "step 1.5 (check-balance)", err); reportErr != nil {
+						fmt.Printf("[ProcessNetworkOrgMissing] Warning: Failed to report to Slack: %v\n", reportErr)
+					}
+					// Fail workflow if the balance check fails
+					return nil, fmt.Errorf("step 2.5 (check-balance) failed: %w", err)
+				}
 
 				fmt.Printf("[ProcessNetwork] Loaded network with %d models, %d locations, %d questions\n",
 					len(networkDetails.Models), len(networkDetails.Locations), len(networkDetails.Questions))
