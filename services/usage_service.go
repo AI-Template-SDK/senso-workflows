@@ -29,6 +29,7 @@ type UsageService interface {
 	TrackIndividualRuns(ctx context.Context, orgID uuid.UUID, runIDs []uuid.UUID, questionType string) (int, error)
 	// ** ADDED: New method for pre-checking balance **
 	CheckBalance(ctx context.Context, orgID uuid.UUID, totalQuestions int, questionType string) (float64, error)
+	CheckBalanceForNetwork(ctx context.Context, networkID uuid.UUID, totalQuestions int) (float64, error)
 	GetMarginBasedCost(ctx context.Context, run *models.QuestionRun, orgID uuid.UUID, partnerID uuid.UUID, questionType string) (float64, float64, float64, string, error)
 }
 
@@ -111,6 +112,59 @@ func (s *usageService) CheckBalance(ctx context.Context, orgID uuid.UUID, totalQ
 	}
 
 	fmt.Printf("[CheckBalance] Org %s (Partner %s) has sufficient balance (%.2f) for cost (%.2f)\n", orgID, org.PartnerID, balance.CurrentBalance, cost)
+	return cost, nil // Sufficient balance
+}
+
+// CheckBalanceForNetwork verifies if partner has enough balance to cover a network run cost.
+func (s *usageService) CheckBalanceForNetwork(ctx context.Context, networkID uuid.UUID, totalQuestions int) (float64, error) {
+
+	if totalQuestions <= 0 {
+		return 0, fmt.Errorf("totalQuestions must be > 0")
+	}
+
+	// 1. Get Network to find PartnerID
+	network, err := s.repos.NetworkRepo.GetByID(ctx, networkID)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get org %s: %w", networkID, err)
+	}
+	if network == nil {
+		return 0, fmt.Errorf("org %s not found", networkID)
+	}
+	if network.PartnerID == uuid.Nil {
+		// Networks must belong to a partner to have a balance
+		return 0, fmt.Errorf("org %s is not associated with a partner", networkID)
+	}
+
+	// 2. Calculate Estimated Cost
+	var cost float64
+	estRunPrice := DefaultQuestionRunCost // Fallback cost
+	cost = (estRunPrice) * float64(totalQuestions)
+	config, err := s.repos.WholesalePricingConfigRepo.GetByPartnerIDAndAction(ctx, network.PartnerID, "question_run")
+	if err == nil {
+		estRunPrice = config.WholesaleFixedPrice
+		cost = estRunPrice * float64(totalQuestions)
+	}
+
+	// 3. Get Payer Balance (Partner)
+	var balance *models.CreditBalance
+	balance, err = s.repos.CreditBalanceRepo.GetByPartnerID(ctx, network.PartnerID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			// No balance record means 0 balance
+			return cost, fmt.Errorf("insufficient credits for partner %s (balance: 0.00, cost: %.2f): %w", network.PartnerID, cost, postgresql.ErrInsufficientCredits)
+		}
+		return cost, fmt.Errorf("failed to get credit balance for partner %s: %w", network.PartnerID, err)
+	}
+
+	// 4. Check Balance
+	if balance == nil {
+		return cost, fmt.Errorf("credit balance not found for partner=%s", network.PartnerID)
+	}
+	if balance.CurrentBalance < cost {
+		return cost, fmt.Errorf("insufficient credits for partner %s (balance: %.2f, cost: %.2f): %w", network.PartnerID, balance.CurrentBalance, cost, postgresql.ErrInsufficientCredits)
+	}
+
+	fmt.Printf("[CheckBalance] Partner %shas sufficient balance (%.2f) for cost (%.2f)\n", network.PartnerID, balance.CurrentBalance, cost)
 	return cost, nil // Sufficient balance
 }
 

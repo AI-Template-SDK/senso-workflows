@@ -183,6 +183,7 @@ func main() {
 	scheduledProcessor := workflows.NewScheduledProcessor(orgService, repoManager)
 	networkProcessor := workflows.NewNetworkProcessor( // ** THIS IS THE NETWORK QUESTION RUNNER **
 		questionRunnerService,
+		usageService,
 		repoManager,
 		cfg,
 	)
