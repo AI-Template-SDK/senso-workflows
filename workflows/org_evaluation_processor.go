@@ -241,6 +241,13 @@ func (p *OrgEvaluationProcessor) ProcessOrgEvaluation() inngestgo.ServableFuncti
 				}, nil
 			})
 			if err != nil {
+				// Best-effort: mark batch as failed if step 3 fails
+				batchUUID, parseErr := uuid.Parse(batchID)
+				if parseErr != nil {
+					fmt.Printf("[ProcessOrgEvaluation] Warning: Failed to parse batch ID for failure update: %v\n", parseErr)
+				} else if failErr := p.orgEvaluationService.FailBatch(ctx, batchUUID); failErr != nil {
+					fmt.Printf("[ProcessOrgEvaluation] Warning: Failed to mark batch %s as failed: %v\n", batchID, failErr)
+				}
 				if reportErr := ReportPipelineFailureToSlack("org evaluation workflow", orgID, orgName, "step 3 (run-question-matrix-with-evaluation)", err); reportErr != nil {
 					fmt.Printf("[ProcessOrgEvaluation] Warning: Failed to report to Slack: %v\n", reportErr)
 				}

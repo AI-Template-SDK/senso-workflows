@@ -356,7 +356,7 @@ func (s *usageService) chargeRunsInTx(ctx context.Context, tx *sqlx.Tx, orgID, p
 		sourceIDStr := run.QuestionRunID.String()
 		// Idempotency check
 
-		existing, err := s.repos.CreditLedgerRepo.GetBySourceIDAndOrgIDAndTypeInTx(ctx, tx, sourceIDStr, orgID, "question_run")
+		existing, err := s.repos.CreditLedgerRepo.GetBySourceIDAndOrgIDAndTypeInTx(ctx, tx, sourceIDStr, orgID.String(), "question_run")
 		if err != nil && err != sql.ErrNoRows {
 			return 0, fmt.Errorf("failed to check for existing ledger entry for run %s: %w", run.QuestionRunID, err)
 		}

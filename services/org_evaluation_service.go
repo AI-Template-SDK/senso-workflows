@@ -796,17 +796,14 @@ func (s *orgEvaluationService) executeAllQuestions(ctx context.Context, orgDetai
 		// Get provider for this model
 		provider, err := s.getProvider(pair.Model.Name)
 		if err != nil {
-			summary.ProcessingErrors = append(summary.ProcessingErrors,
-				fmt.Sprintf("Failed to get provider for model %s: %v", pair.Model.Name, err))
-			continue
+			return nil, fmt.Errorf("failed to get provider for model %s: %w", pair.Model.Name, err)
 		}
 
 		// Execute questions for this pair (batched or sequential)
 		questionRuns, err := s.executeQuestionsForPair(ctx, orgDetails.Questions, pair, provider, batchID, summary)
 		if err != nil {
-			summary.ProcessingErrors = append(summary.ProcessingErrors,
-				fmt.Sprintf("Failed to execute questions for model %s, location %s: %v", pair.Model.Name, pair.Location.CountryCode, err))
-			continue
+			return nil, fmt.Errorf("failed to execute questions for model %s, location %s: %w",
+				pair.Model.Name, pair.Location.CountryCode, err)
 		}
 
 		allQuestionRuns = append(allQuestionRuns, questionRuns...)
@@ -866,11 +863,8 @@ func (s *orgEvaluationService) executeQuestionsForPair(
 			// Execute batch
 			runs, err := s.executeBatch(ctx, batch, pair, provider, workflowLocation, batchID, summary)
 			if err != nil {
-				// Log error but continue with next batch instead of failing entirely
-				errMsg := fmt.Sprintf("Failed to execute batch %d-%d for model %s, location %s: %v", i+1, end, pair.Model.Name, pair.Location.CountryCode, err)
-				fmt.Printf("[executeQuestionsForPair] ❌ %s\n", errMsg)
-				summary.ProcessingErrors = append(summary.ProcessingErrors, errMsg)
-				continue // Continue with next batch
+				return nil, fmt.Errorf("failed to execute batch %d-%d for model %s, location %s: %w",
+					i+1, end, pair.Model.Name, pair.Location.CountryCode, err)
 			}
 
 			questionRuns = append(questionRuns, runs...)

@@ -168,34 +168,60 @@ func (p *geminiProvider) submitJob(ctx context.Context, query string, location *
 	fmt.Printf("[GeminiProvider] 📤 Request payload: %s\n", string(jsonData))
 
 	url := fmt.Sprintf("%s/trigger?dataset_id=%s&include_errors=true", p.baseURL, p.datasetID)
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return "", fmt.Errorf("failed to create request: %w", err)
+	maxRetries := 5
+	var lastStatus int
+	var lastBody string
+	var lastErr error
+
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
+		if err != nil {
+			return "", fmt.Errorf("failed to create request: %w", err)
+		}
+
+		req.Header.Set("Authorization", "Bearer "+p.apiKey)
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := p.httpClient.Do(req)
+		if err != nil {
+			lastErr = err
+			fmt.Printf("[GeminiProvider] ⚠️ Trigger request failed (attempt %d/%d): %v\n", attempt, maxRetries, err)
+			if attempt < maxRetries {
+				time.Sleep(2 * time.Second)
+				continue
+			}
+			break
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			bodyBytes, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			lastStatus = resp.StatusCode
+			lastBody = string(bodyBytes)
+			fmt.Printf("[GeminiProvider] ⚠️ Trigger returned status %d (attempt %d/%d), retrying\n", resp.StatusCode, attempt, maxRetries)
+			if attempt < maxRetries {
+				time.Sleep(2 * time.Second)
+				continue
+			}
+			break
+		}
+
+		var triggerResp GeminiTriggerResponse
+		if err := json.NewDecoder(resp.Body).Decode(&triggerResp); err != nil {
+			resp.Body.Close()
+			return "", fmt.Errorf("failed to decode trigger response: %w", err)
+		}
+		resp.Body.Close()
+		return triggerResp.SnapshotID, nil
 	}
 
-	req.Header.Set("Authorization", "Bearer "+p.apiKey)
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := p.httpClient.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("failed to make request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		// Try to read error response for debugging
-		var errorBody bytes.Buffer
-		errorBody.ReadFrom(resp.Body)
-		fmt.Printf("[GeminiProvider] ❌ Error response: %s\n", errorBody.String())
-		return "", fmt.Errorf("Gemini API returned status %d: %s", resp.StatusCode, errorBody.String())
+	if lastErr != nil {
+		fmt.Printf("[GeminiProvider] ❌ Trigger failed after %d attempts: %v\n", maxRetries, lastErr)
+		return "", fmt.Errorf("failed to make request: %w", lastErr)
 	}
 
-	var triggerResp GeminiTriggerResponse
-	if err := json.NewDecoder(resp.Body).Decode(&triggerResp); err != nil {
-		return "", fmt.Errorf("failed to decode trigger response: %w", err)
-	}
-
-	return triggerResp.SnapshotID, nil
+	fmt.Printf("[GeminiProvider] ❌ Trigger failed after %d attempts: status=%d body=%s\n", maxRetries, lastStatus, lastBody)
+	return "", fmt.Errorf("Gemini API returned status %d: %s", lastStatus, lastBody)
 }
 
 func (p *geminiProvider) pollUntilComplete(ctx context.Context, snapshotID string) (*GeminiResult, error) {
@@ -260,34 +286,13 @@ func (p *geminiProvider) checkProgress(ctx context.Context, snapshotID string) (
 }
 
 func (p *geminiProvider) getResults(ctx context.Context, snapshotID string) (*GeminiResult, error) {
-	url := fmt.Sprintf("%s/snapshot/%s?format=json", p.baseURL, snapshotID)
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	results, err := p.getBatchResults(ctx, snapshotID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create results request: %w", err)
+		return nil, err
 	}
-
-	req.Header.Set("Authorization", "Bearer "+p.apiKey)
-
-	resp, err := p.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get results: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusAccepted {
-		return nil, fmt.Errorf("results request returned status %d", resp.StatusCode)
-	}
-
-	var results []GeminiResult
-	if err := json.NewDecoder(resp.Body).Decode(&results); err != nil {
-		return nil, fmt.Errorf("failed to decode results: %w", err)
-	}
-
 	if len(results) == 0 {
 		return nil, fmt.Errorf("no results returned from Gemini")
 	}
-
-	// Return the first (and should be only) result
 	return &results[0], nil
 }
 
@@ -508,33 +513,60 @@ func (p *geminiProvider) submitBatchJob(ctx context.Context, queries []string, l
 	fmt.Printf("[GeminiProvider] 📤 Request payload for %d queries\n", len(queries))
 
 	url := fmt.Sprintf("%s/trigger?dataset_id=%s&include_errors=true", p.baseURL, p.datasetID)
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return "", fmt.Errorf("failed to create request: %w", err)
+	maxRetries := 5
+	var lastStatus int
+	var lastBody string
+	var lastErr error
+
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
+		if err != nil {
+			return "", fmt.Errorf("failed to create request: %w", err)
+		}
+
+		req.Header.Set("Authorization", "Bearer "+p.apiKey)
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := p.httpClient.Do(req)
+		if err != nil {
+			lastErr = err
+			fmt.Printf("[GeminiProvider] ⚠️ Batch trigger request failed (attempt %d/%d): %v\n", attempt, maxRetries, err)
+			if attempt < maxRetries {
+				time.Sleep(2 * time.Second)
+				continue
+			}
+			break
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			bodyBytes, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			lastStatus = resp.StatusCode
+			lastBody = string(bodyBytes)
+			fmt.Printf("[GeminiProvider] ⚠️ Batch trigger returned status %d (attempt %d/%d), retrying\n", resp.StatusCode, attempt, maxRetries)
+			if attempt < maxRetries {
+				time.Sleep(2 * time.Second)
+				continue
+			}
+			break
+		}
+
+		var triggerResp GeminiTriggerResponse
+		if err := json.NewDecoder(resp.Body).Decode(&triggerResp); err != nil {
+			resp.Body.Close()
+			return "", fmt.Errorf("failed to decode trigger response: %w", err)
+		}
+		resp.Body.Close()
+		return triggerResp.SnapshotID, nil
 	}
 
-	req.Header.Set("Authorization", "Bearer "+p.apiKey)
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := p.httpClient.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("failed to make request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		var errorBody bytes.Buffer
-		errorBody.ReadFrom(resp.Body)
-		fmt.Printf("[GeminiProvider] ❌ Error response: %s\n", errorBody.String())
-		return "", fmt.Errorf("Gemini API returned status %d: %s", resp.StatusCode, errorBody.String())
+	if lastErr != nil {
+		fmt.Printf("[GeminiProvider] ❌ Batch trigger failed after %d attempts: %v\n", maxRetries, lastErr)
+		return "", fmt.Errorf("failed to make request: %w", lastErr)
 	}
 
-	var triggerResp GeminiTriggerResponse
-	if err := json.NewDecoder(resp.Body).Decode(&triggerResp); err != nil {
-		return "", fmt.Errorf("failed to decode trigger response: %w", err)
-	}
-
-	return triggerResp.SnapshotID, nil
+	fmt.Printf("[GeminiProvider] ❌ Batch trigger failed after %d attempts: status=%d body=%s\n", maxRetries, lastStatus, lastBody)
+	return "", fmt.Errorf("Gemini API returned status %d: %s", lastStatus, lastBody)
 }
 
 // pollBatchUntilComplete polls for batch completion and returns all results
@@ -595,6 +627,16 @@ func (p *geminiProvider) getBatchResults(ctx context.Context, snapshotID string)
 
 		if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusAccepted {
 			resp.Body.Close()
+			if attempt < maxRetries {
+				fmt.Printf("[GeminiProvider] ⚠️ Results request returned %d (attempt %d/%d), retrying after %v\n",
+					resp.StatusCode, attempt, maxRetries, retryInterval)
+				select {
+				case <-time.After(retryInterval):
+					continue
+				case <-ctx.Done():
+					return nil, ctx.Err()
+				}
+			}
 			return nil, fmt.Errorf("results request returned status %d", resp.StatusCode)
 		}
 

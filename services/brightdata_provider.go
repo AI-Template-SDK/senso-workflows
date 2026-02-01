@@ -202,30 +202,60 @@ func (p *brightDataProvider) submitJob(ctx context.Context, query string, locati
 	}
 
 	url := fmt.Sprintf("%s/trigger?dataset_id=%s&include_errors=true", p.baseURL, p.datasetID)
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return "", fmt.Errorf("failed to create request: %w", err)
+	maxRetries := 5
+	var lastStatus int
+	var lastBody string
+	var lastErr error
+
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
+		if err != nil {
+			return "", fmt.Errorf("failed to create request: %w", err)
+		}
+
+		req.Header.Set("Authorization", "Bearer "+p.apiKey)
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := p.httpClient.Do(req)
+		if err != nil {
+			lastErr = err
+			fmt.Printf("[BrightDataProvider] ⚠️ Trigger request failed (attempt %d/%d): %v\n", attempt, maxRetries, err)
+			if attempt < maxRetries {
+				time.Sleep(2 * time.Second)
+				continue
+			}
+			break
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			bodyBytes, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			lastStatus = resp.StatusCode
+			lastBody = string(bodyBytes)
+			fmt.Printf("[BrightDataProvider] ⚠️ Trigger returned status %d (attempt %d/%d), retrying\n", resp.StatusCode, attempt, maxRetries)
+			if attempt < maxRetries {
+				time.Sleep(2 * time.Second)
+				continue
+			}
+			break
+		}
+
+		var triggerResp BrightDataTriggerResponse
+		if err := json.NewDecoder(resp.Body).Decode(&triggerResp); err != nil {
+			resp.Body.Close()
+			return "", fmt.Errorf("failed to decode trigger response: %w", err)
+		}
+		resp.Body.Close()
+		return triggerResp.SnapshotID, nil
 	}
 
-	req.Header.Set("Authorization", "Bearer "+p.apiKey)
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := p.httpClient.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("failed to make request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("BrightData API returned status %d", resp.StatusCode)
+	if lastErr != nil {
+		fmt.Printf("[BrightDataProvider] ❌ Trigger failed after %d attempts: %v\n", maxRetries, lastErr)
+		return "", fmt.Errorf("failed to make request: %w", lastErr)
 	}
 
-	var triggerResp BrightDataTriggerResponse
-	if err := json.NewDecoder(resp.Body).Decode(&triggerResp); err != nil {
-		return "", fmt.Errorf("failed to decode trigger response: %w", err)
-	}
-
-	return triggerResp.SnapshotID, nil
+	fmt.Printf("[BrightDataProvider] ❌ Trigger failed after %d attempts: status=%d body=%s\n", maxRetries, lastStatus, lastBody)
+	return "", fmt.Errorf("BrightData API returned status %d: %s", lastStatus, lastBody)
 }
 
 func (p *brightDataProvider) pollUntilComplete(ctx context.Context, snapshotID string) (*BrightDataResult, error) {
@@ -290,34 +320,13 @@ func (p *brightDataProvider) checkProgress(ctx context.Context, snapshotID strin
 }
 
 func (p *brightDataProvider) getResults(ctx context.Context, snapshotID string) (*BrightDataResult, error) {
-	url := fmt.Sprintf("%s/snapshot/%s?format=json", p.baseURL, snapshotID)
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	results, err := p.getBatchResults(ctx, snapshotID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create results request: %w", err)
+		return nil, err
 	}
-
-	req.Header.Set("Authorization", "Bearer "+p.apiKey)
-
-	resp, err := p.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get results: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusAccepted {
-		return nil, fmt.Errorf("results request returned status %d", resp.StatusCode)
-	}
-
-	var results []BrightDataResult
-	if err := json.NewDecoder(resp.Body).Decode(&results); err != nil {
-		return nil, fmt.Errorf("failed to decode results: %w", err)
-	}
-
 	if len(results) == 0 {
 		return nil, fmt.Errorf("no results returned from BrightData")
 	}
-
-	// Return the first (and should be only) result
 	return &results[0], nil
 }
 
@@ -590,30 +599,60 @@ func (p *brightDataProvider) submitBatchJob(ctx context.Context, queries []strin
 	}
 
 	url := fmt.Sprintf("%s/trigger?dataset_id=%s&include_errors=true", p.baseURL, p.datasetID)
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return "", fmt.Errorf("failed to create request: %w", err)
+	maxRetries := 5
+	var lastStatus int
+	var lastBody string
+	var lastErr error
+
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
+		if err != nil {
+			return "", fmt.Errorf("failed to create request: %w", err)
+		}
+
+		req.Header.Set("Authorization", "Bearer "+p.apiKey)
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := p.httpClient.Do(req)
+		if err != nil {
+			lastErr = err
+			fmt.Printf("[BrightDataProvider] ⚠️ Batch trigger request failed (attempt %d/%d): %v\n", attempt, maxRetries, err)
+			if attempt < maxRetries {
+				time.Sleep(2 * time.Second)
+				continue
+			}
+			break
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			bodyBytes, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			lastStatus = resp.StatusCode
+			lastBody = string(bodyBytes)
+			fmt.Printf("[BrightDataProvider] ⚠️ Batch trigger returned status %d (attempt %d/%d), retrying\n", resp.StatusCode, attempt, maxRetries)
+			if attempt < maxRetries {
+				time.Sleep(2 * time.Second)
+				continue
+			}
+			break
+		}
+
+		var triggerResp BrightDataTriggerResponse
+		if err := json.NewDecoder(resp.Body).Decode(&triggerResp); err != nil {
+			resp.Body.Close()
+			return "", fmt.Errorf("failed to decode trigger response: %w", err)
+		}
+		resp.Body.Close()
+		return triggerResp.SnapshotID, nil
 	}
 
-	req.Header.Set("Authorization", "Bearer "+p.apiKey)
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := p.httpClient.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("failed to make request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("BrightData API returned status %d", resp.StatusCode)
+	if lastErr != nil {
+		fmt.Printf("[BrightDataProvider] ❌ Batch trigger failed after %d attempts: %v\n", maxRetries, lastErr)
+		return "", fmt.Errorf("failed to make request: %w", lastErr)
 	}
 
-	var triggerResp BrightDataTriggerResponse
-	if err := json.NewDecoder(resp.Body).Decode(&triggerResp); err != nil {
-		return "", fmt.Errorf("failed to decode trigger response: %w", err)
-	}
-
-	return triggerResp.SnapshotID, nil
+	fmt.Printf("[BrightDataProvider] ❌ Batch trigger failed after %d attempts: status=%d body=%s\n", maxRetries, lastStatus, lastBody)
+	return "", fmt.Errorf("BrightData API returned status %d: %s", lastStatus, lastBody)
 }
 
 // pollBatchUntilComplete polls for batch completion and returns all results
@@ -674,6 +713,16 @@ func (p *brightDataProvider) getBatchResults(ctx context.Context, snapshotID str
 
 		if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusAccepted {
 			resp.Body.Close()
+			if attempt < maxRetries {
+				fmt.Printf("[BrightDataProvider] ⚠️ Results request returned %d (attempt %d/%d), retrying after %v\n",
+					resp.StatusCode, attempt, maxRetries, retryInterval)
+				select {
+				case <-time.After(retryInterval):
+					continue
+				case <-ctx.Done():
+					return nil, ctx.Err()
+				}
+			}
 			return nil, fmt.Errorf("results request returned status %d", resp.StatusCode)
 		}
 
