@@ -369,7 +369,7 @@ func (p *brightDataProvider) SupportsBatching() bool {
 
 // GetMaxBatchSize returns 20 for BrightData (can batch up to 20 questions)
 func (p *brightDataProvider) GetMaxBatchSize() int {
-	return 20
+	return 1 // 20
 }
 
 // RunQuestionBatch processes multiple questions in a single BrightData API call
