@@ -124,7 +124,7 @@ func (p *linkupProvider) RunQuestion(ctx context.Context, query string, websearc
 	shouldProcessEvaluation := linkupResp.Answer != ""
 	responseText := linkupResp.Answer
 	if !shouldProcessEvaluation {
-		responseText = "Question run failed for this model and location"
+		responseText = "This prompt didn’t complete successfully due to a temporary AI model limitation. You were not charged for this prompt. We'll re-try in the next run."
 		fmt.Printf("[LinkupProvider] ⚠️ Linkup returned empty answer\n")
 	} else {
 		// Fix citations in the response text by converting [1] to [1](url)

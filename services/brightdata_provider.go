@@ -136,11 +136,11 @@ func (p *brightDataProvider) RunQuestion(ctx context.Context, query string, webs
 	var shouldProcessEvaluation bool
 
 	if result.Error != "" {
-		responseText = "Question run failed for this model and location"
+		responseText = "This prompt didn’t complete successfully due to a temporary AI model limitation. You were not charged for this prompt. We'll re-try in the next run."
 		shouldProcessEvaluation = false
 		fmt.Printf("[BrightDataProvider] ⚠️ BrightData returned error: %s\n", result.Error)
 	} else if result.AnswerTextMarkdown == "" {
-		responseText = "Question run failed for this model and location"
+		responseText = "This prompt didn’t complete successfully due to a temporary AI model limitation. You were not charged for this prompt. We'll re-try in the next run."
 		shouldProcessEvaluation = false
 		fmt.Printf("[BrightDataProvider] ⚠️ BrightData returned empty answer_text_markdown\n")
 	} else {
@@ -518,11 +518,11 @@ func (p *brightDataProvider) convertResultToResponse(result *BrightDataResult, d
 	var shouldProcessEvaluation bool
 
 	if result.Error != "" {
-		responseText = "Question run failed for this model and location"
+		responseText = "This prompt didn’t complete successfully due to a temporary AI model limitation. You were not charged for this prompt. We'll re-try in the next run."
 		shouldProcessEvaluation = false
 		fmt.Printf("[BrightDataProvider] ⚠️ Question %d returned error: %s\n", displayIndex, result.Error)
 	} else if result.AnswerTextMarkdown == "" {
-		responseText = "Question run failed for this model and location"
+		responseText = "This prompt didn’t complete successfully due to a temporary AI model limitation. You were not charged for this prompt. We'll re-try in the next run."
 		shouldProcessEvaluation = false
 		fmt.Printf("[BrightDataProvider] ⚠️ Question %d returned empty answer_text_markdown\n", displayIndex)
 	} else {
