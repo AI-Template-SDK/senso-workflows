@@ -26,6 +26,10 @@ type Config struct {
 	PerplexityDatasetID       string
 	GeminiDatasetID           string
 	LinkupAPIKey              string
+	OxylabsUsername           string
+	OxylabsPassword           string
+	ScrapingBeeAPIKey         string
+	ScrapelessAPIKey          string
 	EnableScheduledPipelines  bool
 	Database                  DatabaseConfig
 }
@@ -62,6 +66,10 @@ func Load() *Config {
 		PerplexityDatasetID:       os.Getenv("PERPLEXITY_DATASET_ID"),
 		GeminiDatasetID:           os.Getenv("GEMINI_DATASET_ID"),
 		LinkupAPIKey:              os.Getenv("LINKUP_API_KEY"),
+		OxylabsUsername:           os.Getenv("OXYLABS_USERNAME"),
+		OxylabsPassword:           os.Getenv("OXYLABS_PASSWORD"),
+		ScrapingBeeAPIKey:         os.Getenv("SCRAPINGBEE_API_KEY"),
+		ScrapelessAPIKey:          os.Getenv("SCRAPELESS_API_KEY"),
 		EnableScheduledPipelines:  getEnvBool("ENABLE_SCHEDULED_PIPELINES", true),
 	}
 

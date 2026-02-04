@@ -195,6 +195,24 @@ func (s *questionRunnerService) getProvider(model string) (AIProvider, error) {
 		return nil, fmt.Errorf("config is nil")
 	}
 
+	// ScrapingBee ChatGPT provider
+	if strings.Contains(modelLower, "scrapingbee") {
+		fmt.Printf("[getProvider] 🎯 Selected ScrapingBee ChatGPT provider for model: %s", model)
+		return NewScrapingBeeProvider(s.cfg, model, s.costService), nil
+	}
+
+	// Scrapeless ChatGPT provider
+	if strings.Contains(modelLower, "scrapeless") {
+		fmt.Printf("[getProvider] 🎯 Selected Scrapeless ChatGPT provider for model: %s", model)
+		return NewScrapelessProvider(s.cfg, model, s.costService), nil
+	}
+
+	// Oxylabs ChatGPT provider
+	if strings.Contains(modelLower, "oxylabs") {
+		fmt.Printf("[getProvider] 🎯 Selected Oxylabs ChatGPT provider for model: %s", model)
+		return NewOxylabsProvider(s.cfg, model, s.costService), nil
+	}
+
 	// BrightData ChatGPT provider
 	if strings.Contains(modelLower, "chatgpt") {
 		fmt.Printf("[getProvider] 🎯 Selected BrightData ChatGPT provider for model: %s", model)
