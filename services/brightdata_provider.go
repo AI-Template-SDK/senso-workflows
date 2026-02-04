@@ -331,35 +331,8 @@ func (p *brightDataProvider) getResults(ctx context.Context, snapshotID string) 
 }
 
 func (p *brightDataProvider) mapLocationToCountry(location *workflowModels.Location) string {
-	if location == nil {
-		return "US" // Default to US
-	}
-
-	// Map location.Country to BrightData country codes
-	countryMap := map[string]string{
-		"US": "US",
-		"CA": "CA",
-		"GB": "GB",
-		"UK": "GB", // Handle UK -> GB mapping
-		"AU": "AU",
-		"DE": "DE",
-		"FR": "FR",
-		"IT": "IT",
-		"ES": "ES",
-		"NL": "NL",
-		"JP": "JP",
-		"KR": "KR",
-		"IN": "IN",
-		"BR": "BR",
-		"MX": "MX",
-	}
-
-	if country, exists := countryMap[strings.ToUpper(location.Country)]; exists {
-		return country
-	}
-
-	// Fallback to US if country not found
-	return "US"
+	normalized := normalizeLocation(location)
+	return normalized.CountryCode
 }
 
 // SupportsBatching returns true for BrightData (supports batch processing)
@@ -811,29 +784,6 @@ func (p *brightDataProvider) buildLocalizedPrompt(query string, location *workfl
 	locationDescription := formatLocationForPrompt(location)
 	return fmt.Sprintf("Ensure your response is localized to %s. Answer the following question: %s",
 		locationDescription, query)
-}
-
-func formatLocationForPrompt(location *workflowModels.Location) string {
-	if location == nil {
-		return "the relevant region and country"
-	}
-
-	var parts []string
-	if location.City != nil && *location.City != "" {
-		parts = append(parts, *location.City)
-	}
-	if location.Region != nil && *location.Region != "" {
-		parts = append(parts, *location.Region)
-	}
-	if location.Country != "" {
-		parts = append(parts, location.Country)
-	}
-
-	if len(parts) == 0 {
-		return "the relevant region and country"
-	}
-
-	return strings.Join(parts, ", ")
 }
 
 // fixCitationsInResponse fixes citation markers in the response text by converting
