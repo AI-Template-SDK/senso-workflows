@@ -148,32 +148,7 @@ func (p *anthropicProvider) buildLocationPrompt(query string, location *models.L
 }
 
 func (p *anthropicProvider) formatLocation(location *models.Location) string {
-	if location == nil {
-		return "the United States"
-	}
-
-	parts := []string{}
-	if location.City != nil && *location.City != "" {
-		parts = append(parts, *location.City)
-	}
-	if location.Region != nil && *location.Region != "" {
-		parts = append(parts, *location.Region)
-	}
-	parts = append(parts, location.Country)
-
-	if len(parts) == 0 {
-		return "the location"
-	}
-
-	result := ""
-	for i, part := range parts {
-		if i > 0 {
-			result += ", "
-		}
-		result += part
-	}
-
-	return result
+	return formatLocationForPrompt(location)
 }
 
 func (p *anthropicProvider) extractResponseText(response anthropic.Message) string {

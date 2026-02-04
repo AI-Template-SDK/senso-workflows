@@ -146,7 +146,7 @@ func GenerateQuestionSchema[T any]() interface{} {
 
 // RunQuestion implements AIProvider using web search when enabled
 func (p *openAIProvider) RunQuestion(ctx context.Context, query string, websearch bool, location *models.Location) (*AIResponse, error) {
-	// Build location-aware prompt
+	// Build location-aware prompt (country names for readability)
 	prompt := p.buildLocationPrompt(query, location)
 
 	// Use web search API when websearch is enabled
@@ -231,15 +231,16 @@ func (p *openAIProvider) runWebSearch(ctx context.Context, query string, locatio
 	}
 
 	// Convert our location to web search format
+	normalized := normalizeLocation(location)
 	userLocation := WebUserLocation{
 		Type:    "approximate",
-		Country: strings.ToUpper(location.Country), // API expects uppercase country codes
+		Country: normalized.CountryCode, // API expects uppercase country codes
 	}
-	if location.Region != nil && *location.Region != "" {
-		userLocation.Region = location.Region
+	if normalized.Region != nil && *normalized.Region != "" {
+		userLocation.Region = normalized.Region
 	}
-	if location.City != nil && *location.City != "" {
-		userLocation.City = location.City
+	if normalized.City != nil && *normalized.City != "" {
+		userLocation.City = normalized.City
 	}
 
 	// Prepare the request
@@ -345,28 +346,7 @@ func (p *openAIProvider) buildLocationPrompt(query string, location *models.Loca
 }
 
 func (p *openAIProvider) formatLocation(location *models.Location) string {
-	parts := []string{}
-	if location.City != nil && *location.City != "" {
-		parts = append(parts, *location.City)
-	}
-	if location.Region != nil && *location.Region != "" {
-		parts = append(parts, *location.Region)
-	}
-	parts = append(parts, location.Country)
-
-	if len(parts) == 0 {
-		return "the location"
-	}
-
-	result := ""
-	for i, part := range parts {
-		if i > 0 {
-			result += ", "
-		}
-		result += part
-	}
-
-	return result
+	return formatLocationForPrompt(location)
 }
 
 // RunQuestionWebSearch implements AIProvider for web search without location

@@ -9,7 +9,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/AI-Template-SDK/senso-workflows/internal/config"
@@ -110,11 +109,11 @@ func (p *geminiProvider) RunQuestion(ctx context.Context, query string, websearc
 	var shouldProcessEvaluation bool
 
 	if result.Error != "" {
-		responseText = "Question run failed for this model and location"
+		responseText = "This prompt didn’t complete successfully due to a temporary AI model limitation. You were not charged for this prompt. We'll re-try in the next run."
 		shouldProcessEvaluation = false
 		fmt.Printf("[GeminiProvider] ⚠️ Gemini returned error: %s\n", result.Error)
 	} else if result.AnswerTextMarkdown == "" {
-		responseText = "Question run failed for this model and location"
+		responseText = "This prompt didn’t complete successfully due to a temporary AI model limitation. You were not charged for this prompt. We'll re-try in the next run."
 		shouldProcessEvaluation = false
 		fmt.Printf("[GeminiProvider] ⚠️ Gemini returned empty answer_text_markdown\n")
 	} else {
@@ -297,35 +296,8 @@ func (p *geminiProvider) getResults(ctx context.Context, snapshotID string) (*Ge
 }
 
 func (p *geminiProvider) mapLocationToCountry(location *workflowModels.Location) string {
-	if location == nil {
-		return "US" // Default to US
-	}
-
-	// Map location.Country to BrightData country codes
-	countryMap := map[string]string{
-		"US": "US",
-		"CA": "CA",
-		"GB": "GB",
-		"UK": "GB", // Handle UK -> GB mapping
-		"AU": "AU",
-		"DE": "DE",
-		"FR": "FR",
-		"IT": "IT",
-		"ES": "ES",
-		"NL": "NL",
-		"JP": "JP",
-		"KR": "KR",
-		"IN": "IN",
-		"BR": "BR",
-		"MX": "MX",
-	}
-
-	if country, exists := countryMap[strings.ToUpper(location.Country)]; exists {
-		return country
-	}
-
-	// Fallback to US if country not found
-	return "US"
+	normalized := normalizeLocation(location)
+	return normalized.CountryCode
 }
 
 // SupportsBatching returns true for Gemini (supports batch processing via BrightData)
@@ -468,11 +440,11 @@ func (p *geminiProvider) convertResultToResponse(result *GeminiResult, displayIn
 	var shouldProcessEvaluation bool
 
 	if result.Error != "" {
-		responseText = "Question run failed for this model and location"
+		responseText = "This prompt didn’t complete successfully due to a temporary AI model limitation. You were not charged for this prompt. We'll re-try in the next run."
 		shouldProcessEvaluation = false
 		fmt.Printf("[GeminiProvider] ⚠️ Question %d returned error: %s\n", displayIndex, result.Error)
 	} else if result.AnswerTextMarkdown == "" {
-		responseText = "Question run failed for this model and location"
+		responseText = "This prompt didn’t complete successfully due to a temporary AI model limitation. You were not charged for this prompt. We'll re-try in the next run."
 		shouldProcessEvaluation = false
 		fmt.Printf("[GeminiProvider] ⚠️ Question %d returned empty answer_text_markdown\n", displayIndex)
 	} else {
