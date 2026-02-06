@@ -1,0 +1,58 @@
+# terraform.tfvars.example
+# Copy this file to terraform.tfvars and fill in your values
+# IMPORTANT: Never commit terraform.tfvars to version control
+
+# AWS Configuration
+aws_region  = "us-east-1"
+environment = "production"
+
+# VPC Configuration
+# Replace with your VPC ID
+vpc_id = "vpc-xxxxxxxxxxxxxxxxx"
+
+# Database Configuration
+# RDS PostgreSQL connection string
+database_url = "postgres://username:password@your-rds-endpoint.region.rds.amazonaws.com:5432/senso2?sslmode=require"
+
+# OpenAI Configuration
+openai_api_key = "sk-proj-xxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+
+# Azure OpenAI Configuration (optional, use either standard OpenAI or Azure)
+azure_openai_endpoint       = "https://your-resource.openai.azure.com/"
+azure_openai_key            = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+azure_openai_deployment_name = "gpt-4-1"
+
+# Anthropic Configuration (optional)
+anthropic_api_key = "sk-ant-xxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+
+# BrightData Configuration (required for web search)
+brightdata_api_key    = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+brightdata_dataset_id = "gd_xxxxxxxxxxxxxxxxxxxxx"
+
+# Perplexity Configuration
+perplexity_dataset_id = "gd_xxxxxxxxxxxxxxxxxxxxx"
+
+# Gemini Configuration (optional)
+gemini_dataset_id = ""
+
+# Linkup Configuration (optional)
+linkup_api_key = ""
+
+# Application Configuration
+application_api_url = "https://api.senso.ai"
+api_token           = "your-api-authentication-token"
+
+# Docker Image
+# Replace with your ECR repository URI after pushing the image
+docker_image_uri = "123456789012.dkr.ecr.us-east-1.amazonaws.com/senso-workflows:latest"
+
+# ECS Task Configuration
+task_cpu    = 1024  # 1 vCPU (can increase for intensive workloads)
+task_memory = 2048  # 2 GB RAM (increase if processing large batches)
+
+# Scaling Configuration
+max_concurrent_executions = 100
+
+# EventBridge Trigger (set to true to enable scheduled runs)
+enable_eventbridge_trigger = false
+eventbridge_schedule       = "cron(0 2 * * ? *)"  # 2 AM UTC daily

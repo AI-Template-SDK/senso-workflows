@@ -1,0 +1,368 @@
+{
+  "Comment": "Senso Org Evaluation Workflow - Processes organizations through brand analysis pipeline",
+  "StartAt": "GetOrCreateBatch",
+  "TimeoutSeconds": 3600,
+  "States": {
+    "GetOrCreateBatch": {
+      "Type": "Task",
+      "Comment": "Step 1: Get or create today's batch for the organization",
+      "Resource": "arn:aws:states:::ecs:runTask.sync",
+      "Parameters": {
+        "LaunchType": "FARGATE",
+        "Cluster": "${ECS_CLUSTER_ARN}",
+        "TaskDefinition": "${TASK_DEFINITION_ARN}",
+        "NetworkConfiguration": {
+          "AwsvpcConfiguration": {
+            "Subnets": "${PRIVATE_SUBNETS}",
+            "SecurityGroups": ["${SECURITY_GROUP_ID}"],
+            "AssignPublicIp": "DISABLED"
+          }
+        },
+        "Overrides": {
+          "ContainerOverrides": [{
+            "Name": "org-evaluation-worker",
+            "Environment": [
+              {
+                "Name": "STEP_NAME",
+                "Value": "get-or-create-batch"
+              }
+            ]
+          }],
+          "TaskRoleArn": "${TASK_ROLE_ARN}"
+        }
+      },
+      "ResultPath": "$.batch_data",
+      "ResultSelector": {
+        "batch_id.$": "$.Containers[0].ExitCode",
+        "output.$": "States.StringToJson($.Containers[0].LogStreamName)"
+      },
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "States.TaskFailed"
+          ],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 3,
+          "BackoffRate": 2.0,
+          "Comment": "Retry on transient failures"
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "ResultPath": "$.error_info",
+          "Next": "MarkBatchFailed"
+        }
+      ],
+      "Next": "CheckIfBatchCompleted"
+    },
+
+    "CheckIfBatchCompleted": {
+      "Type": "Choice",
+      "Comment": "Skip processing if batch is already completed (resume scenario)",
+      "Choices": [
+        {
+          "Variable": "$.batch_data.output.batch_status",
+          "StringEquals": "completed",
+          "Next": "WorkflowSuccess"
+        }
+      ],
+      "Default": "CheckBalance"
+    },
+
+    "CheckBalance": {
+      "Type": "Task",
+      "Comment": "Step 2: Verify partner has sufficient balance for this batch",
+      "Resource": "arn:aws:states:::ecs:runTask.sync",
+      "Parameters": {
+        "LaunchType": "FARGATE",
+        "Cluster": "${ECS_CLUSTER_ARN}",
+        "TaskDefinition": "${TASK_DEFINITION_ARN}",
+        "NetworkConfiguration": {
+          "AwsvpcConfiguration": {
+            "Subnets": "${PRIVATE_SUBNETS}",
+            "SecurityGroups": ["${SECURITY_GROUP_ID}"],
+            "AssignPublicIp": "DISABLED"
+          }
+        },
+        "Overrides": {
+          "ContainerOverrides": [{
+            "Name": "org-evaluation-worker",
+            "Environment": [
+              {
+                "Name": "STEP_NAME",
+                "Value": "check-balance"
+              }
+            ]
+          }]
+        }
+      },
+      "ResultPath": "$.balance_check",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "States.TaskFailed"
+          ],
+          "IntervalSeconds": 1,
+          "MaxAttempts": 2,
+          "BackoffRate": 1.5
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "ResultPath": "$.error_info",
+          "Next": "MarkBatchFailed"
+        }
+      ],
+      "Next": "StartBatchProcessing"
+    },
+
+    "StartBatchProcessing": {
+      "Type": "Task",
+      "Comment": "Step 3: Mark batch as running (only for new batches)",
+      "Resource": "arn:aws:states:::ecs:runTask.sync",
+      "Parameters": {
+        "LaunchType": "FARGATE",
+        "Cluster": "${ECS_CLUSTER_ARN}",
+        "TaskDefinition": "${TASK_DEFINITION_ARN}",
+        "NetworkConfiguration": {
+          "AwsvpcConfiguration": {
+            "Subnets": "${PRIVATE_SUBNETS}",
+            "SecurityGroups": ["${SECURITY_GROUP_ID}"],
+            "AssignPublicIp": "DISABLED"
+          }
+        },
+        "Overrides": {
+          "ContainerOverrides": [{
+            "Name": "org-evaluation-worker",
+            "Environment": [
+              {
+                "Name": "STEP_NAME",
+                "Value": "start-batch-processing"
+              }
+            ]
+          }]
+        }
+      },
+      "ResultPath": "$.batch_start",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "States.TaskFailed"
+          ],
+          "IntervalSeconds": 1,
+          "MaxAttempts": 2,
+          "BackoffRate": 1.5
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "ResultPath": "$.error_info",
+          "Next": "MarkBatchFailed"
+        }
+      ],
+      "Next": "RunQuestionMatrixWithEvaluation"
+    },
+
+    "RunQuestionMatrixWithEvaluation": {
+      "Type": "Task",
+      "Comment": "Step 4: Execute questions across models/locations and extract org evaluations",
+      "Resource": "arn:aws:states:::ecs:runTask.sync",
+      "TimeoutSeconds": 1800,
+      "Parameters": {
+        "LaunchType": "FARGATE",
+        "Cluster": "${ECS_CLUSTER_ARN}",
+        "TaskDefinition": "${TASK_DEFINITION_ARN}",
+        "NetworkConfiguration": {
+          "AwsvpcConfiguration": {
+            "Subnets": "${PRIVATE_SUBNETS}",
+            "SecurityGroups": ["${SECURITY_GROUP_ID}"],
+            "AssignPublicIp": "DISABLED"
+          }
+        },
+        "Overrides": {
+          "ContainerOverrides": [{
+            "Name": "org-evaluation-worker",
+            "Cpu": "2048",
+            "Memory": "4096",
+            "Environment": [
+              {
+                "Name": "STEP_NAME",
+                "Value": "run-question-matrix-with-evaluation"
+              }
+            ]
+          }]
+        }
+      },
+      "ResultPath": "$.processing_summary",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "States.TaskFailed"
+          ],
+          "IntervalSeconds": 5,
+          "MaxAttempts": 3,
+          "BackoffRate": 2.0
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "ResultPath": "$.error_info",
+          "Next": "MarkBatchFailed"
+        }
+      ],
+      "Next": "TrackUsage"
+    },
+
+    "TrackUsage": {
+      "Type": "Task",
+      "Comment": "Step 5: Track usage and charge partner for successful runs",
+      "Resource": "arn:aws:states:::ecs:runTask.sync",
+      "Parameters": {
+        "LaunchType": "FARGATE",
+        "Cluster": "${ECS_CLUSTER_ARN}",
+        "TaskDefinition": "${TASK_DEFINITION_ARN}",
+        "NetworkConfiguration": {
+          "AwsvpcConfiguration": {
+            "Subnets": "${PRIVATE_SUBNETS}",
+            "SecurityGroups": ["${SECURITY_GROUP_ID}"],
+            "AssignPublicIp": "DISABLED"
+          }
+        },
+        "Overrides": {
+          "ContainerOverrides": [{
+            "Name": "org-evaluation-worker",
+            "Environment": [
+              {
+                "Name": "STEP_NAME",
+                "Value": "track-usage"
+              }
+            ]
+          }]
+        }
+      },
+      "ResultPath": "$.usage_data",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "States.TaskFailed"
+          ],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 3,
+          "BackoffRate": 2.0
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "Comment": "Continue even if usage tracking fails (logged for manual resolution)",
+          "ResultPath": "$.usage_tracking_error",
+          "Next": "CompleteBatch"
+        }
+      ],
+      "Next": "CompleteBatch"
+    },
+
+    "CompleteBatch": {
+      "Type": "Task",
+      "Comment": "Step 6: Mark batch as completed",
+      "Resource": "arn:aws:states:::ecs:runTask.sync",
+      "Parameters": {
+        "LaunchType": "FARGATE",
+        "Cluster": "${ECS_CLUSTER_ARN}",
+        "TaskDefinition": "${TASK_DEFINITION_ARN}",
+        "NetworkConfiguration": {
+          "AwsvpcConfiguration": {
+            "Subnets": "${PRIVATE_SUBNETS}",
+            "SecurityGroups": ["${SECURITY_GROUP_ID}"],
+            "AssignPublicIp": "DISABLED"
+          }
+        },
+        "Overrides": {
+          "ContainerOverrides": [{
+            "Name": "org-evaluation-worker",
+            "Environment": [
+              {
+                "Name": "STEP_NAME",
+                "Value": "complete-batch"
+              }
+            ]
+          }]
+        }
+      },
+      "ResultPath": "$.batch_completion",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "States.TaskFailed"
+          ],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 3,
+          "BackoffRate": 1.5
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "ResultPath": "$.error_info",
+          "Next": "MarkBatchFailed"
+        }
+      ],
+      "Next": "WorkflowSuccess"
+    },
+
+    "MarkBatchFailed": {
+      "Type": "Task",
+      "Comment": "Error handler: Mark batch as failed in database",
+      "Resource": "arn:aws:states:::ecs:runTask.sync",
+      "Parameters": {
+        "LaunchType": "FARGATE",
+        "Cluster": "${ECS_CLUSTER_ARN}",
+        "TaskDefinition": "${TASK_DEFINITION_ARN}",
+        "NetworkConfiguration": {
+          "AwsvpcConfiguration": {
+            "Subnets": "${PRIVATE_SUBNETS}",
+            "SecurityGroups": ["${SECURITY_GROUP_ID}"],
+            "AssignPublicIp": "DISABLED"
+          }
+        },
+        "Overrides": {
+          "ContainerOverrides": [{
+            "Name": "org-evaluation-worker",
+            "Environment": [
+              {
+                "Name": "STEP_NAME",
+                "Value": "mark-batch-failed"
+              }
+            ]
+          }]
+        }
+      },
+      "ResultPath": "$.failure_marker",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "States.TaskFailed"
+          ],
+          "IntervalSeconds": 1,
+          "MaxAttempts": 2,
+          "BackoffRate": 1.5
+        }
+      ],
+      "Next": "WorkflowFailed"
+    },
+
+    "WorkflowFailed": {
+      "Type": "Fail",
+      "Error": "OrgEvaluationWorkflowFailed",
+      "Cause": "The org evaluation workflow failed. Check CloudWatch Logs for details."
+    },
+
+    "WorkflowSuccess": {
+      "Type": "Succeed"
+    }
+  }
+}
