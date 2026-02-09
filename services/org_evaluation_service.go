@@ -1165,6 +1165,15 @@ func (s *orgEvaluationService) getProvider(model string) (AIProvider, error) {
 		return NewGeminiProvider(s.cfg, model, s.costService), nil
 	}
 
+	// AI Overview provider (via BrightData SERP API)
+	if strings.Contains(modelLower, "aioverview") {
+		if s.cfg.BrightDataSERPAPIKey == "" {
+			return nil, fmt.Errorf("BrightData SERP API key is empty in config")
+		}
+		fmt.Printf("[getProvider] 🎯 Selected AI Overview provider for model: %s\n", model)
+		return NewAIOverviewProvider(s.cfg, model, s.costService), nil
+	}
+
 	// Linkup provider
 	if strings.Contains(modelLower, "linkup") {
 		if s.cfg.LinkupAPIKey == "" {

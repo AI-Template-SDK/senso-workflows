@@ -22,6 +22,7 @@ type Config struct {
 	DatabaseURL               string
 	APIToken                  string
 	BrightDataAPIKey          string
+	BrightDataSERPAPIKey      string
 	BrightDataDatasetID       string
 	PerplexityDatasetID       string
 	GeminiDatasetID           string
@@ -58,6 +59,7 @@ func Load() *Config {
 		DatabaseURL:               os.Getenv("DATABASE_URL"),
 		APIToken:                  os.Getenv("API_TOKEN"),
 		BrightDataAPIKey:          os.Getenv("BRIGHTDATA_API_KEY"),
+		BrightDataSERPAPIKey:      os.Getenv("BRIGHTDATA_SERP_API_KEY"),
 		BrightDataDatasetID:       os.Getenv("BRIGHTDATA_DATASET_ID"),
 		PerplexityDatasetID:       os.Getenv("PERPLEXITY_DATASET_ID"),
 		GeminiDatasetID:           os.Getenv("GEMINI_DATASET_ID"),
