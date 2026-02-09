@@ -1165,6 +1165,15 @@ func (s *orgEvaluationService) getProvider(model string) (AIProvider, error) {
 		return NewGeminiProvider(s.cfg, model, s.costService), nil
 	}
 
+	// AI Overview provider (via BrightData SERP API)
+	if strings.Contains(modelLower, "aioverview") {
+		if s.cfg.BrightDataSERPAPIKey == "" {
+			return nil, fmt.Errorf("BrightData SERP API key is empty in config")
+		}
+		fmt.Printf("[getProvider] 🎯 Selected AI Overview provider for model: %s\n", model)
+		return NewAIOverviewProvider(s.cfg, model, s.costService), nil
+	}
+
 	// Linkup provider
 	if strings.Contains(modelLower, "linkup") {
 		if s.cfg.LinkupAPIKey == "" {
@@ -1813,7 +1822,7 @@ func (s *orgEvaluationService) processQuestionRunWithOrgEvaluation(ctx context.C
 
 	// Skip extraction if this was a failed question run
 	// Failed runs have the placeholder text from the provider
-	if responseText == "Question run failed for this model and location" {
+	if responseText == "This prompt didn’t complete successfully due to a temporary AI model limitation. You were not charged for this prompt. We'll re-try in the next run." {
 		fmt.Printf("[processQuestionRunWithOrgEvaluation] ⚠️ Skipping extraction for failed question run %s\n", questionRun.QuestionRunID)
 		// Create a minimal evaluation record to mark it as processed
 		now := time.Now()

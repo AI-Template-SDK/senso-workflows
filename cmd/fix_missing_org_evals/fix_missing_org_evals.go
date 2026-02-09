@@ -217,7 +217,7 @@ func processJob(
 	}
 
 	responseText := *job.run.ResponseText
-	isFailedPlaceholder := responseText == "Question run failed for this model and location"
+	isFailedPlaceholder := responseText == "This prompt didn’t complete successfully due to a temporary AI model limitation. You were not charged for this prompt. We'll re-try in the next run."
 
 	if dryRun {
 		if !hasEval {
