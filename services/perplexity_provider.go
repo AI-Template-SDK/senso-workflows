@@ -385,17 +385,17 @@ func (p *perplexityProvider) SupportsBatching() bool {
 	return true
 }
 
-// GetMaxBatchSize returns 20 for Perplexity (can batch up to 20 questions)
+// GetMaxBatchSize returns 100 for Perplexity
 func (p *perplexityProvider) GetMaxBatchSize() int {
-	return 20
+	return 100
 }
 
 // RunQuestionBatch processes multiple questions in a single Perplexity API call
 func (p *perplexityProvider) RunQuestionBatch(ctx context.Context, queries []string, websearch bool, location *workflowModels.Location) ([]*AIResponse, error) {
 	fmt.Printf("[PerplexityProvider] 🚀 Making batched Perplexity call for %d queries\n", len(queries))
 
-	if len(queries) > 20 {
-		return nil, fmt.Errorf("batch size %d exceeds maximum of 20", len(queries))
+	if len(queries) > 100 {
+		return nil, fmt.Errorf("batch size %d exceeds maximum of 100", len(queries))
 	}
 
 	// Inject localized instructions into each prompt before submission

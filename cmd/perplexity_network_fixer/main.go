@@ -70,7 +70,8 @@ type perplexityChatResponse struct {
 			TotalCost float64 `json:"total_cost"`
 		} `json:"cost"`
 	} `json:"usage"`
-	Choices []struct {
+	Citations []string `json:"citations"`
+	Choices   []struct {
 		Message struct {
 			Role    string `json:"role"`
 			Content string `json:"content"`
@@ -175,6 +176,22 @@ func readIDs(path string) ([]string, error) {
 func utcTodayStart(now time.Time) time.Time {
 	t := now.UTC()
 	return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC)
+}
+
+// fixCitationsInResponse replaces inline citation markers [1], [2], etc. with
+// markdown links [1](url) using the citations array returned by the Perplexity API.
+func fixCitationsInResponse(text string, citations []string) string {
+	if len(citations) == 0 {
+		return text
+	}
+	result := text
+	for i, url := range citations {
+		position := i + 1
+		oldMarker := fmt.Sprintf("[%d]", position)
+		newMarker := fmt.Sprintf("[%d](%s)", position, url)
+		result = strings.ReplaceAll(result, oldMarker, newMarker)
+	}
+	return result
 }
 
 func isPerplexityModelName(name string) bool {
@@ -571,7 +588,7 @@ func main() {
 					continue
 				}
 
-				content := resp.Choices[0].Message.Content
+				content := fixCitationsInResponse(resp.Choices[0].Message.Content, resp.Citations)
 				inputTokens := resp.Usage.PromptTokens
 				outputTokens := resp.Usage.CompletionTokens
 				totalCost := resp.Usage.Cost.TotalCost

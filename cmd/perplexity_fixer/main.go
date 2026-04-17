@@ -174,6 +174,22 @@ func readOrgIDs(path string) ([]string, error) {
 	return out, nil
 }
 
+// fixCitationsInResponse replaces inline citation markers [1], [2], etc. with
+// markdown links [1](url) using the citations array returned by the Perplexity API.
+func fixCitationsInResponse(text string, citations []string) string {
+	if len(citations) == 0 {
+		return text
+	}
+	result := text
+	for i, url := range citations {
+		position := i + 1
+		oldMarker := fmt.Sprintf("[%d]", position)
+		newMarker := fmt.Sprintf("[%d](%s)", position, url)
+		result = strings.ReplaceAll(result, oldMarker, newMarker)
+	}
+	return result
+}
+
 func isPerplexityModelName(name string) bool {
 	return strings.Contains(strings.ToLower(name), "perplexity")
 }
@@ -496,7 +512,7 @@ func main() {
 					continue
 				}
 
-				content := resp.Choices[0].Message.Content
+				content := fixCitationsInResponse(resp.Choices[0].Message.Content, resp.Citations)
 				inputTokens := resp.Usage.PromptTokens
 				outputTokens := resp.Usage.CompletionTokens
 				totalCost := resp.Usage.Cost.TotalCost

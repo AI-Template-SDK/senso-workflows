@@ -8,6 +8,7 @@ import (
 	"math/rand"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/AI-Template-SDK/senso-api/pkg/models"
@@ -850,6 +851,10 @@ func (s *orgEvaluationService) executeQuestionsForPair(
 		maxBatchSize := provider.GetMaxBatchSize()
 		fmt.Printf("[executeQuestionsForPair] 🔄 Provider supports batching (max size: %d)\n", maxBatchSize)
 
+		// For Gemini, impose a per-chunk timeout — if a chunk takes more than 5 minutes,
+		// skip it and move on to the next chunk instead of blocking the pipeline.
+		isGemini := strings.Contains(strings.ToLower(pair.Model.Name), "gemini")
+
 		// Process questions in batches
 		for i := 0; i < len(questions); i += maxBatchSize {
 			end := i + maxBatchSize
@@ -860,9 +865,26 @@ func (s *orgEvaluationService) executeQuestionsForPair(
 
 			fmt.Printf("[executeQuestionsForPair] 📦 Processing batch %d-%d of %d questions\n", i+1, end, len(questions))
 
-			// Execute batch
-			runs, err := s.executeBatch(ctx, batch, pair, provider, workflowLocation, batchID, summary)
+			// Execute batch — with 5-minute per-chunk timeout for Gemini
+			batchCtx := ctx
+			var cancel context.CancelFunc
+			if isGemini {
+				batchCtx, cancel = context.WithTimeout(ctx, 5*time.Minute)
+			}
+			runs, err := s.executeBatch(batchCtx, batch, pair, provider, workflowLocation, batchID, summary)
+			if cancel != nil {
+				cancel()
+			}
 			if err != nil {
+				// For Gemini, if the chunk timed out, log and skip it instead of failing the whole pair
+				if isGemini && batchCtx.Err() == context.DeadlineExceeded {
+					fmt.Printf("[executeQuestionsForPair] ⏭️  Gemini chunk %d-%d exceeded 5 minute timeout for model %s, location %s — skipping\n",
+						i+1, end, pair.Model.Name, pair.Location.CountryCode)
+					summary.ProcessingErrors = append(summary.ProcessingErrors,
+						fmt.Sprintf("Gemini chunk %d-%d skipped after 5 minute timeout (model=%s, location=%s)",
+							i+1, end, pair.Model.Name, pair.Location.CountryCode))
+					continue
+				}
 				return nil, fmt.Errorf("failed to execute batch %d-%d for model %s, location %s: %w",
 					i+1, end, pair.Model.Name, pair.Location.CountryCode, err)
 			}
@@ -870,23 +892,48 @@ func (s *orgEvaluationService) executeQuestionsForPair(
 			questionRuns = append(questionRuns, runs...)
 		}
 	} else {
-		// Sequential processing for OpenAI/Anthropic
-		fmt.Printf("[executeQuestionsForPair] 🔄 Provider does not support batching, processing sequentially\n")
+		// Parallel processing for non-batching providers (e.g. AIOverview)
+		const maxParallel = 20
+		fmt.Printf("[executeQuestionsForPair] 🔄 Provider does not support batching, processing %d questions in parallel (max %d)\n", len(questions), maxParallel)
+
+		type singleResult struct {
+			idx int
+			run *models.QuestionRun
+			err error
+		}
+
+		results := make([]singleResult, len(questions))
+		sem := make(chan struct{}, maxParallel)
+		var wg sync.WaitGroup
 
 		for idx, questionWithTags := range questions {
-			question := questionWithTags.Question
-			fmt.Printf("[executeQuestionsForPair] 📝 Processing question %d/%d: %s\n",
-				idx+1, len(questions), question.QuestionText)
+			wg.Add(1)
+			sem <- struct{}{} // acquire slot
 
-			// Execute single question
-			run, err := s.executeSingleQuestion(ctx, question, pair, provider, workflowLocation, batchID, summary)
-			if err != nil {
+			go func(i int, qwt interfaces.GeoQuestionWithTags) {
+				defer wg.Done()
+				defer func() { <-sem }()
+
+				question := qwt.Question
+				fmt.Printf("[executeQuestionsForPair] 📝 Processing question %d/%d: %s\n",
+					i+1, len(questions), question.QuestionText)
+
+				run, err := s.executeSingleQuestion(ctx, question, pair, provider, workflowLocation, batchID, summary)
+				results[i] = singleResult{idx: i, run: run, err: err}
+			}(idx, questionWithTags)
+		}
+
+		wg.Wait()
+
+		for _, r := range results {
+			if r.err != nil {
 				summary.ProcessingErrors = append(summary.ProcessingErrors,
-					fmt.Sprintf("Failed to execute question %s: %v", question.GeoQuestionID, err))
+					fmt.Sprintf("Failed to execute question: %v", r.err))
 				continue
 			}
-
-			questionRuns = append(questionRuns, run)
+			if r.run != nil {
+				questionRuns = append(questionRuns, r.run)
+			}
 		}
 	}
 
@@ -1052,7 +1099,7 @@ func (s *orgEvaluationService) executeSingleQuestion(
 	return questionRun, nil
 }
 
-// processAllExtractions processes extractions for all question runs (PHASE 3)
+// processAllExtractions processes extractions for all question runs in parallel (PHASE 3)
 func (s *orgEvaluationService) processAllExtractions(
 	ctx context.Context,
 	questionRuns []*models.QuestionRun,
@@ -1063,44 +1110,54 @@ func (s *orgEvaluationService) processAllExtractions(
 	batchID uuid.UUID,
 	summary *OrgEvaluationSummary,
 ) error {
-	fmt.Printf("[processAllExtractions] Processing extractions for %d question runs\n", len(questionRuns))
+	const maxParallel = 5
+	fmt.Printf("[processAllExtractions] Processing extractions for %d question runs (max %d parallel)\n", len(questionRuns), maxParallel)
+
+	sem := make(chan struct{}, maxParallel)
+	var wg sync.WaitGroup
 
 	for idx, questionRun := range questionRuns {
-		fmt.Printf("[processAllExtractions] 🔍 Processing extraction %d/%d for question run %s\n",
-			idx+1, len(questionRuns), questionRun.QuestionRunID)
+		wg.Add(1)
+		sem <- struct{}{} // acquire slot
 
-		// Check if extractions already exist
-		// If org_eval exists, skip extraction entirely (even if citations/competitors are missing)
-		hasEval, hasCitations, hasCompetitors, err := s.CheckExtractionsExist(ctx, questionRun.QuestionRunID, orgID)
-		if err != nil {
-			fmt.Printf("[processAllExtractions] Warning: Failed to check for existing extractions: %v\n", err)
-			// Continue with extraction if check fails
-		} else if hasEval {
-			fmt.Printf("[processAllExtractions] ✓ Skipping extraction for question run %s - org_eval already exists (citations:%t competitors:%t)\n",
-				questionRun.QuestionRunID, hasCitations, hasCompetitors)
-			// Update batch as completed (since extraction was already done)
-			if updateErr := s.UpdateBatchProgress(ctx, batchID, 1, 0); updateErr != nil {
-				fmt.Printf("[processAllExtractions] Warning: Failed to update batch progress: %v\n", updateErr)
-			}
-			continue
-		}
+		go func(i int, qr *models.QuestionRun) {
+			defer wg.Done()
+			defer func() { <-sem }()
 
-		err = s.processQuestionRunWithOrgEvaluation(ctx, questionRun, orgID, orgName, websites, nameVariations, summary)
-		if err != nil {
-			summary.ProcessingErrors = append(summary.ProcessingErrors,
-				fmt.Sprintf("Failed to process org evaluation for question run %s: %v", questionRun.QuestionRunID, err))
-			// Update batch with failed question
-			if updateErr := s.UpdateBatchProgress(ctx, batchID, 0, 1); updateErr != nil {
-				fmt.Printf("[processAllExtractions] Warning: Failed to update batch progress: %v\n", updateErr)
+			fmt.Printf("[processAllExtractions] 🔍 Processing extraction %d/%d for question run %s\n",
+				i+1, len(questionRuns), qr.QuestionRunID)
+
+			// Check if extractions already exist
+			hasEval, hasCitations, hasCompetitors, err := s.CheckExtractionsExist(ctx, qr.QuestionRunID, orgID)
+			if err != nil {
+				fmt.Printf("[processAllExtractions] Warning: Failed to check for existing extractions: %v\n", err)
+			} else if hasEval {
+				fmt.Printf("[processAllExtractions] ✓ Skipping extraction for question run %s - org_eval already exists (citations:%t competitors:%t)\n",
+					qr.QuestionRunID, hasCitations, hasCompetitors)
+				if updateErr := s.UpdateBatchProgress(ctx, batchID, 1, 0); updateErr != nil {
+					fmt.Printf("[processAllExtractions] Warning: Failed to update batch progress: %v\n", updateErr)
+				}
+				return
 			}
-		} else {
-			// Update batch with completed question
-			if updateErr := s.UpdateBatchProgress(ctx, batchID, 1, 0); updateErr != nil {
-				fmt.Printf("[processAllExtractions] Warning: Failed to update batch progress: %v\n", updateErr)
+
+			err = s.processQuestionRunWithOrgEvaluation(ctx, qr, orgID, orgName, websites, nameVariations, summary)
+			if err != nil {
+				summary.Lock()
+				summary.ProcessingErrors = append(summary.ProcessingErrors,
+					fmt.Sprintf("Failed to process org evaluation for question run %s: %v", qr.QuestionRunID, err))
+				summary.Unlock()
+				if updateErr := s.UpdateBatchProgress(ctx, batchID, 0, 1); updateErr != nil {
+					fmt.Printf("[processAllExtractions] Warning: Failed to update batch progress: %v\n", updateErr)
+				}
+			} else {
+				if updateErr := s.UpdateBatchProgress(ctx, batchID, 1, 0); updateErr != nil {
+					fmt.Printf("[processAllExtractions] Warning: Failed to update batch progress: %v\n", updateErr)
+				}
 			}
-		}
+		}(idx, questionRun)
 	}
 
+	wg.Wait()
 	return nil
 }
 
@@ -1838,7 +1895,9 @@ func (s *orgEvaluationService) processQuestionRunWithOrgEvaluation(ctx context.C
 		if err := s.repos.OrgEvalRepo.Create(ctx, orgEval); err != nil {
 			return fmt.Errorf("failed to store minimal evaluation for failed run: %w", err)
 		}
+		summary.Lock()
 		summary.TotalEvaluations++
+		summary.Unlock()
 		return nil // Successfully handled (by skipping)
 	}
 
@@ -1866,8 +1925,10 @@ func (s *orgEvaluationService) processQuestionRunWithOrgEvaluation(ctx context.C
 			return fmt.Errorf("failed to store evaluation: %w", err)
 		}
 
+		summary.Lock()
 		summary.TotalEvaluations++
 		summary.TotalCost += evalResult.TotalCost
+		summary.Unlock()
 		fmt.Printf("[processQuestionRunWithOrgEvaluation] ✅ Org evaluation extracted and stored\n")
 	} else {
 		// Create a minimal evaluation record for non-mentioned cases (following Python logic)
@@ -1890,7 +1951,9 @@ func (s *orgEvaluationService) processQuestionRunWithOrgEvaluation(ctx context.C
 			return fmt.Errorf("failed to store minimal evaluation: %w", err)
 		}
 
+		summary.Lock()
 		summary.TotalEvaluations++
+		summary.Unlock()
 		fmt.Printf("[processQuestionRunWithOrgEvaluation] ✅ Minimal evaluation stored (not mentioned)\n")
 	}
 
@@ -1905,10 +1968,12 @@ func (s *orgEvaluationService) processQuestionRunWithOrgEvaluation(ctx context.C
 		if err := s.repos.OrgCompetitorRepo.Create(ctx, competitor); err != nil {
 			return fmt.Errorf("failed to store competitor %s: %w", competitor.Name, err)
 		}
-		summary.TotalCompetitors++
 	}
 
+	summary.Lock()
+	summary.TotalCompetitors += len(competitorResult.Competitors)
 	summary.TotalCost += competitorResult.TotalCost
+	summary.Unlock()
 	fmt.Printf("[processQuestionRunWithOrgEvaluation] ✅ Extracted %d competitors (cost: $%.6f)\n", len(competitorResult.Competitors), competitorResult.TotalCost)
 
 	// Step 3: ALWAYS extract citations (regardless of mention status)
@@ -1922,10 +1987,12 @@ func (s *orgEvaluationService) processQuestionRunWithOrgEvaluation(ctx context.C
 		if err := s.repos.OrgCitationRepo.Create(ctx, citation); err != nil {
 			return fmt.Errorf("failed to store citation %s: %w", citation.URL, err)
 		}
-		summary.TotalCitations++
 	}
 
+	summary.Lock()
+	summary.TotalCitations += len(citationResult.Citations)
 	summary.TotalCost += citationResult.TotalCost
+	summary.Unlock()
 	fmt.Printf("[processQuestionRunWithOrgEvaluation] ✅ Extracted %d citations (cost: $%.6f)\n", len(citationResult.Citations), citationResult.TotalCost)
 
 	// Step 4: Update citation flag in org evaluation if we found primary citations

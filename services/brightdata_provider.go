@@ -340,17 +340,17 @@ func (p *brightDataProvider) SupportsBatching() bool {
 	return true
 }
 
-// GetMaxBatchSize returns 20 for BrightData (can batch up to 20 questions)
+// GetMaxBatchSize returns 100 for BrightData (ChatGPT)
 func (p *brightDataProvider) GetMaxBatchSize() int {
-	return 1 // 20
+	return 100
 }
 
 // RunQuestionBatch processes multiple questions in a single BrightData API call
 func (p *brightDataProvider) RunQuestionBatch(ctx context.Context, queries []string, websearch bool, location *workflowModels.Location) ([]*AIResponse, error) {
 	fmt.Printf("[BrightDataProvider] 🚀 Making batched BrightData call for %d queries\n", len(queries))
 
-	if len(queries) > 20 {
-		return nil, fmt.Errorf("batch size %d exceeds maximum of 20", len(queries))
+	if len(queries) > 100 {
+		return nil, fmt.Errorf("batch size %d exceeds maximum of 100", len(queries))
 	}
 
 	// Inject localized instructions into each prompt before submission

@@ -3,6 +3,7 @@ package services
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"github.com/AI-Template-SDK/senso-api/pkg/database"
@@ -322,6 +323,7 @@ type CitationExtractionResult struct {
 }
 
 type OrgEvaluationSummary struct {
+	mu               sync.Mutex `json:"-"`
 	TotalProcessed   int
 	TotalEvaluations int
 	TotalCitations   int
@@ -329,6 +331,12 @@ type OrgEvaluationSummary struct {
 	TotalCost        float64
 	ProcessingErrors []string
 }
+
+// Lock acquires the summary mutex for thread-safe updates.
+func (s *OrgEvaluationSummary) Lock()   { s.mu.Lock() }
+
+// Unlock releases the summary mutex.
+func (s *OrgEvaluationSummary) Unlock() { s.mu.Unlock() }
 
 // NetworkProcessingSummary represents the summary of network question processing
 type NetworkProcessingSummary struct {

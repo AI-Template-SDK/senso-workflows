@@ -305,17 +305,17 @@ func (p *geminiProvider) SupportsBatching() bool {
 	return true
 }
 
-// GetMaxBatchSize returns 20 for Gemini (can batch up to 20 questions)
+// GetMaxBatchSize returns 100 for Gemini
 func (p *geminiProvider) GetMaxBatchSize() int {
-	return 20
+	return 100
 }
 
 // RunQuestionBatch processes multiple questions in a single Gemini API call
 func (p *geminiProvider) RunQuestionBatch(ctx context.Context, queries []string, websearch bool, location *workflowModels.Location) ([]*AIResponse, error) {
 	fmt.Printf("[GeminiProvider] 🚀 Making batched Gemini call for %d queries\n", len(queries))
 
-	if len(queries) > 20 {
-		return nil, fmt.Errorf("batch size %d exceeds maximum of 20", len(queries))
+	if len(queries) > 100 {
+		return nil, fmt.Errorf("batch size %d exceeds maximum of 100", len(queries))
 	}
 
 	// Inject localized instructions into each prompt before submission
