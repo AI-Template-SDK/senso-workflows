@@ -44,6 +44,41 @@ func NewUsageService(repos *RepositoryManager) UsageService {
 	}
 }
 
+func (s *usageService) CheckSpendLimit(ctx context.Context, orgID uuid.UUID, cost float64) (bool, error) {
+	// Get Org from OrgID
+	org, err := s.repos.OrgRepo.GetByID(ctx, orgID)
+	if err != nil {
+		return false, fmt.Errorf("failed to retrieve org %s: %w", orgID, err)
+	}
+
+	// Paid Tier orgs do not apply a spending limit
+	if !org.IsFreeTier {
+		return true, nil
+	}
+
+	// If no Spend Limit is set, all spending is allowed
+	if org.SpendLimit == nil {
+		return true, nil
+	}
+
+	// Get Total Usage
+	totalUsage, err := s.repos.CreditLedgerRepo.GetOverallUsageForOrg(ctx, orgID)
+	if err != nil {
+		return false, fmt.Errorf("failed to retrieve total usage for org %s: %w", orgID, err)
+	}
+
+	remainingAmount := *org.SpendLimit - totalUsage
+	if remainingAmount < 0 {
+		return false, nil
+	}
+
+	if cost > remainingAmount {
+		return false, nil
+	}
+
+	return true, nil
+}
+
 // ** ADDED: CheckBalance method implementation **
 // CheckBalance verifies if the org or partner has enough balance to cover a cost.
 func (s *usageService) CheckBalance(ctx context.Context, orgID uuid.UUID, totalQuestions int, questionType string) (float64, error) {
@@ -94,6 +129,14 @@ func (s *usageService) CheckBalance(ctx context.Context, orgID uuid.UUID, totalQ
 				return cost, fmt.Errorf("insufficient credits for partner %s (balance: 0.00, cost: %.2f): %w", org.PartnerID, cost, postgresql.ErrInsufficientCredits)
 			}
 			return cost, fmt.Errorf("failed to get credit balance for partner %s: %w", org.PartnerID, err)
+		}
+		// For Free Tier Orgs, Check Spend Limit
+		allowed, err := s.CheckSpendLimit(ctx, org.OrgID, cost)
+		if err != nil {
+			return cost, fmt.Errorf("failed to check spending limit: %w", err)
+		}
+		if !allowed {
+			return cost, fmt.Errorf("insufficient spend limit for org %s (cost: %.2f): %w", orgID, cost, postgresql.ErrInsufficientCredits)
 		}
 	} else {
 		return cost, fmt.Errorf("invalid question type %s", questionType)
