@@ -1222,6 +1222,12 @@ func (s *orgEvaluationService) getProvider(model string) (AIProvider, error) {
 		return NewGeminiProvider(s.cfg, model, s.costService), nil
 	}
 
+	// Grok provider (via BrightData)
+	if strings.Contains(modelLower, "grok") {
+		fmt.Printf("[getProvider] 🎯 Selected Grok provider for model: %s\n", model)
+		return NewGrokProvider(s.cfg, model, s.costService), nil
+	}
+
 	// AI Overview provider (via BrightData SERP API)
 	if strings.Contains(modelLower, "aioverview") {
 		if s.cfg.BrightDataSERPAPIKey == "" {

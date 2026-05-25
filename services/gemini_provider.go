@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/AI-Template-SDK/senso-workflows/internal/config"
@@ -71,10 +72,22 @@ type GeminiProgressResponse struct {
 	CollectionDuration *int   `json:"collection_duration,omitempty"`
 }
 
+type GeminiLink struct {
+	URL      string `json:"url"`
+	Text     string `json:"text"`
+	Position int    `json:"position"`
+}
+
 type GeminiResult struct {
 	URL                string           `json:"url"`
 	Prompt             string           `json:"prompt"`
 	AnswerTextMarkdown string           `json:"answer_text_markdown"`
+	AnswerHTML         string           `json:"answer_html"`
+	Citations          interface{}      `json:"citations"`
+	Sources            interface{}      `json:"sources"`
+	LinksAttached      []GeminiLink     `json:"links_attached"`
+	Recommendations    interface{}      `json:"recommendations"`
+	Country            string           `json:"country"`
 	Index              int              `json:"index"`
 	Error              string           `json:"error,omitempty"`
 	Input              *GeminiInputEcho `json:"input,omitempty"` // Echoed back on errors
@@ -117,13 +130,21 @@ func (p *geminiProvider) RunQuestion(ctx context.Context, query string, websearc
 		shouldProcessEvaluation = false
 		fmt.Printf("[GeminiProvider] ⚠️ Gemini returned empty answer_text_markdown\n")
 	} else {
-		responseText = result.AnswerTextMarkdown
+		responseText = p.fixCitationsInResponse(result.AnswerTextMarkdown, result.LinksAttached)
 		shouldProcessEvaluation = true
 		fmt.Printf("[GeminiProvider] ✅ Gemini returned valid response\n")
 	}
 
+	var citations []string
+	if shouldProcessEvaluation {
+		citations = p.extractCitations(result)
+	} else {
+		citations = []string{}
+	}
+
 	fmt.Printf("[GeminiProvider] ✅ Gemini call completed\n")
 	fmt.Printf("[GeminiProvider]   - Response length: %d characters\n", len(responseText))
+	fmt.Printf("[GeminiProvider]   - Citations: %d\n", len(citations))
 	fmt.Printf("[GeminiProvider]   - Should process evaluation: %t\n", shouldProcessEvaluation)
 	fmt.Printf("[GeminiProvider]   - Cost: $0.0015\n")
 
@@ -132,7 +153,7 @@ func (p *geminiProvider) RunQuestion(ctx context.Context, query string, websearc
 		InputTokens:             0,      // Not available from BrightData
 		OutputTokens:            0,      // Not available from BrightData
 		Cost:                    0.0015, // Fixed cost per API call
-		Citations:               []string{},
+		Citations:               citations,
 		ShouldProcessEvaluation: shouldProcessEvaluation,
 	}, nil
 }
@@ -448,8 +469,15 @@ func (p *geminiProvider) convertResultToResponse(result *GeminiResult, displayIn
 		shouldProcessEvaluation = false
 		fmt.Printf("[GeminiProvider] ⚠️ Question %d returned empty answer_text_markdown\n", displayIndex)
 	} else {
-		responseText = result.AnswerTextMarkdown
+		responseText = p.fixCitationsInResponse(result.AnswerTextMarkdown, result.LinksAttached)
 		shouldProcessEvaluation = true
+	}
+
+	var citations []string
+	if shouldProcessEvaluation {
+		citations = p.extractCitations(result)
+	} else {
+		citations = []string{}
 	}
 
 	return &AIResponse{
@@ -457,9 +485,95 @@ func (p *geminiProvider) convertResultToResponse(result *GeminiResult, displayIn
 		InputTokens:             0,
 		OutputTokens:            0,
 		Cost:                    0.0015, // Fixed cost per API call
-		Citations:               []string{},
+		Citations:               citations,
 		ShouldProcessEvaluation: shouldProcessEvaluation,
 	}
+}
+
+// extractCitations pulls a deduplicated list of URLs from the Gemini result,
+// combining the citations, sources, and links_attached fields BrightData returns.
+func (p *geminiProvider) extractCitations(result *GeminiResult) []string {
+	if result == nil {
+		return []string{}
+	}
+
+	seen := make(map[string]bool)
+	citations := make([]string, 0)
+
+	addURL := func(u string) {
+		u = strings.TrimSpace(u)
+		if u == "" || !strings.HasPrefix(u, "http") {
+			return
+		}
+		if seen[u] {
+			return
+		}
+		seen[u] = true
+		citations = append(citations, u)
+	}
+
+	for _, link := range result.LinksAttached {
+		addURL(link.URL)
+	}
+
+	collect := func(value interface{}) {
+		if value == nil {
+			return
+		}
+		switch v := value.(type) {
+		case string:
+			addURL(v)
+		case []interface{}:
+			for _, item := range v {
+				switch entry := item.(type) {
+				case string:
+					addURL(entry)
+				case map[string]interface{}:
+					if u, ok := entry["url"].(string); ok {
+						addURL(u)
+					}
+					if u, ok := entry["link"].(string); ok {
+						addURL(u)
+					}
+					if u, ok := entry["source"].(string); ok {
+						addURL(u)
+					}
+				}
+			}
+		case map[string]interface{}:
+			if u, ok := v["url"].(string); ok {
+				addURL(u)
+			}
+		}
+	}
+
+	collect(result.Citations)
+	collect(result.Sources)
+
+	return citations
+}
+
+// fixCitationsInResponse converts plain [position] markers to markdown links
+// using LinksAttached data, mirroring the ChatGPT scraper behavior.
+func (p *geminiProvider) fixCitationsInResponse(text string, linksAttached []GeminiLink) string {
+	if len(linksAttached) == 0 {
+		return text
+	}
+
+	result := text
+	for _, link := range linksAttached {
+		escapedOldMarker := fmt.Sprintf("\\[%d\\]", link.Position)
+		escapedNewMarker := fmt.Sprintf("[%d](%s)", link.Position, link.URL)
+		result = strings.ReplaceAll(result, escapedOldMarker, escapedNewMarker)
+
+		oldMarker := fmt.Sprintf("[%d]", link.Position)
+		newMarker := fmt.Sprintf("[%d](%s)", link.Position, link.URL)
+		if !strings.Contains(result, fmt.Sprintf("[%d](", link.Position)) {
+			result = strings.ReplaceAll(result, oldMarker, newMarker)
+		}
+	}
+
+	return result
 }
 
 // submitBatchJob submits multiple queries to Gemini in a single API call

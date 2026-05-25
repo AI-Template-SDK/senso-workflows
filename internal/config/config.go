@@ -26,6 +26,7 @@ type Config struct {
 	BrightDataDatasetID       string
 	PerplexityDatasetID       string
 	GeminiDatasetID           string
+	GrokDatasetID             string
 	LinkupAPIKey              string
 	EnableScheduledPipelines  bool
 	Database                  DatabaseConfig
@@ -63,6 +64,7 @@ func Load() *Config {
 		BrightDataDatasetID:       os.Getenv("BRIGHTDATA_DATASET_ID"),
 		PerplexityDatasetID:       os.Getenv("PERPLEXITY_DATASET_ID"),
 		GeminiDatasetID:           os.Getenv("GEMINI_DATASET_ID"),
+		GrokDatasetID:             getEnv("GROK_DATASET_ID", "gd_m8ve0u141icu75ae74"),
 		LinkupAPIKey:              os.Getenv("LINKUP_API_KEY"),
 		EnableScheduledPipelines:  getEnvBool("ENABLE_SCHEDULED_PIPELINES", true),
 	}
