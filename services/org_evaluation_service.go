@@ -1200,8 +1200,19 @@ func (s *orgEvaluationService) executeAICall(ctx context.Context, questionText, 
 	return response, nil
 }
 
-// getProvider returns the appropriate AI provider for the model (same logic as QuestionRunnerService)
+// getProvider returns the appropriate AI provider for the model (same logic as
+// QuestionRunnerService). When provider logging is enabled the provider is
+// wrapped so every call is recorded to the provider log file.
 func (s *orgEvaluationService) getProvider(model string) (AIProvider, error) {
+	provider, err := s.selectProvider(model)
+	if err != nil {
+		return nil, err
+	}
+	return wrapWithLogging(provider), nil
+}
+
+// selectProvider maps a model name to its concrete AI provider implementation.
+func (s *orgEvaluationService) selectProvider(model string) (AIProvider, error) {
 	modelLower := strings.ToLower(model)
 
 	// Debug the config

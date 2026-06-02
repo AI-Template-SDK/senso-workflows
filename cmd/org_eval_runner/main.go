@@ -41,6 +41,9 @@ var (
 	dryRun     = flag.Bool("dry-run", false, "Print org count and exit without processing")
 	singleOrg  = flag.String("single-org", "", "Process a single org ID (ignores --orgs-file)")
 	dbMaxConns = flag.Int("db-max-conns", 100, "Max open database connections")
+
+	providerLogs    = flag.Bool("provider-logs", false, "Write per-provider request/response/error diagnostics to a log file")
+	providerLogFile = flag.String("provider-log-file", "", "Path for provider logs (default: provider_logs_<timestamp>.log when -provider-logs is set)")
 )
 
 // OrgResult captures the outcome of processing a single org.
@@ -74,6 +77,18 @@ func (r *PipelineReport) Add(result OrgResult) {
 
 func main() {
 	flag.Parse()
+
+	if *providerLogs {
+		if err := services.InitProviderLogger(true, *providerLogFile); err != nil {
+			log.Fatalf("Failed to initialize provider logging: %v", err)
+		}
+		defer services.CloseProviderLogger()
+		logTarget := *providerLogFile
+		if logTarget == "" {
+			logTarget = "provider_logs_<timestamp>.log"
+		}
+		log.Printf("✅ Provider logging ENABLED (file: %s)", logTarget)
+	}
 
 	// Load .env
 	if err := godotenv.Load(); err != nil {

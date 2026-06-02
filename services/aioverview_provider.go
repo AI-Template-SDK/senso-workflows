@@ -107,9 +107,12 @@ func (p *aiOverviewProvider) RunQuestion(ctx context.Context, query string, webs
 	searchURL := p.buildSearchURL(query, location)
 	fmt.Printf("[AIOverviewProvider] Search URL: %s\n", searchURL)
 
+	LogProvider(p.GetProviderName(), "RunQuestion query=%q location=%s searchURL=%s", query, formatLocation(location), searchURL)
+
 	// Make the API request
 	result, err := p.makeRequest(ctx, searchURL)
 	if err != nil {
+		LogProvider(p.GetProviderName(), "makeRequest failed query=%q err=%v", query, err)
 		return nil, fmt.Errorf("failed to make AI Overview request: %w", err)
 	}
 
@@ -177,6 +180,7 @@ func (p *aiOverviewProvider) makeRequest(ctx context.Context, searchURL string) 
 		if err != nil {
 			lastErr = err
 			fmt.Printf("[AIOverviewProvider] Request failed (attempt %d/%d): %v\n", attempt, maxRetries, err)
+			LogProvider(p.GetProviderName(), "HTTP request failed (attempt %d/%d) url=%s err=%v", attempt, maxRetries, searchURL, err)
 			if attempt < maxRetries {
 				time.Sleep(2 * time.Second)
 				continue
@@ -190,6 +194,7 @@ func (p *aiOverviewProvider) makeRequest(ctx context.Context, searchURL string) 
 			bodyBytes, _ := io.ReadAll(resp.Body)
 			lastErr = fmt.Errorf("API returned status %d: %s", resp.StatusCode, string(bodyBytes))
 			fmt.Printf("[AIOverviewProvider] API error (attempt %d/%d): %v\n", attempt, maxRetries, lastErr)
+			LogProvider(p.GetProviderName(), "non-200 (attempt %d/%d) status=%d url=%s body=%s", attempt, maxRetries, resp.StatusCode, searchURL, string(bodyBytes))
 			if attempt < maxRetries {
 				time.Sleep(2 * time.Second)
 				continue
@@ -200,6 +205,7 @@ func (p *aiOverviewProvider) makeRequest(ctx context.Context, searchURL string) 
 		// Read and parse response
 		bodyBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
+			LogProvider(p.GetProviderName(), "failed reading response body url=%s err=%v", searchURL, err)
 			return nil, fmt.Errorf("failed to read response body: %w", err)
 		}
 
@@ -207,13 +213,19 @@ func (p *aiOverviewProvider) makeRequest(ctx context.Context, searchURL string) 
 
 		var result AIOverviewSERPResponse
 		if err := json.Unmarshal(bodyBytes, &result); err != nil {
+			// Log the raw body so unparseable / unexpected payloads can be inspected.
+			LogProvider(p.GetProviderName(), "JSON parse FAILED url=%s err=%v rawBody=%s", searchURL, err, string(bodyBytes))
 			return nil, fmt.Errorf("failed to parse response: %w", err)
 		}
+
+		LogProvider(p.GetProviderName(), "response parsed status=200 bodyLen=%d query=%q aiOverviewPresent=%v organicResults=%d",
+			len(bodyBytes), result.General.Query, result.AIOverview != nil, len(result.Organic))
 
 		return &result, nil
 	}
 
 	if lastErr != nil {
+		LogProvider(p.GetProviderName(), "request FAILED after %d attempts url=%s err=%v", maxRetries, searchURL, lastErr)
 		return nil, fmt.Errorf("request failed after %d attempts: %w", maxRetries, lastErr)
 	}
 
@@ -227,6 +239,13 @@ func (p *aiOverviewProvider) processResponse(result *AIOverviewSERPResponse) (*A
 	// Check if AI Overview is present
 	if result.AIOverview == nil || len(result.AIOverview.Texts) == 0 {
 		fmt.Printf("[AIOverviewProvider] No AI Overview returned for this query\n")
+		LogProvider(p.GetProviderName(), "NO AI OVERVIEW query=%q aiOverviewNil=%v textBlocks=%d organicResults=%d",
+			result.General.Query, result.AIOverview == nil, func() int {
+				if result.AIOverview == nil {
+					return 0
+				}
+				return len(result.AIOverview.Texts)
+			}(), len(result.Organic))
 		responseText = "No AI Overview was generated for this query. Google did not provide an AI-generated summary for this search."
 		shouldProcessEvaluation = false
 	} else {

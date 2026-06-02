@@ -141,6 +141,7 @@ type ExtractedData struct {
 
 // AIProvider interface for different AI models
 type AIProvider interface {
+	GetProviderName() string
 	RunQuestion(ctx context.Context, query string, websearch bool, location *workflowModels.Location) (*AIResponse, error)
 	RunQuestionWebSearch(ctx context.Context, query string) (*AIResponse, error)
 
