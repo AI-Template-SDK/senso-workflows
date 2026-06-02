@@ -856,7 +856,7 @@ func (s *orgEvaluationService) executeQuestionsForPair(
 		maxBatchSize := provider.GetMaxBatchSize()
 		fmt.Printf("[executeQuestionsForPair] 🔄 Provider supports batching (max size: %d)\n", maxBatchSize)
 
-		// For Gemini, impose a per-chunk timeout — if a chunk takes more than 5 minutes,
+		// For Gemini, impose a per-chunk timeout — if a chunk takes more than 10 minutes,
 		// skip it and move on to the next chunk instead of blocking the pipeline.
 		isGemini := strings.Contains(strings.ToLower(pair.Model.Name), "gemini")
 
@@ -870,11 +870,11 @@ func (s *orgEvaluationService) executeQuestionsForPair(
 
 			fmt.Printf("[executeQuestionsForPair] 📦 Processing batch %d-%d of %d questions\n", i+1, end, len(questions))
 
-			// Execute batch — with 5-minute per-chunk timeout for Gemini
+			// Execute batch — with 10-minute per-chunk timeout for Gemini
 			batchCtx := ctx
 			var cancel context.CancelFunc
 			if isGemini {
-				batchCtx, cancel = context.WithTimeout(ctx, 5*time.Minute)
+				batchCtx, cancel = context.WithTimeout(ctx, 10*time.Minute)
 			}
 			runs, err := s.executeBatch(batchCtx, batch, pair, provider, workflowLocation, batchID, summary)
 			if cancel != nil {
@@ -883,10 +883,10 @@ func (s *orgEvaluationService) executeQuestionsForPair(
 			if err != nil {
 				// For Gemini, if the chunk timed out, log and skip it instead of failing the whole pair
 				if isGemini && batchCtx.Err() == context.DeadlineExceeded {
-					fmt.Printf("[executeQuestionsForPair] ⏭️  Gemini chunk %d-%d exceeded 5 minute timeout for model %s, location %s — skipping\n",
+					fmt.Printf("[executeQuestionsForPair] ⏭️  Gemini chunk %d-%d exceeded 10 minute timeout for model %s, location %s — skipping\n",
 						i+1, end, pair.Model.Name, pair.Location.CountryCode)
 					summary.ProcessingErrors = append(summary.ProcessingErrors,
-						fmt.Sprintf("Gemini chunk %d-%d skipped after 5 minute timeout (model=%s, location=%s)",
+						fmt.Sprintf("Gemini chunk %d-%d skipped after 10 minute timeout (model=%s, location=%s)",
 							i+1, end, pair.Model.Name, pair.Location.CountryCode))
 					continue
 				}

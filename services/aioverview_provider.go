@@ -34,7 +34,10 @@ func NewAIOverviewProvider(cfg *config.Config, model string, costService CostSer
 		baseURL:     "https://api.brightdata.com/request",
 		costService: costService,
 		httpClient: &http.Client{
-			Timeout: 60 * time.Second, // Synchronous API with AI overview adds ~5-10s latency
+			// BrightData's synchronous SERP endpoint with AI Overview is slow and
+			// occasionally takes well over a minute. A tight timeout caused frequent
+			// "context deadline exceeded" failures, so give it generous headroom.
+			Timeout: 240 * time.Second,
 		},
 	}
 }
@@ -205,17 +208,41 @@ func (p *aiOverviewProvider) makeRequest(ctx context.Context, searchURL string) 
 		// Read and parse response
 		bodyBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
-			LogProvider(p.GetProviderName(), "failed reading response body url=%s err=%v", searchURL, err)
-			return nil, fmt.Errorf("failed to read response body: %w", err)
+			// A truncated read (e.g. connection reset mid-body) is transient — retry.
+			lastErr = fmt.Errorf("failed to read response body: %w", err)
+			LogProvider(p.GetProviderName(), "failed reading response body (attempt %d/%d) url=%s err=%v", attempt, maxRetries, searchURL, err)
+			if attempt < maxRetries {
+				time.Sleep(2 * time.Second)
+				continue
+			}
+			break
 		}
 
 		fmt.Printf("[AIOverviewProvider] Response body length: %d bytes\n", len(bodyBytes))
 
+		// BrightData sometimes returns 200 with an empty or truncated body when its
+		// upstream times out. That surfaces as "unexpected end of JSON input" — a
+		// transient condition, so treat empty/unparseable bodies as retryable.
+		if len(bytes.TrimSpace(bodyBytes)) == 0 {
+			lastErr = fmt.Errorf("empty response body (status 200)")
+			LogProvider(p.GetProviderName(), "empty response body (attempt %d/%d) url=%s", attempt, maxRetries, searchURL)
+			if attempt < maxRetries {
+				time.Sleep(2 * time.Second)
+				continue
+			}
+			break
+		}
+
 		var result AIOverviewSERPResponse
 		if err := json.Unmarshal(bodyBytes, &result); err != nil {
 			// Log the raw body so unparseable / unexpected payloads can be inspected.
-			LogProvider(p.GetProviderName(), "JSON parse FAILED url=%s err=%v rawBody=%s", searchURL, err, string(bodyBytes))
-			return nil, fmt.Errorf("failed to parse response: %w", err)
+			lastErr = fmt.Errorf("failed to parse response: %w", err)
+			LogProvider(p.GetProviderName(), "JSON parse FAILED (attempt %d/%d) url=%s err=%v rawBody=%s", attempt, maxRetries, searchURL, err, string(bodyBytes))
+			if attempt < maxRetries {
+				time.Sleep(2 * time.Second)
+				continue
+			}
+			break
 		}
 
 		LogProvider(p.GetProviderName(), "response parsed status=200 bodyLen=%d query=%q aiOverviewPresent=%v organicResults=%d",
