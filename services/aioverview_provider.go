@@ -160,14 +160,17 @@ func (p *aiOverviewProvider) buildSearchURL(query string, location *workflowMode
 }
 
 func (p *aiOverviewProvider) makeRequest(ctx context.Context, searchURL string) (*AIOverviewSERPResponse, error) {
-	// Build request payload. format=json + data_format=parsed makes BrightData
-	// return the parsed SERP JSON directly (the shape AIOverviewSERPResponse
-	// expects), including the ai_overview block when present.
+	// Build request payload. format=raw is a pure passthrough: because the URL
+	// carries brd_json=1, the response body IS the parsed SERP JSON (the shape
+	// AIOverviewSERPResponse expects), including the ai_overview block when
+	// present. NOTE: do NOT use format=json here — that wraps the response in a
+	// {status_code, headers, body} envelope, so our struct would parse the
+	// envelope, find no ai_overview, and silently return the "no overview"
+	// fallback for every query.
 	payload := AIOverviewRequest{
-		Zone:       p.zone,
-		URL:        searchURL,
-		Format:     "json",
-		DataFormat: "parsed",
+		Zone:   p.zone,
+		URL:    searchURL,
+		Format: "raw",
 	}
 
 	jsonData, err := json.Marshal(payload)
