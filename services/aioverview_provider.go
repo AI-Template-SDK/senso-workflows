@@ -193,6 +193,33 @@ func (p *aiOverviewProvider) makeRequest(ctx context.Context, searchURL string) 
 
 		defer resp.Body.Close()
 
+		// BrightData reports auth / config / proxy errors via x-brd-* response
+		// headers — often alongside HTTP 200 and an EMPTY body, which otherwise
+		// looks like a generic "empty response". Surface the real error here.
+		// Example: x-brd-err-code=client_10030 ("IP not whitelisted in this zone").
+		if brdErrCode := resp.Header.Get("x-brd-err-code"); brdErrCode != "" {
+			brdErr := resp.Header.Get("x-brd-error")
+			brdErrMsg := resp.Header.Get("x-brd-err-msg")
+			LogProvider(p.GetProviderName(), "BrightData error (attempt %d/%d) status=%d code=%s error=%q msg=%q url=%s",
+				attempt, maxRetries, resp.StatusCode, brdErrCode, brdErr, brdErrMsg, searchURL)
+			fmt.Printf("[AIOverviewProvider] BrightData error (attempt %d/%d): code=%s error=%q msg=%q\n",
+				attempt, maxRetries, brdErrCode, brdErr, brdErrMsg)
+
+			lastErr = fmt.Errorf("BrightData error %s: %s", brdErrCode, brdErrMsg)
+
+			// client_* codes are auth/config problems (e.g. IP not whitelisted,
+			// bad zone). Retrying is pointless and only adds load/latency — fail fast.
+			if strings.HasPrefix(brdErrCode, "client_") {
+				LogProvider(p.GetProviderName(), "non-retryable BrightData auth/config error code=%s — failing fast", brdErrCode)
+				return nil, lastErr
+			}
+			if attempt < maxRetries {
+				time.Sleep(2 * time.Second)
+				continue
+			}
+			break
+		}
+
 		if resp.StatusCode != http.StatusOK {
 			bodyBytes, _ := io.ReadAll(resp.Body)
 			lastErr = fmt.Errorf("API returned status %d: %s", resp.StatusCode, string(bodyBytes))
