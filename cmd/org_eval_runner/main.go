@@ -131,7 +131,7 @@ func main() {
 	// Initialize services
 	repoManager := services.NewRepositoryManager(dbClient)
 	orgService := services.NewOrgService(cfg, repoManager)
-	dataExtractionService := services.NewDataExtractionService(cfg)
+	dataExtractionService := services.NewDataExtractionService(cfg, repoManager.OrgTrackedSourceRepo)
 	orgEvalService := services.NewOrgEvaluationService(cfg, repoManager, dataExtractionService)
 	usageService := services.NewUsageService(repoManager)
 	log.Printf("Services initialized")

@@ -119,8 +119,12 @@ func (s *questionRunnerService) ProcessSingleQuestion(ctx context.Context, quest
 			fmt.Printf("[ProcessSingleQuestion] Warning: Failed to store claims: %v\n", err)
 		}
 
-		// 5. Extract citations for claims - now passing org websites
-		citations, err := s.dataExtractionService.ExtractCitations(ctx, claims, aiResponse.Response, orgWebsites)
+		// 5. Extract citations for claims - now passing org websites + org ID (for tracked-source classification)
+		citationOrgID := uuid.Nil
+		if question.OrgID != nil {
+			citationOrgID = *question.OrgID
+		}
+		citations, err := s.dataExtractionService.ExtractCitations(ctx, citationOrgID, claims, aiResponse.Response, orgWebsites)
 		if err != nil {
 			fmt.Printf("[ProcessSingleQuestion] Warning: Failed to extract citations: %v\n", err)
 		} else if len(citations) > 0 {

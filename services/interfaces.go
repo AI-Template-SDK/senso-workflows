@@ -33,9 +33,10 @@ type RepositoryManager struct {
 	NetworkOrgCompetitorRepo interfaces.NetworkOrgCompetitorRepository
 	NetworkOrgCitationRepo   interfaces.NetworkOrgCitationRepository
 	// New org evaluation repositories
-	OrgEvalRepo       interfaces.OrgEvalRepository
-	OrgCitationRepo   interfaces.OrgCitationRepository
-	OrgCompetitorRepo interfaces.OrgCompetitorRepository
+	OrgEvalRepo        interfaces.OrgEvalRepository
+	OrgCitationRepo    interfaces.OrgCitationRepository
+	OrgCompetitorRepo  interfaces.OrgCompetitorRepository
+	OrgTrackedSourceRepo interfaces.OrgTrackedSourceRepository
 	// Question run batch repository
 	QuestionRunBatchRepo interfaces.QuestionRunBatchRepository
 	// Credit ledger repository
@@ -74,9 +75,10 @@ func NewRepositoryManager(db *database.Client) *RepositoryManager {
 		NetworkOrgCompetitorRepo: postgresql.NewNetworkOrgCompetitorRepo(db),
 		NetworkOrgCitationRepo:   postgresql.NewNetworkOrgCitationRepo(db),
 		// New org evaluation repositories
-		OrgEvalRepo:       postgresql.NewOrgEvalRepo(db),
-		OrgCitationRepo:   postgresql.NewOrgCitationRepo(db),
-		OrgCompetitorRepo: postgresql.NewOrgCompetitorRepo(db),
+		OrgEvalRepo:          postgresql.NewOrgEvalRepo(db),
+		OrgCitationRepo:      postgresql.NewOrgCitationRepo(db),
+		OrgCompetitorRepo:    postgresql.NewOrgCompetitorRepo(db),
+		OrgTrackedSourceRepo: postgresql.NewOrgTrackedSourceRepo(db),
 		// Question run batch repository
 		QuestionRunBatchRepo: postgresql.NewQuestionRunBatchRepo(db),
 		// Credit ledger repository
@@ -253,7 +255,7 @@ type QuestionRunnerService interface {
 type DataExtractionService interface {
 	ExtractMentions(ctx context.Context, questionRunID uuid.UUID, response string, targetCompany string, orgWebsites []string) ([]*models.QuestionRunMention, error)
 	ExtractClaims(ctx context.Context, questionRunID uuid.UUID, response string, targetCompany string, orgWebsites []string) ([]*models.QuestionRunClaim, error)
-	ExtractCitations(ctx context.Context, claims []*models.QuestionRunClaim, response string, orgWebsites []string) ([]*models.QuestionRunCitation, error)
+	ExtractCitations(ctx context.Context, orgID uuid.UUID, claims []*models.QuestionRunClaim, response string, orgWebsites []string) ([]*models.QuestionRunCitation, error)
 	CalculateMetrics(ctx context.Context, mentions []*models.QuestionRunMention, response string, targetCompany string) (*CompetitiveMetrics, error)
 	ExtractNetworkOrgData(ctx context.Context, questionRunID uuid.UUID, orgID uuid.UUID, orgName string, orgWebsites []string, questionText string, responseText string, nameVariations []string) (*NetworkOrgExtractionResult, error)
 	GenerateNameVariations(ctx context.Context, orgName string, websites []string) ([]string, error)

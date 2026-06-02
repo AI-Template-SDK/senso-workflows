@@ -432,7 +432,7 @@ func main() {
 
 	repos := services.NewRepositoryManager(dbClient)
 	orgService := services.NewOrgService(cfg, repos)
-	dataExtractionService := services.NewDataExtractionService(cfg)
+	dataExtractionService := services.NewDataExtractionService(cfg, repos.OrgTrackedSourceRepo)
 	orgEvaluationService := services.NewOrgEvaluationService(cfg, repos, dataExtractionService)
 
 	rows, err := readMissingEvalCSV(*csvPath)

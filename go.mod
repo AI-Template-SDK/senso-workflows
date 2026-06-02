@@ -1,8 +1,13 @@
 module github.com/AI-Template-SDK/senso-workflows
 
-go 1.24.0
+go 1.25.0
 
-toolchain go1.24.4
+// LOCAL DEV ONLY: build against the local senso-api tree so the tracked-citation
+// classifier (pkg/citationclass), the Host/BaseDomain citation fields, and the
+// OrgTrackedSource repo are available before senso-api is released. Before deploying,
+// remove this replace and bump the senso-api require to a published version that
+// contains those changes. See: senso-contextos/docs/specs/citation-classification-prd.md
+replace github.com/AI-Template-SDK/senso-api => ../senso-api
 
 require (
 	github.com/AI-Template-SDK/senso-api v1.12.4

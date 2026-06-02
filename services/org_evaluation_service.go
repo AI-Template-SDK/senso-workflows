@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/AI-Template-SDK/senso-api/pkg/citationclass"
 	"github.com/AI-Template-SDK/senso-api/pkg/models"
 	"github.com/AI-Template-SDK/senso-api/pkg/repositories/interfaces"
 	"github.com/AI-Template-SDK/senso-workflows/internal/config"
@@ -534,6 +535,9 @@ func (s *orgEvaluationService) ExtractCitations(ctx context.Context, questionRun
 	seenURLs := make(map[string]bool)
 	now := time.Now()
 
+	// Load the org's tracked-source rules once for this run's classification.
+	trackedRules := loadTrackedRules(ctx, s.repos.OrgTrackedSourceRepo, orgID)
+
 	// Image extensions to skip
 	imageExtensions := []string{
 		".png", ".jpg", ".jpeg", ".gif", ".bmp", ".svg", ".webp",
@@ -595,18 +599,18 @@ func (s *orgEvaluationService) ExtractCitations(ctx context.Context, questionRun
 		// --- CHANGE 1: Create the citation object *before* the dead link check ---
 		// We need to create it now so we can set its DeadLink flag.
 
-		// Determine if this is a primary or secondary citation
-		citationType := "secondary" // Default to secondary
-		if isPrimaryDomain(finalURL, orgWebsites) {
-			citationType = "primary"
-		}
+		// Classify against the org's tracked-source rules (primary/tracked/secondary),
+		// most-specific-match-wins. Also stamps normalized host/base_domain.
+		res := citationclass.Classify(finalURL, trackedRules)
 
 		citation := &models.OrgCitation{
 			OrgCitationID: uuid.New(),
 			QuestionRunID: questionRunID,
 			OrgID:         orgID,
 			URL:           finalURL,
-			Type:          citationType,
+			Type:          res.Tier,
+			Host:          optStr(res.Host),
+			BaseDomain:    optStr(res.BaseDomain),
 			DeadLink:      false, // Default to false
 			CreatedAt:     now,
 			UpdatedAt:     now,
@@ -625,9 +629,10 @@ func (s *orgEvaluationService) ExtractCitations(ctx context.Context, questionRun
 		time.Sleep(time.Duration(10+rand.Intn(40)) * time.Millisecond)
 	}
 
-	fmt.Printf("[ExtractCitations] ✅ Extracted %d citations (incl. dead) (%d primary, %d secondary)",
+	fmt.Printf("[ExtractCitations] ✅ Extracted %d citations (incl. dead) (%d primary, %d tracked, %d secondary)",
 		len(citations),
 		countCitationsByType(citations, "primary"),
+		countCitationsByType(citations, "tracked"),
 		countCitationsByType(citations, "secondary"))
 
 	// Citations extraction itself doesn't use AI, so cost is 0
@@ -2083,6 +2088,41 @@ func isPrimaryDomain(citationURL string, orgDomains []string) bool {
 		}
 	}
 	return false
+}
+
+// loadTrackedRules loads an org's active tracked-source rules and projects them to the
+// shared classifier's Rule shape. org_tracked_sources is the canonical classification
+// store (backfilled from org_websites, edited via the settings UI). On error it returns
+// nil so classification degrades to "secondary" rather than failing the run.
+// See: senso-contextos/docs/specs/citation-classification-prd.md
+func loadTrackedRules(ctx context.Context, repo interfaces.OrgTrackedSourceRepository, orgID uuid.UUID) []citationclass.Rule {
+	if repo == nil {
+		return nil
+	}
+	sources, err := repo.GetActiveRulesByOrg(ctx, orgID)
+	if err != nil {
+		fmt.Printf("[loadTrackedRules] ⚠️ failed to load tracked sources for org %s: %v\n", orgID, err)
+		return nil
+	}
+	rules := make([]citationclass.Rule, 0, len(sources))
+	for _, src := range sources {
+		rules = append(rules, citationclass.Rule{
+			ID:        src.OrgTrackedSourceID.String(),
+			Pattern:   src.Pattern,
+			MatchType: src.MatchType,
+			Tier:      src.Tier,
+			Priority:  src.Priority,
+		})
+	}
+	return rules
+}
+
+// optStr returns nil for empty strings, for nullable host/base_domain columns.
+func optStr(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
 }
 
 // GetOrCreateTodaysBatch checks if a batch exists for today, returns it if so, creates new one if not
