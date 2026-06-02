@@ -480,10 +480,18 @@ func (s *usageService) chargeRunsInTx(ctx context.Context, tx *sqlx.Tx, orgID, p
 	}
 
 	// Single balance update at the end to reduce row-lock contention.
-	// We pass `nil` for orgID because this deduction is for the partner.
+	// Target the same payer recorded on the ledger entries: partner for network/free-tier,
+	// org for paid-tier org runs. `chargePartnerBalance` was decided once for the whole call,
+	// so every run accumulated into totalCharge has the same payer.
 	if chargedCount > 0 && totalCharge > 0 {
-		if _, err := s.repos.CreditBalanceRepo.DeductInTx(ctx, tx, nil, &partnerID, totalCharge); err != nil {
-			return 0, fmt.Errorf("failed to deduct from partner balance for batch (charged_runs=%d total_charge=%.6f): %w", chargedCount, totalCharge, err)
+		if chargePartnerBalance {
+			if _, err := s.repos.CreditBalanceRepo.DeductInTx(ctx, tx, nil, &partnerID, totalCharge); err != nil {
+				return 0, fmt.Errorf("failed to deduct from partner balance for batch (partner=%s charged_runs=%d total_charge=%.6f): %w", partnerID, chargedCount, totalCharge, err)
+			}
+		} else {
+			if _, err := s.repos.CreditBalanceRepo.DeductInTx(ctx, tx, &orgID, nil, totalCharge); err != nil {
+				return 0, fmt.Errorf("failed to deduct from org balance for batch (org=%s charged_runs=%d total_charge=%.6f): %w", orgID, chargedCount, totalCharge, err)
+			}
 		}
 	}
 
