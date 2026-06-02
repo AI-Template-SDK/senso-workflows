@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"log"
 	"net/http"
@@ -99,6 +100,28 @@ func ifString(condition bool, trueVal, falseVal string) string {
 }
 
 func main() {
+	// Provider logging flags. Defaults come from env vars (PROVIDER_LOGS /
+	// PROVIDER_LOG_FILE) so the same toggle works for containerized runs that
+	// can't easily pass CLI flags; the flags override the env vars when set.
+	providerLogsDefault := false
+	switch os.Getenv("PROVIDER_LOGS") {
+	case "1", "true", "TRUE", "True", "yes", "YES", "on", "ON":
+		providerLogsDefault = true
+	}
+	providerLogs := flag.Bool("provider-logs", providerLogsDefault,
+		"write per-provider request/response/error diagnostics to a log file")
+	providerLogFile := flag.String("provider-log-file", os.Getenv("PROVIDER_LOG_FILE"),
+		"path for provider logs (default: provider_logs_<timestamp>.log when -provider-logs is set)")
+	flag.Parse()
+
+	if *providerLogs {
+		if err := services.InitProviderLogger(true, *providerLogFile); err != nil {
+			log.Fatalf("Failed to initialize provider logging: %v", err)
+		}
+		defer services.CloseProviderLogger()
+		log.Printf("✅ Provider logging ENABLED (file: %s)", ifString(*providerLogFile != "", *providerLogFile, "provider_logs_<timestamp>.log"))
+	}
+
 	// Load environment variables from .env file first (standard practice)
 	// If not found, try dev.env for local development
 	if err := godotenv.Load(); err != nil {
@@ -148,7 +171,7 @@ func main() {
 	// Initialize services with repository manager and proper dependencies
 	log.Printf("Initializing AI services...")
 	orgService := services.NewOrgService(cfg, repoManager)
-	dataExtractionService := services.NewDataExtractionService(cfg)
+	dataExtractionService := services.NewDataExtractionService(cfg, repoManager.OrgTrackedSourceRepo)
 	orgEvaluationService := services.NewOrgEvaluationService(cfg, repoManager, dataExtractionService)
 	questionRunnerService := services.NewQuestionRunnerService(cfg, repoManager, dataExtractionService, orgService)
 	analyticsService := services.NewAnalyticsService(cfg, repoManager)

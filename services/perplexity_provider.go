@@ -126,11 +126,11 @@ func (p *perplexityProvider) RunQuestion(ctx context.Context, query string, webs
 	var shouldProcessEvaluation bool
 
 	if result.Error != "" {
-		responseText = "Question run failed for this model and location"
+		responseText = "This prompt didn’t complete successfully due to a temporary AI model limitation. You were not charged for this prompt. We'll re-try in the next run."
 		shouldProcessEvaluation = false
 		fmt.Printf("[PerplexityProvider] ⚠️ Perplexity returned error: %s\n", result.Error)
 	} else if result.AnswerTextMarkdown == "" {
-		responseText = "Question run failed for this model and location"
+		responseText = "This prompt didn’t complete successfully due to a temporary AI model limitation. You were not charged for this prompt. We'll re-try in the next run."
 		shouldProcessEvaluation = false
 		fmt.Printf("[PerplexityProvider] ⚠️ Perplexity returned empty answer_text_markdown\n")
 	} else {
@@ -370,35 +370,8 @@ func (p *perplexityProvider) extractCitations(html string) []string {
 }
 
 func (p *perplexityProvider) mapLocationToCountry(location *workflowModels.Location) string {
-	if location == nil {
-		return "US" // Default to US
-	}
-
-	// Map location.Country to BrightData country codes
-	countryMap := map[string]string{
-		"US": "US",
-		"CA": "CA",
-		"GB": "GB",
-		"UK": "GB", // Handle UK -> GB mapping
-		"AU": "AU",
-		"DE": "DE",
-		"FR": "FR",
-		"IT": "IT",
-		"ES": "ES",
-		"NL": "NL",
-		"JP": "JP",
-		"KR": "KR",
-		"IN": "IN",
-		"BR": "BR",
-		"MX": "MX",
-	}
-
-	if country, exists := countryMap[strings.ToUpper(location.Country)]; exists {
-		return country
-	}
-
-	// Fallback to US if country not found
-	return "US"
+	normalized := normalizeLocation(location)
+	return normalized.CountryCode
 }
 
 func (p *perplexityProvider) buildLocalizedPrompt(query string, location *workflowModels.Location) string {
@@ -412,17 +385,17 @@ func (p *perplexityProvider) SupportsBatching() bool {
 	return true
 }
 
-// GetMaxBatchSize returns 20 for Perplexity (can batch up to 20 questions)
+// GetMaxBatchSize returns 100 for Perplexity
 func (p *perplexityProvider) GetMaxBatchSize() int {
-	return 20
+	return 100
 }
 
 // RunQuestionBatch processes multiple questions in a single Perplexity API call
 func (p *perplexityProvider) RunQuestionBatch(ctx context.Context, queries []string, websearch bool, location *workflowModels.Location) ([]*AIResponse, error) {
 	fmt.Printf("[PerplexityProvider] 🚀 Making batched Perplexity call for %d queries\n", len(queries))
 
-	if len(queries) > 20 {
-		return nil, fmt.Errorf("batch size %d exceeds maximum of 20", len(queries))
+	if len(queries) > 100 {
+		return nil, fmt.Errorf("batch size %d exceeds maximum of 100", len(queries))
 	}
 
 	// Inject localized instructions into each prompt before submission
@@ -547,11 +520,11 @@ func (p *perplexityProvider) convertResultToResponse(result *PerplexityResult, d
 	var shouldProcessEvaluation bool
 
 	if result.Error != "" {
-		responseText = "Question run failed for this model and location"
+		responseText = "This prompt didn’t complete successfully due to a temporary AI model limitation. You were not charged for this prompt. We'll re-try in the next run."
 		shouldProcessEvaluation = false
 		fmt.Printf("[PerplexityProvider] ⚠️ Question %d returned error: %s\n", displayIndex, result.Error)
 	} else if result.AnswerTextMarkdown == "" {
-		responseText = "Question run failed for this model and location"
+		responseText = "This prompt didn’t complete successfully due to a temporary AI model limitation. You were not charged for this prompt. We'll re-try in the next run."
 		shouldProcessEvaluation = false
 		fmt.Printf("[PerplexityProvider] ⚠️ Question %d returned empty answer_text_markdown\n", displayIndex)
 	} else {

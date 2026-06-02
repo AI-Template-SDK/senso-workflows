@@ -119,8 +119,12 @@ func (s *questionRunnerService) ProcessSingleQuestion(ctx context.Context, quest
 			fmt.Printf("[ProcessSingleQuestion] Warning: Failed to store claims: %v\n", err)
 		}
 
-		// 5. Extract citations for claims - now passing org websites
-		citations, err := s.dataExtractionService.ExtractCitations(ctx, claims, aiResponse.Response, orgWebsites)
+		// 5. Extract citations for claims - now passing org websites + org ID (for tracked-source classification)
+		citationOrgID := uuid.Nil
+		if question.OrgID != nil {
+			citationOrgID = *question.OrgID
+		}
+		citations, err := s.dataExtractionService.ExtractCitations(ctx, citationOrgID, claims, aiResponse.Response, orgWebsites)
 		if err != nil {
 			fmt.Printf("[ProcessSingleQuestion] Warning: Failed to extract citations: %v\n", err)
 		} else if len(citations) > 0 {
@@ -186,8 +190,19 @@ func (s *questionRunnerService) executeAICall(ctx context.Context, questionText,
 	return response, nil
 }
 
-// getProvider returns the appropriate AI provider for the model
+// getProvider returns the appropriate AI provider for the model. When provider
+// logging is enabled the returned provider is wrapped so every call is recorded
+// to the provider log file (see provider_logger.go).
 func (s *questionRunnerService) getProvider(model string) (AIProvider, error) {
+	provider, err := s.selectProvider(model)
+	if err != nil {
+		return nil, err
+	}
+	return wrapWithLogging(provider), nil
+}
+
+// selectProvider maps a model name to its concrete AI provider implementation.
+func (s *questionRunnerService) selectProvider(model string) (AIProvider, error) {
 	modelLower := strings.ToLower(model)
 
 	// Debug the config
@@ -211,6 +226,21 @@ func (s *questionRunnerService) getProvider(model string) (AIProvider, error) {
 	if strings.Contains(modelLower, "gemini") {
 		fmt.Printf("[getProvider] 🎯 Selected Gemini provider for model: %s", model)
 		return NewGeminiProvider(s.cfg, model, s.costService), nil
+	}
+
+	// Grok provider (via BrightData)
+	if strings.Contains(modelLower, "grok") {
+		fmt.Printf("[getProvider] 🎯 Selected Grok provider for model: %s", model)
+		return NewGrokProvider(s.cfg, model, s.costService), nil
+	}
+
+	// AI Overview provider (via BrightData SERP API)
+	if strings.Contains(modelLower, "aioverview") {
+		if s.cfg.BrightDataSERPAPIKey == "" {
+			return nil, fmt.Errorf("BrightData SERP API key is empty in config")
+		}
+		fmt.Printf("[getProvider] 🎯 Selected AI Overview provider for model: %s", model)
+		return NewAIOverviewProvider(s.cfg, model, s.costService), nil
 	}
 
 	// Linkup provider
@@ -890,15 +920,13 @@ func (s *questionRunnerService) GetNetworkDetails(ctx context.Context, networkID
 		return nil, fmt.Errorf("failed to get network models: %w", err)
 	}
 
-	var geoModels []*models.GeoModel
-	if len(modelNames) == 0 {
-		// Fall back to default models if no network models configured
-		fmt.Printf("[GetNetworkDetails] No models found for network %s, falling back to default models\n", networkID)
-		modelNames = []string{"chatgpt", "perplexity", "gemini"}
-	}
-
-	// Convert model names to GeoModel objects
-	geoModels = make([]*models.GeoModel, len(modelNames))
+	// If no models are configured for the network, leave Models empty rather
+	// than falling back to a default ["chatgpt", "perplexity", "gemini"]. The
+	// fixers do the same — a network with zero network_models rows is an
+	// explicit opt-out, and silently injecting defaults caused the workflow
+	// to submit BrightData/Perplexity batches for networks the fixers had
+	// (correctly) skipped, leaving the polling loop to spin forever.
+	geoModels := make([]*models.GeoModel, len(modelNames))
 	for i, name := range modelNames {
 		geoModels[i] = &models.GeoModel{
 			GeoModelID: uuid.New(), // Generate a temporary ID (not stored in DB for network questions)
@@ -1104,22 +1132,32 @@ func (s *questionRunnerService) CompleteNetworkBatch(ctx context.Context, batchI
 	return nil
 }
 
-// CheckQuestionRunExists checks if a question run already exists for the given question/model/location/batch
-// For network questions, we check run_model and run_country (not the UUID fields)
+// CheckQuestionRunExists checks if a network question run already exists today
+// for the given (question, model, country). The batchID parameter is accepted
+// for signature stability but intentionally ignored: a run created today by
+// any source (this workflow, a previous retry of this workflow, or the
+// perplexity_network_fixer) counts as "done" so we don't redo expensive
+// BrightData/Perplexity work that has already been written to the DB under a
+// different batch_id.
 func (s *questionRunnerService) CheckQuestionRunExists(ctx context.Context, questionID uuid.UUID, modelName, countryCode string, batchID uuid.UUID) (*models.QuestionRun, error) {
-	// Get all runs for this question
+	_ = batchID
+
 	runs, err := s.repos.QuestionRunRepo.GetByQuestion(ctx, questionID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get question runs: %w", err)
 	}
 
-	// Look for a run that matches this batch AND model AND location
-	// For network questions: we check run_model, run_country (string fields), not model_id/location_id (which are NULL)
+	now := time.Now().UTC()
+	todayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+
 	for _, run := range runs {
-		if run.BatchID != nil && *run.BatchID == batchID &&
-			run.RunModel != nil && *run.RunModel == modelName &&
-			run.RunCountry != nil && *run.RunCountry == countryCode {
-			// Found exact match: same batch, same model, same country
+		if run.CreatedAt.Before(todayStart) {
+			continue
+		}
+		if run.RunModel == nil || run.RunCountry == nil {
+			continue
+		}
+		if *run.RunModel == modelName && *run.RunCountry == countryCode {
 			return run, nil
 		}
 	}

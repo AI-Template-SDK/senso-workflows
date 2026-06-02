@@ -70,7 +70,8 @@ type perplexityChatResponse struct {
 			TotalCost float64 `json:"total_cost"`
 		} `json:"cost"`
 	} `json:"usage"`
-	Choices []struct {
+	Citations []string `json:"citations"`
+	Choices   []struct {
 		Message struct {
 			Role    string `json:"role"`
 			Content string `json:"content"`
@@ -177,6 +178,22 @@ func utcTodayStart(now time.Time) time.Time {
 	return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC)
 }
 
+// fixCitationsInResponse replaces inline citation markers [1], [2], etc. with
+// markdown links [1](url) using the citations array returned by the Perplexity API.
+func fixCitationsInResponse(text string, citations []string) string {
+	if len(citations) == 0 {
+		return text
+	}
+	result := text
+	for i, url := range citations {
+		position := i + 1
+		oldMarker := fmt.Sprintf("[%d]", position)
+		newMarker := fmt.Sprintf("[%d](%s)", position, url)
+		result = strings.ReplaceAll(result, oldMarker, newMarker)
+	}
+	return result
+}
+
 func isPerplexityModelName(name string) bool {
 	return strings.Contains(strings.ToLower(name), "perplexity")
 }
@@ -204,43 +221,24 @@ func buildLocalizedPrompt(query string, country string, region *string) string {
 	return fmt.Sprintf("Ensure your response is localized to %s. Answer the following question: %s", locationDescription, query)
 }
 
+// findTodaysNetworkBatch returns the newest batch for the network created since
+// todayStart, mirroring the workflow's GetOrCreateNetworkBatch lookup so we
+// reuse the same batch_id even when no question_runs point at it yet (e.g. a
+// workflow created the batch but step 3 failed before inserting any rows).
 func findTodaysNetworkBatch(ctx context.Context, repos *services.RepositoryManager, networkUUID uuid.UUID, todayStart time.Time) (*models.QuestionRunBatch, error) {
-	questions, err := repos.GeoQuestionRepo.GetByNetwork(ctx, networkUUID)
+	batches, err := repos.QuestionRunBatchRepo.GetByNetwork(ctx, networkUUID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get network questions: %w", err)
+		return nil, fmt.Errorf("failed to get network batches: %w", err)
 	}
-	seen := make(map[uuid.UUID]struct{})
-	var newest *models.QuestionRunBatch
-
-	for _, q := range questions {
-		runs, err := repos.QuestionRunRepo.GetByQuestion(ctx, q.GeoQuestionID)
-		if err != nil {
+	for _, b := range batches {
+		if b == nil {
 			continue
 		}
-		for _, run := range runs {
-			if run.BatchID == nil {
-				continue
-			}
-			if _, ok := seen[*run.BatchID]; ok {
-				continue
-			}
-			seen[*run.BatchID] = struct{}{}
-			b, err := repos.QuestionRunBatchRepo.GetByID(ctx, *run.BatchID)
-			if err != nil || b == nil {
-				continue
-			}
-			if b.NetworkID == nil || *b.NetworkID != networkUUID {
-				continue
-			}
-			if b.CreatedAt.Before(todayStart) {
-				continue
-			}
-			if newest == nil || b.CreatedAt.After(newest.CreatedAt) {
-				newest = b
-			}
+		if b.CreatedAt.After(todayStart) {
+			return b, nil
 		}
 	}
-	return newest, nil
+	return nil, nil
 }
 
 func createNetworkBatch(ctx context.Context, repos *services.RepositoryManager, networkUUID uuid.UUID, totalQuestions int) (*models.QuestionRunBatch, error) {
@@ -571,7 +569,7 @@ func main() {
 					continue
 				}
 
-				content := resp.Choices[0].Message.Content
+				content := fixCitationsInResponse(resp.Choices[0].Message.Content, resp.Citations)
 				inputTokens := resp.Usage.PromptTokens
 				outputTokens := resp.Usage.CompletionTokens
 				totalCost := resp.Usage.Cost.TotalCost

@@ -8,8 +8,10 @@ import (
 	"math/rand"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/AI-Template-SDK/senso-api/pkg/citationclass"
 	"github.com/AI-Template-SDK/senso-api/pkg/models"
 	"github.com/AI-Template-SDK/senso-api/pkg/repositories/interfaces"
 	"github.com/AI-Template-SDK/senso-workflows/internal/config"
@@ -533,6 +535,9 @@ func (s *orgEvaluationService) ExtractCitations(ctx context.Context, questionRun
 	seenURLs := make(map[string]bool)
 	now := time.Now()
 
+	// Load the org's tracked-source rules once for this run's classification.
+	trackedRules := loadTrackedRules(ctx, s.repos.OrgTrackedSourceRepo, orgID)
+
 	// Image extensions to skip
 	imageExtensions := []string{
 		".png", ".jpg", ".jpeg", ".gif", ".bmp", ".svg", ".webp",
@@ -594,18 +599,18 @@ func (s *orgEvaluationService) ExtractCitations(ctx context.Context, questionRun
 		// --- CHANGE 1: Create the citation object *before* the dead link check ---
 		// We need to create it now so we can set its DeadLink flag.
 
-		// Determine if this is a primary or secondary citation
-		citationType := "secondary" // Default to secondary
-		if isPrimaryDomain(finalURL, orgWebsites) {
-			citationType = "primary"
-		}
+		// Classify against the org's tracked-source rules (primary/tracked/secondary),
+		// most-specific-match-wins. Also stamps normalized host/base_domain.
+		res := citationclass.Classify(finalURL, trackedRules)
 
 		citation := &models.OrgCitation{
 			OrgCitationID: uuid.New(),
 			QuestionRunID: questionRunID,
 			OrgID:         orgID,
 			URL:           finalURL,
-			Type:          citationType,
+			Type:          res.Tier,
+			Host:          optStr(res.Host),
+			BaseDomain:    optStr(res.BaseDomain),
 			DeadLink:      false, // Default to false
 			CreatedAt:     now,
 			UpdatedAt:     now,
@@ -624,9 +629,10 @@ func (s *orgEvaluationService) ExtractCitations(ctx context.Context, questionRun
 		time.Sleep(time.Duration(10+rand.Intn(40)) * time.Millisecond)
 	}
 
-	fmt.Printf("[ExtractCitations] ✅ Extracted %d citations (incl. dead) (%d primary, %d secondary)",
+	fmt.Printf("[ExtractCitations] ✅ Extracted %d citations (incl. dead) (%d primary, %d tracked, %d secondary)",
 		len(citations),
 		countCitationsByType(citations, "primary"),
+		countCitationsByType(citations, "tracked"),
 		countCitationsByType(citations, "secondary"))
 
 	// Citations extraction itself doesn't use AI, so cost is 0
@@ -850,6 +856,10 @@ func (s *orgEvaluationService) executeQuestionsForPair(
 		maxBatchSize := provider.GetMaxBatchSize()
 		fmt.Printf("[executeQuestionsForPair] 🔄 Provider supports batching (max size: %d)\n", maxBatchSize)
 
+		// For Gemini, impose a per-chunk timeout — if a chunk takes more than 10 minutes,
+		// skip it and move on to the next chunk instead of blocking the pipeline.
+		isGemini := strings.Contains(strings.ToLower(pair.Model.Name), "gemini")
+
 		// Process questions in batches
 		for i := 0; i < len(questions); i += maxBatchSize {
 			end := i + maxBatchSize
@@ -860,9 +870,26 @@ func (s *orgEvaluationService) executeQuestionsForPair(
 
 			fmt.Printf("[executeQuestionsForPair] 📦 Processing batch %d-%d of %d questions\n", i+1, end, len(questions))
 
-			// Execute batch
-			runs, err := s.executeBatch(ctx, batch, pair, provider, workflowLocation, batchID, summary)
+			// Execute batch — with 10-minute per-chunk timeout for Gemini
+			batchCtx := ctx
+			var cancel context.CancelFunc
+			if isGemini {
+				batchCtx, cancel = context.WithTimeout(ctx, 10*time.Minute)
+			}
+			runs, err := s.executeBatch(batchCtx, batch, pair, provider, workflowLocation, batchID, summary)
+			if cancel != nil {
+				cancel()
+			}
 			if err != nil {
+				// For Gemini, if the chunk timed out, log and skip it instead of failing the whole pair
+				if isGemini && batchCtx.Err() == context.DeadlineExceeded {
+					fmt.Printf("[executeQuestionsForPair] ⏭️  Gemini chunk %d-%d exceeded 10 minute timeout for model %s, location %s — skipping\n",
+						i+1, end, pair.Model.Name, pair.Location.CountryCode)
+					summary.ProcessingErrors = append(summary.ProcessingErrors,
+						fmt.Sprintf("Gemini chunk %d-%d skipped after 10 minute timeout (model=%s, location=%s)",
+							i+1, end, pair.Model.Name, pair.Location.CountryCode))
+					continue
+				}
 				return nil, fmt.Errorf("failed to execute batch %d-%d for model %s, location %s: %w",
 					i+1, end, pair.Model.Name, pair.Location.CountryCode, err)
 			}
@@ -870,23 +897,48 @@ func (s *orgEvaluationService) executeQuestionsForPair(
 			questionRuns = append(questionRuns, runs...)
 		}
 	} else {
-		// Sequential processing for OpenAI/Anthropic
-		fmt.Printf("[executeQuestionsForPair] 🔄 Provider does not support batching, processing sequentially\n")
+		// Parallel processing for non-batching providers (e.g. AIOverview)
+		const maxParallel = 20
+		fmt.Printf("[executeQuestionsForPair] 🔄 Provider does not support batching, processing %d questions in parallel (max %d)\n", len(questions), maxParallel)
+
+		type singleResult struct {
+			idx int
+			run *models.QuestionRun
+			err error
+		}
+
+		results := make([]singleResult, len(questions))
+		sem := make(chan struct{}, maxParallel)
+		var wg sync.WaitGroup
 
 		for idx, questionWithTags := range questions {
-			question := questionWithTags.Question
-			fmt.Printf("[executeQuestionsForPair] 📝 Processing question %d/%d: %s\n",
-				idx+1, len(questions), question.QuestionText)
+			wg.Add(1)
+			sem <- struct{}{} // acquire slot
 
-			// Execute single question
-			run, err := s.executeSingleQuestion(ctx, question, pair, provider, workflowLocation, batchID, summary)
-			if err != nil {
+			go func(i int, qwt interfaces.GeoQuestionWithTags) {
+				defer wg.Done()
+				defer func() { <-sem }()
+
+				question := qwt.Question
+				fmt.Printf("[executeQuestionsForPair] 📝 Processing question %d/%d: %s\n",
+					i+1, len(questions), question.QuestionText)
+
+				run, err := s.executeSingleQuestion(ctx, question, pair, provider, workflowLocation, batchID, summary)
+				results[i] = singleResult{idx: i, run: run, err: err}
+			}(idx, questionWithTags)
+		}
+
+		wg.Wait()
+
+		for _, r := range results {
+			if r.err != nil {
 				summary.ProcessingErrors = append(summary.ProcessingErrors,
-					fmt.Sprintf("Failed to execute question %s: %v", question.GeoQuestionID, err))
+					fmt.Sprintf("Failed to execute question: %v", r.err))
 				continue
 			}
-
-			questionRuns = append(questionRuns, run)
+			if r.run != nil {
+				questionRuns = append(questionRuns, r.run)
+			}
 		}
 	}
 
@@ -1052,7 +1104,7 @@ func (s *orgEvaluationService) executeSingleQuestion(
 	return questionRun, nil
 }
 
-// processAllExtractions processes extractions for all question runs (PHASE 3)
+// processAllExtractions processes extractions for all question runs in parallel (PHASE 3)
 func (s *orgEvaluationService) processAllExtractions(
 	ctx context.Context,
 	questionRuns []*models.QuestionRun,
@@ -1063,44 +1115,54 @@ func (s *orgEvaluationService) processAllExtractions(
 	batchID uuid.UUID,
 	summary *OrgEvaluationSummary,
 ) error {
-	fmt.Printf("[processAllExtractions] Processing extractions for %d question runs\n", len(questionRuns))
+	const maxParallel = 5
+	fmt.Printf("[processAllExtractions] Processing extractions for %d question runs (max %d parallel)\n", len(questionRuns), maxParallel)
+
+	sem := make(chan struct{}, maxParallel)
+	var wg sync.WaitGroup
 
 	for idx, questionRun := range questionRuns {
-		fmt.Printf("[processAllExtractions] 🔍 Processing extraction %d/%d for question run %s\n",
-			idx+1, len(questionRuns), questionRun.QuestionRunID)
+		wg.Add(1)
+		sem <- struct{}{} // acquire slot
 
-		// Check if extractions already exist
-		// If org_eval exists, skip extraction entirely (even if citations/competitors are missing)
-		hasEval, hasCitations, hasCompetitors, err := s.CheckExtractionsExist(ctx, questionRun.QuestionRunID, orgID)
-		if err != nil {
-			fmt.Printf("[processAllExtractions] Warning: Failed to check for existing extractions: %v\n", err)
-			// Continue with extraction if check fails
-		} else if hasEval {
-			fmt.Printf("[processAllExtractions] ✓ Skipping extraction for question run %s - org_eval already exists (citations:%t competitors:%t)\n",
-				questionRun.QuestionRunID, hasCitations, hasCompetitors)
-			// Update batch as completed (since extraction was already done)
-			if updateErr := s.UpdateBatchProgress(ctx, batchID, 1, 0); updateErr != nil {
-				fmt.Printf("[processAllExtractions] Warning: Failed to update batch progress: %v\n", updateErr)
-			}
-			continue
-		}
+		go func(i int, qr *models.QuestionRun) {
+			defer wg.Done()
+			defer func() { <-sem }()
 
-		err = s.processQuestionRunWithOrgEvaluation(ctx, questionRun, orgID, orgName, websites, nameVariations, summary)
-		if err != nil {
-			summary.ProcessingErrors = append(summary.ProcessingErrors,
-				fmt.Sprintf("Failed to process org evaluation for question run %s: %v", questionRun.QuestionRunID, err))
-			// Update batch with failed question
-			if updateErr := s.UpdateBatchProgress(ctx, batchID, 0, 1); updateErr != nil {
-				fmt.Printf("[processAllExtractions] Warning: Failed to update batch progress: %v\n", updateErr)
+			fmt.Printf("[processAllExtractions] 🔍 Processing extraction %d/%d for question run %s\n",
+				i+1, len(questionRuns), qr.QuestionRunID)
+
+			// Check if extractions already exist
+			hasEval, hasCitations, hasCompetitors, err := s.CheckExtractionsExist(ctx, qr.QuestionRunID, orgID)
+			if err != nil {
+				fmt.Printf("[processAllExtractions] Warning: Failed to check for existing extractions: %v\n", err)
+			} else if hasEval {
+				fmt.Printf("[processAllExtractions] ✓ Skipping extraction for question run %s - org_eval already exists (citations:%t competitors:%t)\n",
+					qr.QuestionRunID, hasCitations, hasCompetitors)
+				if updateErr := s.UpdateBatchProgress(ctx, batchID, 1, 0); updateErr != nil {
+					fmt.Printf("[processAllExtractions] Warning: Failed to update batch progress: %v\n", updateErr)
+				}
+				return
 			}
-		} else {
-			// Update batch with completed question
-			if updateErr := s.UpdateBatchProgress(ctx, batchID, 1, 0); updateErr != nil {
-				fmt.Printf("[processAllExtractions] Warning: Failed to update batch progress: %v\n", updateErr)
+
+			err = s.processQuestionRunWithOrgEvaluation(ctx, qr, orgID, orgName, websites, nameVariations, summary)
+			if err != nil {
+				summary.Lock()
+				summary.ProcessingErrors = append(summary.ProcessingErrors,
+					fmt.Sprintf("Failed to process org evaluation for question run %s: %v", qr.QuestionRunID, err))
+				summary.Unlock()
+				if updateErr := s.UpdateBatchProgress(ctx, batchID, 0, 1); updateErr != nil {
+					fmt.Printf("[processAllExtractions] Warning: Failed to update batch progress: %v\n", updateErr)
+				}
+			} else {
+				if updateErr := s.UpdateBatchProgress(ctx, batchID, 1, 0); updateErr != nil {
+					fmt.Printf("[processAllExtractions] Warning: Failed to update batch progress: %v\n", updateErr)
+				}
 			}
-		}
+		}(idx, questionRun)
 	}
 
+	wg.Wait()
 	return nil
 }
 
@@ -1138,8 +1200,19 @@ func (s *orgEvaluationService) executeAICall(ctx context.Context, questionText, 
 	return response, nil
 }
 
-// getProvider returns the appropriate AI provider for the model (same logic as QuestionRunnerService)
+// getProvider returns the appropriate AI provider for the model (same logic as
+// QuestionRunnerService). When provider logging is enabled the provider is
+// wrapped so every call is recorded to the provider log file.
 func (s *orgEvaluationService) getProvider(model string) (AIProvider, error) {
+	provider, err := s.selectProvider(model)
+	if err != nil {
+		return nil, err
+	}
+	return wrapWithLogging(provider), nil
+}
+
+// selectProvider maps a model name to its concrete AI provider implementation.
+func (s *orgEvaluationService) selectProvider(model string) (AIProvider, error) {
 	modelLower := strings.ToLower(model)
 
 	// Debug the config
@@ -1163,6 +1236,21 @@ func (s *orgEvaluationService) getProvider(model string) (AIProvider, error) {
 	if strings.Contains(modelLower, "gemini") {
 		fmt.Printf("[getProvider] 🎯 Selected Gemini provider for model: %s\n", model)
 		return NewGeminiProvider(s.cfg, model, s.costService), nil
+	}
+
+	// Grok provider (via BrightData)
+	if strings.Contains(modelLower, "grok") {
+		fmt.Printf("[getProvider] 🎯 Selected Grok provider for model: %s\n", model)
+		return NewGrokProvider(s.cfg, model, s.costService), nil
+	}
+
+	// AI Overview provider (via BrightData SERP API)
+	if strings.Contains(modelLower, "aioverview") {
+		if s.cfg.BrightDataSERPAPIKey == "" {
+			return nil, fmt.Errorf("BrightData SERP API key is empty in config")
+		}
+		fmt.Printf("[getProvider] 🎯 Selected AI Overview provider for model: %s\n", model)
+		return NewAIOverviewProvider(s.cfg, model, s.costService), nil
 	}
 
 	// Linkup provider
@@ -1813,7 +1901,7 @@ func (s *orgEvaluationService) processQuestionRunWithOrgEvaluation(ctx context.C
 
 	// Skip extraction if this was a failed question run
 	// Failed runs have the placeholder text from the provider
-	if responseText == "Question run failed for this model and location" {
+	if responseText == "This prompt didn’t complete successfully due to a temporary AI model limitation. You were not charged for this prompt. We'll re-try in the next run." {
 		fmt.Printf("[processQuestionRunWithOrgEvaluation] ⚠️ Skipping extraction for failed question run %s\n", questionRun.QuestionRunID)
 		// Create a minimal evaluation record to mark it as processed
 		now := time.Now()
@@ -1829,7 +1917,9 @@ func (s *orgEvaluationService) processQuestionRunWithOrgEvaluation(ctx context.C
 		if err := s.repos.OrgEvalRepo.Create(ctx, orgEval); err != nil {
 			return fmt.Errorf("failed to store minimal evaluation for failed run: %w", err)
 		}
+		summary.Lock()
 		summary.TotalEvaluations++
+		summary.Unlock()
 		return nil // Successfully handled (by skipping)
 	}
 
@@ -1857,8 +1947,10 @@ func (s *orgEvaluationService) processQuestionRunWithOrgEvaluation(ctx context.C
 			return fmt.Errorf("failed to store evaluation: %w", err)
 		}
 
+		summary.Lock()
 		summary.TotalEvaluations++
 		summary.TotalCost += evalResult.TotalCost
+		summary.Unlock()
 		fmt.Printf("[processQuestionRunWithOrgEvaluation] ✅ Org evaluation extracted and stored\n")
 	} else {
 		// Create a minimal evaluation record for non-mentioned cases (following Python logic)
@@ -1881,7 +1973,9 @@ func (s *orgEvaluationService) processQuestionRunWithOrgEvaluation(ctx context.C
 			return fmt.Errorf("failed to store minimal evaluation: %w", err)
 		}
 
+		summary.Lock()
 		summary.TotalEvaluations++
+		summary.Unlock()
 		fmt.Printf("[processQuestionRunWithOrgEvaluation] ✅ Minimal evaluation stored (not mentioned)\n")
 	}
 
@@ -1896,10 +1990,12 @@ func (s *orgEvaluationService) processQuestionRunWithOrgEvaluation(ctx context.C
 		if err := s.repos.OrgCompetitorRepo.Create(ctx, competitor); err != nil {
 			return fmt.Errorf("failed to store competitor %s: %w", competitor.Name, err)
 		}
-		summary.TotalCompetitors++
 	}
 
+	summary.Lock()
+	summary.TotalCompetitors += len(competitorResult.Competitors)
 	summary.TotalCost += competitorResult.TotalCost
+	summary.Unlock()
 	fmt.Printf("[processQuestionRunWithOrgEvaluation] ✅ Extracted %d competitors (cost: $%.6f)\n", len(competitorResult.Competitors), competitorResult.TotalCost)
 
 	// Step 3: ALWAYS extract citations (regardless of mention status)
@@ -1913,10 +2009,12 @@ func (s *orgEvaluationService) processQuestionRunWithOrgEvaluation(ctx context.C
 		if err := s.repos.OrgCitationRepo.Create(ctx, citation); err != nil {
 			return fmt.Errorf("failed to store citation %s: %w", citation.URL, err)
 		}
-		summary.TotalCitations++
 	}
 
+	summary.Lock()
+	summary.TotalCitations += len(citationResult.Citations)
 	summary.TotalCost += citationResult.TotalCost
+	summary.Unlock()
 	fmt.Printf("[processQuestionRunWithOrgEvaluation] ✅ Extracted %d citations (cost: $%.6f)\n", len(citationResult.Citations), citationResult.TotalCost)
 
 	// Step 4: Update citation flag in org evaluation if we found primary citations
@@ -2001,6 +2099,41 @@ func isPrimaryDomain(citationURL string, orgDomains []string) bool {
 		}
 	}
 	return false
+}
+
+// loadTrackedRules loads an org's active tracked-source rules and projects them to the
+// shared classifier's Rule shape. org_tracked_sources is the canonical classification
+// store (backfilled from org_websites, edited via the settings UI). On error it returns
+// nil so classification degrades to "secondary" rather than failing the run.
+// See: senso-contextos/docs/specs/citation-classification-prd.md
+func loadTrackedRules(ctx context.Context, repo interfaces.OrgTrackedSourceRepository, orgID uuid.UUID) []citationclass.Rule {
+	if repo == nil {
+		return nil
+	}
+	sources, err := repo.GetActiveRulesByOrg(ctx, orgID)
+	if err != nil {
+		fmt.Printf("[loadTrackedRules] ⚠️ failed to load tracked sources for org %s: %v\n", orgID, err)
+		return nil
+	}
+	rules := make([]citationclass.Rule, 0, len(sources))
+	for _, src := range sources {
+		rules = append(rules, citationclass.Rule{
+			ID:        src.OrgTrackedSourceID.String(),
+			Pattern:   src.Pattern,
+			MatchType: src.MatchType,
+			Tier:      src.Tier,
+			Priority:  src.Priority,
+		})
+	}
+	return rules
+}
+
+// optStr returns nil for empty strings, for nullable host/base_domain columns.
+func optStr(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
 }
 
 // GetOrCreateTodaysBatch checks if a batch exists for today, returns it if so, creates new one if not

@@ -8,7 +8,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/AI-Template-SDK/senso-api/pkg/citationclass"
 	"github.com/AI-Template-SDK/senso-api/pkg/models"
+	"github.com/AI-Template-SDK/senso-api/pkg/repositories/interfaces"
 	"github.com/AI-Template-SDK/senso-workflows/internal/config"
 	"github.com/google/uuid"
 	"github.com/openai/openai-go"
@@ -18,12 +20,13 @@ import (
 )
 
 type dataExtractionService struct {
-	cfg          *config.Config
-	openAIClient *openai.Client
-	costService  CostService
+	cfg               *config.Config
+	openAIClient      *openai.Client
+	costService       CostService
+	trackedSourceRepo interfaces.OrgTrackedSourceRepository
 }
 
-func NewDataExtractionService(cfg *config.Config) DataExtractionService {
+func NewDataExtractionService(cfg *config.Config, trackedSourceRepo interfaces.OrgTrackedSourceRepository) DataExtractionService {
 	fmt.Printf("[NewDataExtractionService] Creating service with OpenAI key (length: %d)\n", len(cfg.OpenAIAPIKey))
 
 	var client openai.Client
@@ -50,9 +53,10 @@ func NewDataExtractionService(cfg *config.Config) DataExtractionService {
 	}
 
 	return &dataExtractionService{
-		cfg:          cfg,
-		openAIClient: &client,
-		costService:  NewCostService(),
+		cfg:               cfg,
+		openAIClient:      &client,
+		costService:       NewCostService(),
+		trackedSourceRepo: trackedSourceRepo,
 	}
 }
 
@@ -285,14 +289,18 @@ func (s *dataExtractionService) ExtractClaims(ctx context.Context, questionRunID
 }
 
 // ExtractCitations parses AI response and finds citations for claims
-func (s *dataExtractionService) ExtractCitations(ctx context.Context, claims []*models.QuestionRunClaim, response string, orgWebsites []string) ([]*models.QuestionRunCitation, error) {
+func (s *dataExtractionService) ExtractCitations(ctx context.Context, orgID uuid.UUID, claims []*models.QuestionRunClaim, response string, orgWebsites []string) ([]*models.QuestionRunCitation, error) {
 	fmt.Printf("[ExtractCitations] Processing citations for %d claims\n", len(claims))
 
 	var allCitations []*models.QuestionRunCitation
 
+	// Load the org's tracked-source rules once; used to promote per-claim citations to
+	// the 'tracked' tier (treated as owned-equivalent by the read queries).
+	trackedRules := loadTrackedRules(ctx, s.trackedSourceRepo, orgID)
+
 	// Process each claim individually to find its citations
 	for _, claim := range claims {
-		citations, err := s.extractCitationsForClaim(ctx, claim, response, orgWebsites)
+		citations, err := s.extractCitationsForClaim(ctx, claim, response, orgWebsites, trackedRules)
 		if err != nil {
 			fmt.Printf("[ExtractCitations] Warning: Failed to extract citations for claim %s: %v\n", claim.QuestionRunClaimID, err)
 			continue
@@ -633,6 +641,9 @@ func (s *dataExtractionService) ExtractNetworkOrgCitations(ctx context.Context, 
 	seenURLs := make(map[string]bool)
 	now := time.Now()
 
+	// Load the org's tracked-source rules once for classification.
+	trackedRules := loadTrackedRules(ctx, s.trackedSourceRepo, orgID)
+
 	for _, match := range matches {
 		// Clean up the match
 		url := strings.TrimSpace(match)
@@ -651,18 +662,17 @@ func (s *dataExtractionService) ExtractNetworkOrgCitations(ctx context.Context, 
 		// Remove trailing slashes for comparison
 		normalizedURL = strings.TrimRight(normalizedURL, "/")
 
-		// Determine if this is a primary or secondary citation using proper domain parsing
-		citationType := "secondary" // Default to secondary
-		if isPrimaryDomain(normalizedURL, orgWebsites) {
-			citationType = "primary"
-		}
+		// Classify against the org's tracked-source rules (primary/tracked/secondary).
+		res := citationclass.Classify(normalizedURL, trackedRules)
 
 		citation := &models.NetworkOrgCitation{
 			NetworkOrgCitationID: uuid.New(),
 			QuestionRunID:        questionRunID,
 			OrgID:                orgID,
 			URL:                  url,
-			Type:                 citationType,
+			Type:                 res.Tier,
+			Host:                 optStr(res.Host),
+			BaseDomain:           optStr(res.BaseDomain),
 			CreatedAt:            now,
 			UpdatedAt:            now,
 		}
@@ -1017,7 +1027,7 @@ Before submitting each claim, verify:
 Remember: Your role is extraction, not editing. The downstream system requires exact text matches.`, targetCompany, targetCompany, websitesList, response, targetCompany)
 }
 
-func (s *dataExtractionService) extractCitationsForClaim(ctx context.Context, claim *models.QuestionRunClaim, response string, orgWebsites []string) ([]*models.QuestionRunCitation, error) {
+func (s *dataExtractionService) extractCitationsForClaim(ctx context.Context, claim *models.QuestionRunClaim, response string, orgWebsites []string, trackedRules []citationclass.Rule) ([]*models.QuestionRunCitation, error) {
 	fmt.Printf("[extractCitationsForClaim] 🔍 Processing citations for claim %s", claim.QuestionRunClaimID)
 
 	prompt := s.buildCitationsExtractionPrompt(claim.ClaimText, response, orgWebsites)
@@ -1093,11 +1103,20 @@ func (s *dataExtractionService) extractCitationsForClaim(ctx context.Context, cl
 	now := time.Now()
 
 	for i, citation := range extractedData.Citations {
+		// The LLM classifies primary/secondary against the org's domains. Promote to
+		// 'tracked' when the source matches a tracked-tier rule (authoritative,
+		// most-specific-match-wins). Tracked is owned-equivalent in the read queries.
+		citationType := citation.Type
+		if citation.SourceURL != nil && *citation.SourceURL != "" {
+			if citationclass.Classify(*citation.SourceURL, trackedRules).Tier == citationclass.TierTracked {
+				citationType = "tracked"
+			}
+		}
 		citations = append(citations, &models.QuestionRunCitation{
 			QuestionRunCitationID: uuid.New(),
 			QuestionRunClaimID:    claim.QuestionRunClaimID,
 			SourceURL:             citation.SourceURL,
-			CitationType:          citation.Type,
+			CitationType:          citationType,
 			CitationOrder:         i + 1,
 			InputTokens:           &inputTokens,
 			OutputTokens:          &outputTokens,

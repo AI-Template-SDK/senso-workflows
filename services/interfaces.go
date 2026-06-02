@@ -3,6 +3,7 @@ package services
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"github.com/AI-Template-SDK/senso-api/pkg/database"
@@ -32,9 +33,10 @@ type RepositoryManager struct {
 	NetworkOrgCompetitorRepo interfaces.NetworkOrgCompetitorRepository
 	NetworkOrgCitationRepo   interfaces.NetworkOrgCitationRepository
 	// New org evaluation repositories
-	OrgEvalRepo       interfaces.OrgEvalRepository
-	OrgCitationRepo   interfaces.OrgCitationRepository
-	OrgCompetitorRepo interfaces.OrgCompetitorRepository
+	OrgEvalRepo        interfaces.OrgEvalRepository
+	OrgCitationRepo    interfaces.OrgCitationRepository
+	OrgCompetitorRepo  interfaces.OrgCompetitorRepository
+	OrgTrackedSourceRepo interfaces.OrgTrackedSourceRepository
 	// Question run batch repository
 	QuestionRunBatchRepo interfaces.QuestionRunBatchRepository
 	// Credit ledger repository
@@ -73,9 +75,10 @@ func NewRepositoryManager(db *database.Client) *RepositoryManager {
 		NetworkOrgCompetitorRepo: postgresql.NewNetworkOrgCompetitorRepo(db),
 		NetworkOrgCitationRepo:   postgresql.NewNetworkOrgCitationRepo(db),
 		// New org evaluation repositories
-		OrgEvalRepo:       postgresql.NewOrgEvalRepo(db),
-		OrgCitationRepo:   postgresql.NewOrgCitationRepo(db),
-		OrgCompetitorRepo: postgresql.NewOrgCompetitorRepo(db),
+		OrgEvalRepo:          postgresql.NewOrgEvalRepo(db),
+		OrgCitationRepo:      postgresql.NewOrgCitationRepo(db),
+		OrgCompetitorRepo:    postgresql.NewOrgCompetitorRepo(db),
+		OrgTrackedSourceRepo: postgresql.NewOrgTrackedSourceRepo(db),
 		// Question run batch repository
 		QuestionRunBatchRepo: postgresql.NewQuestionRunBatchRepo(db),
 		// Credit ledger repository
@@ -138,6 +141,7 @@ type ExtractedData struct {
 
 // AIProvider interface for different AI models
 type AIProvider interface {
+	GetProviderName() string
 	RunQuestion(ctx context.Context, query string, websearch bool, location *workflowModels.Location) (*AIResponse, error)
 	RunQuestionWebSearch(ctx context.Context, query string) (*AIResponse, error)
 
@@ -252,7 +256,7 @@ type QuestionRunnerService interface {
 type DataExtractionService interface {
 	ExtractMentions(ctx context.Context, questionRunID uuid.UUID, response string, targetCompany string, orgWebsites []string) ([]*models.QuestionRunMention, error)
 	ExtractClaims(ctx context.Context, questionRunID uuid.UUID, response string, targetCompany string, orgWebsites []string) ([]*models.QuestionRunClaim, error)
-	ExtractCitations(ctx context.Context, claims []*models.QuestionRunClaim, response string, orgWebsites []string) ([]*models.QuestionRunCitation, error)
+	ExtractCitations(ctx context.Context, orgID uuid.UUID, claims []*models.QuestionRunClaim, response string, orgWebsites []string) ([]*models.QuestionRunCitation, error)
 	CalculateMetrics(ctx context.Context, mentions []*models.QuestionRunMention, response string, targetCompany string) (*CompetitiveMetrics, error)
 	ExtractNetworkOrgData(ctx context.Context, questionRunID uuid.UUID, orgID uuid.UUID, orgName string, orgWebsites []string, questionText string, responseText string, nameVariations []string) (*NetworkOrgExtractionResult, error)
 	GenerateNameVariations(ctx context.Context, orgName string, websites []string) ([]string, error)
@@ -322,6 +326,7 @@ type CitationExtractionResult struct {
 }
 
 type OrgEvaluationSummary struct {
+	mu               sync.Mutex `json:"-"`
 	TotalProcessed   int
 	TotalEvaluations int
 	TotalCitations   int
@@ -329,6 +334,12 @@ type OrgEvaluationSummary struct {
 	TotalCost        float64
 	ProcessingErrors []string
 }
+
+// Lock acquires the summary mutex for thread-safe updates.
+func (s *OrgEvaluationSummary) Lock()   { s.mu.Lock() }
+
+// Unlock releases the summary mutex.
+func (s *OrgEvaluationSummary) Unlock() { s.mu.Unlock() }
 
 // NetworkProcessingSummary represents the summary of network question processing
 type NetworkProcessingSummary struct {

@@ -72,10 +72,22 @@ type GeminiProgressResponse struct {
 	CollectionDuration *int   `json:"collection_duration,omitempty"`
 }
 
+type GeminiLink struct {
+	URL      string `json:"url"`
+	Text     string `json:"text"`
+	Position int    `json:"position"`
+}
+
 type GeminiResult struct {
 	URL                string           `json:"url"`
 	Prompt             string           `json:"prompt"`
 	AnswerTextMarkdown string           `json:"answer_text_markdown"`
+	AnswerHTML         string           `json:"answer_html"`
+	Citations          interface{}      `json:"citations"`
+	Sources            interface{}      `json:"sources"`
+	LinksAttached      []GeminiLink     `json:"links_attached"`
+	Recommendations    interface{}      `json:"recommendations"`
+	Country            string           `json:"country"`
 	Index              int              `json:"index"`
 	Error              string           `json:"error,omitempty"`
 	Input              *GeminiInputEcho `json:"input,omitempty"` // Echoed back on errors
@@ -110,21 +122,29 @@ func (p *geminiProvider) RunQuestion(ctx context.Context, query string, websearc
 	var shouldProcessEvaluation bool
 
 	if result.Error != "" {
-		responseText = "Question run failed for this model and location"
+		responseText = "This prompt didn’t complete successfully due to a temporary AI model limitation. You were not charged for this prompt. We'll re-try in the next run."
 		shouldProcessEvaluation = false
 		fmt.Printf("[GeminiProvider] ⚠️ Gemini returned error: %s\n", result.Error)
 	} else if result.AnswerTextMarkdown == "" {
-		responseText = "Question run failed for this model and location"
+		responseText = "This prompt didn’t complete successfully due to a temporary AI model limitation. You were not charged for this prompt. We'll re-try in the next run."
 		shouldProcessEvaluation = false
 		fmt.Printf("[GeminiProvider] ⚠️ Gemini returned empty answer_text_markdown\n")
 	} else {
-		responseText = result.AnswerTextMarkdown
+		responseText = p.fixCitationsInResponse(result.AnswerTextMarkdown, result.LinksAttached)
 		shouldProcessEvaluation = true
 		fmt.Printf("[GeminiProvider] ✅ Gemini returned valid response\n")
 	}
 
+	var citations []string
+	if shouldProcessEvaluation {
+		citations = p.extractCitations(result)
+	} else {
+		citations = []string{}
+	}
+
 	fmt.Printf("[GeminiProvider] ✅ Gemini call completed\n")
 	fmt.Printf("[GeminiProvider]   - Response length: %d characters\n", len(responseText))
+	fmt.Printf("[GeminiProvider]   - Citations: %d\n", len(citations))
 	fmt.Printf("[GeminiProvider]   - Should process evaluation: %t\n", shouldProcessEvaluation)
 	fmt.Printf("[GeminiProvider]   - Cost: $0.0015\n")
 
@@ -133,7 +153,7 @@ func (p *geminiProvider) RunQuestion(ctx context.Context, query string, websearc
 		InputTokens:             0,      // Not available from BrightData
 		OutputTokens:            0,      // Not available from BrightData
 		Cost:                    0.0015, // Fixed cost per API call
-		Citations:               []string{},
+		Citations:               citations,
 		ShouldProcessEvaluation: shouldProcessEvaluation,
 	}, nil
 }
@@ -297,35 +317,8 @@ func (p *geminiProvider) getResults(ctx context.Context, snapshotID string) (*Ge
 }
 
 func (p *geminiProvider) mapLocationToCountry(location *workflowModels.Location) string {
-	if location == nil {
-		return "US" // Default to US
-	}
-
-	// Map location.Country to BrightData country codes
-	countryMap := map[string]string{
-		"US": "US",
-		"CA": "CA",
-		"GB": "GB",
-		"UK": "GB", // Handle UK -> GB mapping
-		"AU": "AU",
-		"DE": "DE",
-		"FR": "FR",
-		"IT": "IT",
-		"ES": "ES",
-		"NL": "NL",
-		"JP": "JP",
-		"KR": "KR",
-		"IN": "IN",
-		"BR": "BR",
-		"MX": "MX",
-	}
-
-	if country, exists := countryMap[strings.ToUpper(location.Country)]; exists {
-		return country
-	}
-
-	// Fallback to US if country not found
-	return "US"
+	normalized := normalizeLocation(location)
+	return normalized.CountryCode
 }
 
 // SupportsBatching returns true for Gemini (supports batch processing via BrightData)
@@ -333,17 +326,17 @@ func (p *geminiProvider) SupportsBatching() bool {
 	return true
 }
 
-// GetMaxBatchSize returns 20 for Gemini (can batch up to 20 questions)
+// GetMaxBatchSize returns 100 for Gemini
 func (p *geminiProvider) GetMaxBatchSize() int {
-	return 20
+	return 100
 }
 
 // RunQuestionBatch processes multiple questions in a single Gemini API call
 func (p *geminiProvider) RunQuestionBatch(ctx context.Context, queries []string, websearch bool, location *workflowModels.Location) ([]*AIResponse, error) {
 	fmt.Printf("[GeminiProvider] 🚀 Making batched Gemini call for %d queries\n", len(queries))
 
-	if len(queries) > 20 {
-		return nil, fmt.Errorf("batch size %d exceeds maximum of 20", len(queries))
+	if len(queries) > 100 {
+		return nil, fmt.Errorf("batch size %d exceeds maximum of 100", len(queries))
 	}
 
 	// Inject localized instructions into each prompt before submission
@@ -468,16 +461,23 @@ func (p *geminiProvider) convertResultToResponse(result *GeminiResult, displayIn
 	var shouldProcessEvaluation bool
 
 	if result.Error != "" {
-		responseText = "Question run failed for this model and location"
+		responseText = "This prompt didn’t complete successfully due to a temporary AI model limitation. You were not charged for this prompt. We'll re-try in the next run."
 		shouldProcessEvaluation = false
 		fmt.Printf("[GeminiProvider] ⚠️ Question %d returned error: %s\n", displayIndex, result.Error)
 	} else if result.AnswerTextMarkdown == "" {
-		responseText = "Question run failed for this model and location"
+		responseText = "This prompt didn’t complete successfully due to a temporary AI model limitation. You were not charged for this prompt. We'll re-try in the next run."
 		shouldProcessEvaluation = false
 		fmt.Printf("[GeminiProvider] ⚠️ Question %d returned empty answer_text_markdown\n", displayIndex)
 	} else {
-		responseText = result.AnswerTextMarkdown
+		responseText = p.fixCitationsInResponse(result.AnswerTextMarkdown, result.LinksAttached)
 		shouldProcessEvaluation = true
+	}
+
+	var citations []string
+	if shouldProcessEvaluation {
+		citations = p.extractCitations(result)
+	} else {
+		citations = []string{}
 	}
 
 	return &AIResponse{
@@ -485,9 +485,95 @@ func (p *geminiProvider) convertResultToResponse(result *GeminiResult, displayIn
 		InputTokens:             0,
 		OutputTokens:            0,
 		Cost:                    0.0015, // Fixed cost per API call
-		Citations:               []string{},
+		Citations:               citations,
 		ShouldProcessEvaluation: shouldProcessEvaluation,
 	}
+}
+
+// extractCitations pulls a deduplicated list of URLs from the Gemini result,
+// combining the citations, sources, and links_attached fields BrightData returns.
+func (p *geminiProvider) extractCitations(result *GeminiResult) []string {
+	if result == nil {
+		return []string{}
+	}
+
+	seen := make(map[string]bool)
+	citations := make([]string, 0)
+
+	addURL := func(u string) {
+		u = strings.TrimSpace(u)
+		if u == "" || !strings.HasPrefix(u, "http") {
+			return
+		}
+		if seen[u] {
+			return
+		}
+		seen[u] = true
+		citations = append(citations, u)
+	}
+
+	for _, link := range result.LinksAttached {
+		addURL(link.URL)
+	}
+
+	collect := func(value interface{}) {
+		if value == nil {
+			return
+		}
+		switch v := value.(type) {
+		case string:
+			addURL(v)
+		case []interface{}:
+			for _, item := range v {
+				switch entry := item.(type) {
+				case string:
+					addURL(entry)
+				case map[string]interface{}:
+					if u, ok := entry["url"].(string); ok {
+						addURL(u)
+					}
+					if u, ok := entry["link"].(string); ok {
+						addURL(u)
+					}
+					if u, ok := entry["source"].(string); ok {
+						addURL(u)
+					}
+				}
+			}
+		case map[string]interface{}:
+			if u, ok := v["url"].(string); ok {
+				addURL(u)
+			}
+		}
+	}
+
+	collect(result.Citations)
+	collect(result.Sources)
+
+	return citations
+}
+
+// fixCitationsInResponse converts plain [position] markers to markdown links
+// using LinksAttached data, mirroring the ChatGPT scraper behavior.
+func (p *geminiProvider) fixCitationsInResponse(text string, linksAttached []GeminiLink) string {
+	if len(linksAttached) == 0 {
+		return text
+	}
+
+	result := text
+	for _, link := range linksAttached {
+		escapedOldMarker := fmt.Sprintf("\\[%d\\]", link.Position)
+		escapedNewMarker := fmt.Sprintf("[%d](%s)", link.Position, link.URL)
+		result = strings.ReplaceAll(result, escapedOldMarker, escapedNewMarker)
+
+		oldMarker := fmt.Sprintf("[%d]", link.Position)
+		newMarker := fmt.Sprintf("[%d](%s)", link.Position, link.URL)
+		if !strings.Contains(result, fmt.Sprintf("[%d](", link.Position)) {
+			result = strings.ReplaceAll(result, oldMarker, newMarker)
+		}
+	}
+
+	return result
 }
 
 // submitBatchJob submits multiple queries to Gemini in a single API call

@@ -25,6 +25,13 @@ var costPerToken = map[string]struct{ input, output float64 }{
 	"gpt-5.1-chat-latest":      {input: 1.25, output: 10.00},
 	"gpt-5-chat-latest":        {input: 1.25, output: 10.00},
 	"claude-sonnet-4-20250514": {input: 3.00, output: 15.00},
+	"claude-sonnet-4-5":        {input: 3.00, output: 15.00},
+	"claude-sonnet-4-5-20250929": {input: 3.00, output: 15.00},
+	"claude-sonnet-4-6":        {input: 3.00, output: 15.00},
+	"claude-opus-4-5":          {input: 15.00, output: 75.00},
+	"claude-opus-4-6":          {input: 15.00, output: 75.00},
+	"claude-opus-4-7":          {input: 15.00, output: 75.00},
+	"claude-haiku-4-5":         {input: 1.00, output: 5.00},
 	"sonar":                    {input: 1.00, output: 1.00}, // Perplexity Sonar pricing (estimated)
 }
 

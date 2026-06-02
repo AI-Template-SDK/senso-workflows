@@ -1,12 +1,10 @@
 module github.com/AI-Template-SDK/senso-workflows
 
-go 1.24.0
-
-toolchain go1.24.4
+go 1.25.0
 
 require (
-	github.com/AI-Template-SDK/senso-api v1.12.4
-	github.com/anthropics/anthropic-sdk-go v1.4.0
+	github.com/AI-Template-SDK/senso-api v1.15.0
+	github.com/anthropics/anthropic-sdk-go v1.45.0
 	github.com/google/uuid v1.6.0
 	github.com/inngest/inngestgo v0.14.1
 	github.com/invopop/jsonschema v0.13.0
@@ -22,7 +20,7 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.17.0 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/internal v1.10.0 // indirect
 	github.com/bahlo/generic-list-go v0.2.0 // indirect
-	github.com/buger/jsonparser v1.1.1 // indirect
+	github.com/buger/jsonparser v1.1.2 // indirect
 	github.com/coder/websocket v1.8.12 // indirect
 	github.com/fatih/structs v1.1.0 // indirect
 	github.com/gosimple/slug v1.12.0 // indirect
@@ -34,7 +32,8 @@ require (
 	github.com/mailru/easyjson v0.7.7 // indirect
 	github.com/oklog/ulid/v2 v2.1.1 // indirect
 	github.com/pbnjay/memory v0.0.0-20210728143218-7b4eea64cf58 // indirect
-	github.com/tidwall/gjson v1.14.4 // indirect
+	github.com/standard-webhooks/standard-webhooks/libraries v0.0.1 // indirect
+	github.com/tidwall/gjson v1.18.0 // indirect
 	github.com/tidwall/match v1.1.1 // indirect
 	github.com/tidwall/pretty v1.2.1 // indirect
 	github.com/tidwall/sjson v1.2.5 // indirect

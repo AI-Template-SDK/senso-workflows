@@ -136,11 +136,11 @@ func (p *brightDataProvider) RunQuestion(ctx context.Context, query string, webs
 	var shouldProcessEvaluation bool
 
 	if result.Error != "" {
-		responseText = "Question run failed for this model and location"
+		responseText = "This prompt didn’t complete successfully due to a temporary AI model limitation. You were not charged for this prompt. We'll re-try in the next run."
 		shouldProcessEvaluation = false
 		fmt.Printf("[BrightDataProvider] ⚠️ BrightData returned error: %s\n", result.Error)
 	} else if result.AnswerTextMarkdown == "" {
-		responseText = "Question run failed for this model and location"
+		responseText = "This prompt didn’t complete successfully due to a temporary AI model limitation. You were not charged for this prompt. We'll re-try in the next run."
 		shouldProcessEvaluation = false
 		fmt.Printf("[BrightDataProvider] ⚠️ BrightData returned empty answer_text_markdown\n")
 	} else {
@@ -331,35 +331,8 @@ func (p *brightDataProvider) getResults(ctx context.Context, snapshotID string) 
 }
 
 func (p *brightDataProvider) mapLocationToCountry(location *workflowModels.Location) string {
-	if location == nil {
-		return "US" // Default to US
-	}
-
-	// Map location.Country to BrightData country codes
-	countryMap := map[string]string{
-		"US": "US",
-		"CA": "CA",
-		"GB": "GB",
-		"UK": "GB", // Handle UK -> GB mapping
-		"AU": "AU",
-		"DE": "DE",
-		"FR": "FR",
-		"IT": "IT",
-		"ES": "ES",
-		"NL": "NL",
-		"JP": "JP",
-		"KR": "KR",
-		"IN": "IN",
-		"BR": "BR",
-		"MX": "MX",
-	}
-
-	if country, exists := countryMap[strings.ToUpper(location.Country)]; exists {
-		return country
-	}
-
-	// Fallback to US if country not found
-	return "US"
+	normalized := normalizeLocation(location)
+	return normalized.CountryCode
 }
 
 // SupportsBatching returns true for BrightData (supports batch processing)
@@ -367,17 +340,17 @@ func (p *brightDataProvider) SupportsBatching() bool {
 	return true
 }
 
-// GetMaxBatchSize returns 20 for BrightData (can batch up to 20 questions)
+// GetMaxBatchSize returns 100 for BrightData (ChatGPT)
 func (p *brightDataProvider) GetMaxBatchSize() int {
-	return 1 // 20
+	return 100
 }
 
 // RunQuestionBatch processes multiple questions in a single BrightData API call
 func (p *brightDataProvider) RunQuestionBatch(ctx context.Context, queries []string, websearch bool, location *workflowModels.Location) ([]*AIResponse, error) {
 	fmt.Printf("[BrightDataProvider] 🚀 Making batched BrightData call for %d queries\n", len(queries))
 
-	if len(queries) > 20 {
-		return nil, fmt.Errorf("batch size %d exceeds maximum of 20", len(queries))
+	if len(queries) > 100 {
+		return nil, fmt.Errorf("batch size %d exceeds maximum of 100", len(queries))
 	}
 
 	// Inject localized instructions into each prompt before submission
@@ -545,11 +518,11 @@ func (p *brightDataProvider) convertResultToResponse(result *BrightDataResult, d
 	var shouldProcessEvaluation bool
 
 	if result.Error != "" {
-		responseText = "Question run failed for this model and location"
+		responseText = "This prompt didn’t complete successfully due to a temporary AI model limitation. You were not charged for this prompt. We'll re-try in the next run."
 		shouldProcessEvaluation = false
 		fmt.Printf("[BrightDataProvider] ⚠️ Question %d returned error: %s\n", displayIndex, result.Error)
 	} else if result.AnswerTextMarkdown == "" {
-		responseText = "Question run failed for this model and location"
+		responseText = "This prompt didn’t complete successfully due to a temporary AI model limitation. You were not charged for this prompt. We'll re-try in the next run."
 		shouldProcessEvaluation = false
 		fmt.Printf("[BrightDataProvider] ⚠️ Question %d returned empty answer_text_markdown\n", displayIndex)
 	} else {
@@ -811,29 +784,6 @@ func (p *brightDataProvider) buildLocalizedPrompt(query string, location *workfl
 	locationDescription := formatLocationForPrompt(location)
 	return fmt.Sprintf("Ensure your response is localized to %s. Answer the following question: %s",
 		locationDescription, query)
-}
-
-func formatLocationForPrompt(location *workflowModels.Location) string {
-	if location == nil {
-		return "the relevant region and country"
-	}
-
-	var parts []string
-	if location.City != nil && *location.City != "" {
-		parts = append(parts, *location.City)
-	}
-	if location.Region != nil && *location.Region != "" {
-		parts = append(parts, *location.Region)
-	}
-	if location.Country != "" {
-		parts = append(parts, location.Country)
-	}
-
-	if len(parts) == 0 {
-		return "the relevant region and country"
-	}
-
-	return strings.Join(parts, ", ")
 }
 
 // fixCitationsInResponse fixes citation markers in the response text by converting
