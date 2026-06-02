@@ -119,8 +119,12 @@ func (s *questionRunnerService) ProcessSingleQuestion(ctx context.Context, quest
 			fmt.Printf("[ProcessSingleQuestion] Warning: Failed to store claims: %v\n", err)
 		}
 
-		// 5. Extract citations for claims - now passing org websites
-		citations, err := s.dataExtractionService.ExtractCitations(ctx, claims, aiResponse.Response, orgWebsites)
+		// 5. Extract citations for claims - now passing org websites + org ID (for tracked-source classification)
+		citationOrgID := uuid.Nil
+		if question.OrgID != nil {
+			citationOrgID = *question.OrgID
+		}
+		citations, err := s.dataExtractionService.ExtractCitations(ctx, citationOrgID, claims, aiResponse.Response, orgWebsites)
 		if err != nil {
 			fmt.Printf("[ProcessSingleQuestion] Warning: Failed to extract citations: %v\n", err)
 		} else if len(citations) > 0 {
@@ -211,6 +215,12 @@ func (s *questionRunnerService) getProvider(model string) (AIProvider, error) {
 	if strings.Contains(modelLower, "gemini") {
 		fmt.Printf("[getProvider] 🎯 Selected Gemini provider for model: %s", model)
 		return NewGeminiProvider(s.cfg, model, s.costService), nil
+	}
+
+	// Grok provider (via BrightData)
+	if strings.Contains(modelLower, "grok") {
+		fmt.Printf("[getProvider] 🎯 Selected Grok provider for model: %s", model)
+		return NewGrokProvider(s.cfg, model, s.costService), nil
 	}
 
 	// AI Overview provider (via BrightData SERP API)

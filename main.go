@@ -148,7 +148,7 @@ func main() {
 	// Initialize services with repository manager and proper dependencies
 	log.Printf("Initializing AI services...")
 	orgService := services.NewOrgService(cfg, repoManager)
-	dataExtractionService := services.NewDataExtractionService(cfg)
+	dataExtractionService := services.NewDataExtractionService(cfg, repoManager.OrgTrackedSourceRepo)
 	orgEvaluationService := services.NewOrgEvaluationService(cfg, repoManager, dataExtractionService)
 	questionRunnerService := services.NewQuestionRunnerService(cfg, repoManager, dataExtractionService, orgService)
 	analyticsService := services.NewAnalyticsService(cfg, repoManager)
