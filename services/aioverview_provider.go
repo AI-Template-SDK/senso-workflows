@@ -48,9 +48,10 @@ func (p *aiOverviewProvider) GetProviderName() string {
 
 // Brightdata SERP API request structure
 type AIOverviewRequest struct {
-	Zone   string `json:"zone"`
-	URL    string `json:"url"`
-	Format string `json:"format"`
+	Zone       string `json:"zone"`
+	URL        string `json:"url"`
+	Format     string `json:"format"`
+	DataFormat string `json:"data_format,omitempty"`
 }
 
 // Brightdata SERP API response structures
@@ -139,11 +140,18 @@ func (p *aiOverviewProvider) buildSearchURL(query string, location *workflowMode
 	// URL encode the query
 	encodedQuery := url.QueryEscape(query)
 
-	// Build Google search URL with AI Overview parameters
-	// brd_json=1: Get parsed JSON response
-	// brd_ai_overview=2: Increase likelihood of AI Overview
+	// Build Google search URL for a normal parsed SERP.
+	// brd_json=1: ask BrightData to return parsed JSON (includes the ai_overview
+	//             block whenever Google natively shows one for the query).
+	// hl=en:      interface language.
+	//
+	// NOTE: we deliberately do NOT send brd_ai_overview. That parameter triggers
+	// BrightData's dedicated "force/wait for AI Overview" scraper, which (as of
+	// 2026-06) is broken — it waits for the "#main" selector and times out with
+	// expect_element / 502, returning an empty 200. A plain parsed SERP already
+	// carries the AI Overview in the ai_overview field, so we just read that.
 	searchURL := fmt.Sprintf(
-		"https://www.google.com/search?q=%s&gl=%s&brd_json=1&brd_ai_overview=2",
+		"https://www.google.com/search?q=%s&gl=%s&hl=en&brd_json=1",
 		encodedQuery,
 		countryCode,
 	)
@@ -152,11 +160,14 @@ func (p *aiOverviewProvider) buildSearchURL(query string, location *workflowMode
 }
 
 func (p *aiOverviewProvider) makeRequest(ctx context.Context, searchURL string) (*AIOverviewSERPResponse, error) {
-	// Build request payload
+	// Build request payload. format=json + data_format=parsed makes BrightData
+	// return the parsed SERP JSON directly (the shape AIOverviewSERPResponse
+	// expects), including the ai_overview block when present.
 	payload := AIOverviewRequest{
-		Zone:   p.zone,
-		URL:    searchURL,
-		Format: "raw", // Returns the parsed JSON directly when brd_json=1 is in URL
+		Zone:       p.zone,
+		URL:        searchURL,
+		Format:     "json",
+		DataFormat: "parsed",
 	}
 
 	jsonData, err := json.Marshal(payload)
@@ -193,31 +204,31 @@ func (p *aiOverviewProvider) makeRequest(ctx context.Context, searchURL string) 
 
 		defer resp.Body.Close()
 
-		// BrightData reports auth / config / proxy errors via x-brd-* response
-		// headers — often alongside HTTP 200 and an EMPTY body, which otherwise
-		// looks like a generic "empty response". Surface the real error here.
-		// Example: x-brd-err-code=client_10030 ("IP not whitelisted in this zone").
-		if brdErrCode := resp.Header.Get("x-brd-err-code"); brdErrCode != "" {
-			brdErr := resp.Header.Get("x-brd-error")
-			brdErrMsg := resp.Header.Get("x-brd-err-msg")
-			LogProvider(p.GetProviderName(), "BrightData error (attempt %d/%d) status=%d code=%s error=%q msg=%q url=%s",
-				attempt, maxRetries, resp.StatusCode, brdErrCode, brdErr, brdErrMsg, searchURL)
-			fmt.Printf("[AIOverviewProvider] BrightData error (attempt %d/%d): code=%s error=%q msg=%q\n",
-				attempt, maxRetries, brdErrCode, brdErr, brdErrMsg)
+		// BrightData reports auth / scraper / proxy errors via x-brd-* response
+		// headers, often alongside an outer HTTP 200 and an EMPTY body — which
+		// otherwise just looks like a generic "empty response". The header spelling
+		// varies by error type, so check both:
+		//   x-brd-err-code   e.g. client_10030  (IP not whitelisted in this zone)
+		//   x-brd-error-code e.g. expect_element (scraper selector timeout, AI Overview)
+		//   x-brd-error      human-readable message (present for both)
+		//   x-brd-status-code BrightData's real upstream status (e.g. 502) under the 200
+		brdCode := resp.Header.Get("x-brd-err-code")
+		if brdCode == "" {
+			brdCode = resp.Header.Get("x-brd-error-code")
+		}
+		brdErr := resp.Header.Get("x-brd-error")
+		brdStatus := resp.Header.Get("x-brd-status-code")
+		if brdCode != "" || brdErr != "" {
+			LogProvider(p.GetProviderName(), "BrightData error (attempt %d/%d) httpStatus=%d brdStatus=%s code=%s error=%q url=%s",
+				attempt, maxRetries, resp.StatusCode, brdStatus, brdCode, brdErr, searchURL)
+			fmt.Printf("[AIOverviewProvider] BrightData error (attempt %d/%d): code=%s brdStatus=%s error=%q\n",
+				attempt, maxRetries, brdCode, brdStatus, brdErr)
 
-			lastErr = fmt.Errorf("BrightData error %s: %s", brdErrCode, brdErrMsg)
-
-			// client_* codes are auth/config problems (e.g. IP not whitelisted,
-			// bad zone). Retrying is pointless and only adds load/latency — fail fast.
-			if strings.HasPrefix(brdErrCode, "client_") {
-				LogProvider(p.GetProviderName(), "non-retryable BrightData auth/config error code=%s — failing fast", brdErrCode)
-				return nil, lastErr
-			}
-			if attempt < maxRetries {
-				time.Sleep(2 * time.Second)
-				continue
-			}
-			break
+			// These are application-level errors from BrightData (auth/config, or a
+			// scraper/selector failure such as expect_element on the AI Overview path).
+			// Re-issuing the identical request returns the same error, so retrying only
+			// burns ~50s per attempt — fail fast and surface the real cause.
+			return nil, fmt.Errorf("BrightData error %s (brd-status %s): %s", brdCode, brdStatus, brdErr)
 		}
 
 		if resp.StatusCode != http.StatusOK {
