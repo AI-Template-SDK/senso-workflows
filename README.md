@@ -387,3 +387,38 @@ GITHUB_PAT=ghp_your_actual_token_here
 
 **Security Note**: Never commit your actual PAT to version control. The token should remain in your local environment files only.
 
+
+## Extraction prompt evals (mention detection)
+
+The org mention/extraction pipeline (`GenerateNameVariations` → substring
+pre-filter → `ExtractOrgEvaluation`) is driven by LLM prompts, so correctness
+can't be fully covered by unit tests. There is a **behavioral eval** that runs the
+real pipeline against a golden set of labeled cases and enforces
+precision/recall/accuracy thresholds.
+
+- **Golden set:** `services/testdata/mention_golden.json` — each case has an org
+  name, websites, a response, and the expected `mentioned` decision. Includes
+  hand-authored adversarial cases (qualifier orgs, short-form-only mentions,
+  generic-word / different-org / competitor-only negatives) plus real cases
+  sourced from prod.
+- **Run it (manual, hits the live LLM — not in CI):**
+
+  ```bash
+  make eval          # go test -tags=llmeval ./services -run TestMentionGolden -v
+  ```
+
+  Uses `OPENAI_API_KEY` / Azure config from `.env`. Fails if recall, precision,
+  or accuracy fall below the thresholds in `services/mention_eval_test.go`.
+  Always run this after changing any extraction prompt or model.
+
+- **Add real cases:** with a DB tunnel up, source labeled candidates from prod,
+  review them, and merge the good ones into the golden set:
+
+  ```bash
+  make eval-dataset ORG_IDS=<org-uuid>[,<org-uuid>...]
+  # review eval_candidates.json, then paste good cases into
+  # services/testdata/mention_golden.json (source:"prod")
+  ```
+
+  Candidate labels are heuristic (canonical-name present → true; no brand tokens
+  → false) and **must be human-reviewed** before they become golden.

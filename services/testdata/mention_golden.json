@@ -1,0 +1,104 @@
+{
+  "_comment": "Golden set for the org mention/extraction pipeline (GenerateNameVariations -> substring pre-filter -> ExtractOrgEvaluation). Each case asserts the final `mentioned` decision. `source`: 'authored' = hand-written adversarial fixture; 'prod' = sourced from the DB via cmd/build_eval_dataset. Add real cases with that tool; keep authored cases for edge coverage. Run: make eval  (or: go test -tags=llmeval ./services -run TestMentionGolden -v).",
+  "cases": [
+    {
+      "id": "qualifier-canonical-present",
+      "org_name": "Mercedes-Benz (AUS)",
+      "websites": ["https://www.mercedes-benz.com.au"],
+      "response": "When budgeting to service a Mercedes-Benz in Australia, expect roughly $600 to $1,500 per year for scheduled maintenance on a newer model. Mercedes-Benz vehicles follow an alternating service schedule every 12 months or 25,000 km, whichever comes first. Costs rise for AMG performance models.",
+      "expect_mentioned": true,
+      "source": "authored",
+      "note": "Qualifier org '(AUS)'; canonical 'Mercedes-Benz' clearly present. This is the exact class that regressed."
+    },
+    {
+      "id": "qualifier-short-form-only",
+      "org_name": "Mercedes-Benz (AUS)",
+      "websites": ["https://www.mercedes-benz.com.au"],
+      "response": "A Mercedes tends to hold its value well in the Australian market, especially the C-Class and GLC. If you drive a Mercedes enthusiastically, budget more for brakes and tyres.",
+      "expect_mentioned": true,
+      "source": "authored",
+      "note": "Only the bare short form 'Mercedes' appears (no 'Mercedes-Benz'). Must still verify true."
+    },
+    {
+      "id": "qualifier-among-competitors",
+      "org_name": "Mercedes-Benz (AUS)",
+      "websites": ["https://www.mercedes-benz.com.au"],
+      "response": "European luxury brands such as BMW, Mercedes-Benz and Audi typically recommend servicing every 15,000-25,000 km or 12-24 months. Each brand's onboard system may prompt an earlier service under demanding conditions.",
+      "expect_mentioned": true,
+      "source": "authored",
+      "note": "Brand appears in a list alongside competitors; still a genuine mention."
+    },
+    {
+      "id": "clean-org-canonical",
+      "org_name": "Connexus Credit Union",
+      "websites": ["https://www.connexuscu.org"],
+      "response": "Connexus Credit Union offers some of the lowest auto loan rates in Wisconsin, with APRs starting around 4.74% for well-qualified borrowers. Membership is open nationally through a small donation.",
+      "expect_mentioned": true,
+      "source": "authored",
+      "note": "No qualifier; straightforward positive. Guards against over-correction breaking normal orgs."
+    },
+    {
+      "id": "location-cu-short-form",
+      "org_name": "Members Choice Credit Union (Houston, TX)",
+      "websites": ["https://www.mccu.com"],
+      "response": "For Houston-area drivers, Members Choice is often mentioned for competitive used-car loan rates and a straightforward membership process. Members Choice Credit Union also offers first-time buyer programs.",
+      "expect_mentioned": true,
+      "source": "authored",
+      "note": "Location-qualifier org; both full name and 'Members Choice' short form present."
+    },
+    {
+      "id": "former-name-referenced",
+      "org_name": "Lime Connect (formerly Userlike)",
+      "websites": [],
+      "response": "Userlike is a live-chat and customer messaging platform popular with European SMBs. Its website widget is easy to embed and supports WhatsApp integration.",
+      "expect_mentioned": true,
+      "source": "authored",
+      "note": "Relationship qualifier '(formerly Userlike)'. Text uses the former name 'Userlike' — should count as the target."
+    },
+    {
+      "id": "neg-generic-term-only",
+      "org_name": "Mercedes-Benz (AUS)",
+      "websites": ["https://www.mercedes-benz.com.au"],
+      "response": "Luxury cars in Australia generally need servicing every 12 months or 15,000 km. Always check your logbook and budget for brake fluid and filters at major intervals. Independent European specialists can be cheaper than dealerships.",
+      "expect_mentioned": false,
+      "source": "authored",
+      "note": "Precision: brand never appears; only generic 'luxury cars'. Must be false."
+    },
+    {
+      "id": "neg-competitors-only",
+      "org_name": "Mercedes-Benz (AUS)",
+      "websites": ["https://www.mercedes-benz.com.au"],
+      "response": "Among German rivals, BMW and Audi both offer capped-price servicing in Australia. Audi's plans run 15,000 km intervals while BMW uses condition-based servicing. Lexus is a strong Japanese alternative.",
+      "expect_mentioned": false,
+      "source": "authored",
+      "note": "Precision: only competitors (BMW, Audi, Lexus) — target absent. Must be false."
+    },
+    {
+      "id": "neg-different-org-similar-name",
+      "org_name": "First Community Credit Union",
+      "websites": ["https://www.firstccu.com"],
+      "response": "Community First Credit Union of Florida is well regarded for low-fee checking. Members praise its Jacksonville branch network and mobile app.",
+      "expect_mentioned": false,
+      "source": "authored",
+      "note": "Precision: 'Community First CU' is a DIFFERENT org from 'First Community CU'. Must be false."
+    },
+    {
+      "id": "neg-generic-word-overlap",
+      "org_name": "Apple (Electronics Stores)",
+      "websites": ["https://www.apple.com"],
+      "response": "An apple a day is a classic bit of nutrition advice. Fresh apples are a good source of fibre and are widely available at Australian grocers this season.",
+      "expect_mentioned": false,
+      "source": "authored",
+      "note": "Precision: 'apple' the fruit, not the brand. Must be false."
+    },
+    {
+      "id": "neg-unrelated-industry",
+      "org_name": "Connexus Credit Union",
+      "websites": ["https://www.connexuscu.org"],
+      "response": "To improve home energy efficiency, start with insulation and LED lighting, then consider a heat-pump hot water system. Rebates are available in several states.",
+      "expect_mentioned": false,
+      "source": "authored",
+      "note": "Precision: totally unrelated topic; brand absent. Must be false."
+    }
+  ]
+}

@@ -96,67 +96,50 @@ func (s *orgEvaluationService) GenerateNameVariations(ctx context.Context, orgNa
 		websitesFormatted += fmt.Sprintf("- %s\n", website)
 	}
 
-	prompt := fmt.Sprintf(`You are an expert in brand name analysis and variation generation. Your task is to generate a comprehensive list of brand name variations that a company might realistically use across different platforms, documents, and contexts.
+	prompt := fmt.Sprintf(`You are an expert in brand name analysis and variation generation. Your task is to list the ways this brand is ACTUALLY written when it is referred to in the wild (news articles, AI answers, reviews, forum posts), so we can reliably detect mentions of it in free text.
 
-Generate REALISTIC variations of this brand name that would actually be used by the company or found in business contexts. Focus on:
+The provided brand name is an INTERNAL LABEL. It often contains extra qualifiers that are NOT part of how people actually write the brand, and these MUST be stripped to recover the real, canonical brand name:
+- **Location / region qualifiers**: "(AUS)", "(Australia)", "(US)", "(UK)", "(Houston, TX)", "ANZ", "EMEA", "North America", trailing country/state/city names.
+- **Relationship / status qualifiers**: "(formerly X)", "(a Y company)", "(A MOURI Tech Company)", "(Acquired by Z)", "(part of ...)", "| Some Group".
+- **Legal suffixes** when not normally spoken aloud: "Inc.", "LLC", "Ltd", "Pty Ltd", "SSB", "Corp".
 
-1. **Exact matches**: The brand name as provided
-2. **Case variations**: lowercase, UPPERCASE, Title Case, camelCase
-3. **Spacing variations**: CRITICAL for compound words - always include both spaced and unspaced versions:
-   - Compound words: "SunLife" → "Sun Life", "TotalExpert" → "Total Expert"
-   - With spaces, without spaces, with hyphens, with underscores
-   - For ANY compound-looking word, generate the spaced version
-4. **Legal/formal variations**: Including "Inc", "LLC", "Ltd", "Corp", etc. (only if realistic for this type of company)
-5. **Natural shortened versions**: Logical shortened forms (e.g., "Senso.ai" → "Senso", "Microsoft Corporation" → "Microsoft")
-6. **Realistic acronyms**: Only create acronyms from multi-word names where it makes sense:
-   - "Bellweather Community Credit Union" → "BCCU"
-   - "American Express" → "AmEx" or "AE"
-   - Single word brands typically don't have meaningful acronyms
-7. **Domain-based variations**: Simple domain formats without full URLs (e.g., "senso" from "senso.ai")
+**STEP 1 — RECOVER THE CANONICAL BRAND NAME (MOST IMPORTANT):**
+Remove every parenthetical, bracketed, piped, or trailing qualifier above to obtain the CANONICAL brand name — the short form a person or AI would naturally use — then generate that name and its natural forms. These canonical variations are the MOST IMPORTANT outputs and MUST be present.
+- "Mercedes-Benz (AUS)" → canonical "Mercedes-Benz" → MUST include "Mercedes-Benz", "Mercedes Benz", "MercedesBenz", and the common short form "Mercedes".
+- "Members Choice Credit Union (Houston, TX)" → canonical "Members Choice Credit Union" → plus "Members Choice", "MCCU".
+- "Vertisystem (A MOURI Tech Company)" → canonical "Vertisystem".
+- "Lime Connect (formerly Userlike)" → canonical "Lime Connect" (also include the former name "Userlike", which may still be referenced).
+NEVER output only qualifier-laden forms (e.g. "Mercedes-Benz AUS", "Mercedes Australia") while omitting the bare "Mercedes-Benz"/"Mercedes". Do NOT append the stripped qualifier to your variations.
 
-IMPORTANT CONSTRAINTS:
-- Do NOT include full email addresses (no @domain.com formats)
-- Do NOT include full website URLs (no http:// or www. formats)
-- Do NOT create arbitrary abbreviations or random letter combinations
-- Only create acronyms for multi-word brand names where each word contributes a letter
-- Only include variations that would realistically be used in professional business contexts
-- Focus on how the brand name would naturally be written, typed, or formatted
+**STEP 2 — GENERATE NATURAL VARIATIONS of the canonical name:**
+1. Exact + case variations: as provided, lowercase, UPPERCASE, Title Case.
+2. Spacing/hyphen variations for compound words: "SunLife" → "Sun Life"; "Mercedes-Benz" → "Mercedes Benz", "MercedesBenz". Always include spaced, unspaced, and hyphenated forms.
+3. Natural shortened forms: "Microsoft Corporation" → "Microsoft"; "Mercedes-Benz" → "Mercedes".
+4. Realistic acronyms for multi-word names only: "Bellweather Community Credit Union" → "BCCU".
+5. Domain roots (no full URLs): "senso" from "senso.ai".
+6. Well-known former names or aliases, if any.
 
-**CRITICAL: For compound words, ALWAYS generate spaced versions**
-
-Examples:
-- "Senso.ai" → Good: Senso.ai, senso.ai, SENSO.AI, Senso, senso, SENSO, SensoAI, sensoai
-- "Senso.ai" → Bad: S.AI, SAI, support@senso.ai, www.senso.ai
-- "SunLife" → MUST include: SunLife, Sun Life, sunlife, sun life, SUNLIFE, SUN LIFE, Sun-Life, sun-life
-- "TotalExpert" → MUST include: TotalExpert, Total Expert, totalexpert, total expert, TOTALEXPERT, TOTAL EXPERT, Total-Expert, total-expert
-- "Tech Corp Solutions" → Good: TCS, Tech Corp, TechCorp, Tech Corp Solutions
-- "Apple" → Good: Apple, apple, APPLE (no meaningful acronym for single word)
-
-Instructions:
-- Include the original name exactly as provided
-- Generate 15-25 realistic variations (quality over quantity)
-- Each variation should have a clear reason for existing
-- For multi-word names, consider logical acronyms using first letters
-- For compound names or names with extensions (.ai, .com), consider the root word
-- **MANDATORY**: If the brand name looks like a compound word (two or more words joined together), generate the spaced version
-- Avoid nonsensical permutations or made-up abbreviations
+CONSTRAINTS:
+- Do NOT include full email addresses or full URLs (no @, http://, www.).
+- Do NOT invent unrelated abbreviations or random letter combinations.
+- Prefer forms that would genuinely appear in prose. Quality over quantity: 15-25 variations.
+- ALWAYS include the canonical brand name AND its bare short form.
 
 Return only the list of name variations, no explanations.
 
-The brand name is %s
+The brand (internal label) is %s
 
 Associated websites:
 %s`, "`"+orgName+"`", websitesFormatted)
 
-	// Use configured model for name variations
-	var model openai.ChatModel
+	// Use a dedicated model for name variations. Force gpt-5.4-mini in both the
+	// Azure and standard OpenAI paths so mention-detection quality is consistent
+	// regardless of the configured extraction deployment.
+	model := openai.ChatModel("gpt-5.4-mini")
 	if s.cfg.AzureOpenAIDeploymentName != "" {
-		// Use Azure with configured deployment
-		model = openai.ChatModel(s.cfg.AzureOpenAIDeploymentName)
-		fmt.Printf("[GenerateNameVariations] 🎯 Using Azure SDK with model: %s\n", s.cfg.AzureOpenAIDeploymentName)
+		fmt.Printf("[GenerateNameVariations] 🎯 Using Azure SDK with model: gpt-5.4-mini\n")
 	} else {
-		model = openai.ChatModel("gpt-4.1-mini")
-		fmt.Printf("[GenerateNameVariations] 🎯 Using Standard OpenAI model: gpt-4.1-mini\n")
+		fmt.Printf("[GenerateNameVariations] 🎯 Using Standard OpenAI model: gpt-5.4-mini\n")
 	}
 
 	schemaParam := openai.ResponseFormatJSONSchemaJSONSchemaParam{
@@ -174,7 +157,8 @@ Associated websites:
 			openai.SystemMessage("You are an expert in brand name analysis and variation generation. Generate realistic brand name variations that would actually be used in business contexts."),
 			openai.UserMessage(prompt),
 		},
-		Model: model,
+		Model:               model,
+		MaxCompletionTokens: openai.Int(5000), // Prevent truncation of JSON (reasoning models consume tokens)
 		ResponseFormat: openai.ChatCompletionNewParamsResponseFormatUnion{
 			OfJSONSchema: &openai.ResponseFormatJSONSchemaParam{JSONSchema: schemaParam},
 		},
@@ -222,44 +206,33 @@ func (s *orgEvaluationService) ExtractOrgEvaluation(ctx context.Context, questio
 	nameVariationsStr := strings.Join(nameVariations, ", ")
 
 	// --- MODIFIED PROMPT ---
-	// Added TASK 0 for verification and stricter rules
-	prompt := fmt.Sprintf(`You are an expert text analysis and extraction specialist. You are being run because a preliminary check found potential mentions of the target organization based on name variations. Your primary task is to **verify** if the **specific TARGET ORGANIZATION** is genuinely mentioned, distinguishing it from generic terms or other similarly named entities, and then extract relevant details ONLY IF verified.
+	// TASK 0 verifies the mention; the rules below make clear that EXACT matches to
+	// the internal label are NOT required (labels often carry location/other qualifiers).
+	prompt := fmt.Sprintf(`You are an expert text analysis and extraction specialist. A preliminary check found a potential mention of the target organization. Your job is to (1) VERIFY whether the target organization is genuinely referred to in the text, and (2) if verified, extract the mention text and sentiment.
 
-**TARGET ORGANIZATION:** %s
-**Potentially relevant name variations:** %s
+**TARGET ORGANIZATION (internal label):** %s
+**Known name variations / aliases:** %s
 
-**TASK 0: VERIFY MENTION (CRITICAL FIRST STEP)**
-1. Carefully read the "RESPONSE TO ANALYZE" below.
-2. Determine if the text *specifically* mentions the **TARGET ORGANIZATION** (%s) or one of its highly probable variations (like "%s Inc.", "%s.com").
-3. **CRUCIAL:** Be strict. Ignore mentions of *generic terms* that might overlap with the name (e.g., if the target is "Community Credit Union", ignore generic uses of "community" or "credit union" unless they clearly refer to the specific target entity). Also ignore mentions of *different organizations* with similar names.
-4. Set the 'is_mention_verified' field to 'true' ONLY if you are confident the specific TARGET ORGANIZATION is mentioned. Otherwise, set it to 'false'.
+**HOW TO MATCH THE TARGET — READ CAREFULLY:**
+- The target label above is an INTERNAL label. It often contains extra qualifiers that will NOT appear in normal writing and are NOT required for a match:
+    - Location / region qualifiers: "(AUS)", "(Australia)", "(US)", "(UK)", "(Houston, TX)", "ANZ", "EMEA", etc.
+    - Relationship / status qualifiers: "(formerly X)", "(a Y company)", "(Acquired by Z)", "| Some Group".
+    - Legal suffixes: "Inc.", "LLC", "Ltd", "Pty Ltd", "SSB", "Corp".
+- Mentally STRIP those qualifiers to get the CANONICAL brand name, then check whether the text refers to that brand — by the canonical name, any listed variation, its natural short form, or its domain.
+- **EXACT string matches are NOT required.** A mention of the canonical brand counts as verified EVEN IF the qualifier is absent from the text.
+    - Target "Mercedes-Benz (AUS)" → text says "Mercedes-Benz", "Mercedes", or "a Mercedes-Benz E-Class" → is_mention_verified: TRUE (the "(AUS)" is NOT needed).
+    - Target "Members Choice Credit Union (Houston, TX)" → text "Members Choice Credit Union" or "Members Choice" → TRUE.
+    - Target "Lime Connect (formerly Userlike)" → text "Lime Connect" OR "Userlike" → TRUE.
 
-**TASK 1: EXTRACT MENTION TEXT (ONLY if is_mention_verified is true)**
-* If 'is_mention_verified' is true, find EVERY occurrence where the verified target organization is mentioned.
-* Extract the text with perfect formatting preservation.
-* **EXTRACTION RULES:**
-    - **PRESERVE EXACT FORMATTING**: Copy character-for-character (punctuation, markdown, spacing, etc.).
-    - **INCLUDE CITATIONS**: Always include URLs/links appearing with mentions.
-    - **ALL FORMATS**: Extract from paragraphs, lists, tables, etc.
-    - **COMPLETE CONTEXT**: Extract the full sentence/paragraph/section containing the mention.
-    - **AGGREGATION**: Use " || " (space-pipe-pipe-space) between separate occurrences.
-* If 'is_mention_verified' is false, return null or an empty string for 'mention_text'.
+**STILL AVOID FALSE POSITIVES:**
+- Do NOT verify purely generic words that merely overlap the name (target "Community Credit Union" → a generic "credit union" reference → FALSE).
+- Do NOT verify a genuinely DIFFERENT organization with a similar name (target "First Community CU" → text "Community First CU" → FALSE).
 
-**TASK 2: DETERMINE SENTIMENT (ONLY if is_mention_verified is true)**
-* If 'is_mention_verified' is true, analyze the overall sentiment toward the verified target organization across all extracted mentions.
-* Use exactly one of: "positive", "negative", "neutral".
-* If 'is_mention_verified' is false, return null or an empty string for 'sentiment'.
+**TASK 0 — VERIFY:** Set is_mention_verified = true if the canonical target brand (per the rules above) is referred to in the text; otherwise false.
 
-**EXAMPLES of Verification:**
-* Target: "Community Financial Credit Union"
-    * Text: "...building a strong community..." -> is_mention_verified: false (generic term)
-    * Text: "...many credit unions offer loans..." -> is_mention_verified: false (generic term)
-    * Text: "...at Community Financial Credit Union, we offer..." -> is_mention_verified: true (specific match)
-    * Text: "...better than First Community Credit Union..." -> is_mention_verified: false (different org)
-* Target: "Senso.ai"
-    * Text: "...the field of AI is growing..." -> is_mention_verified: false (generic term)
-    * Text: "...visit senso.ai for details..." -> is_mention_verified: true (specific match)
+**TASK 1 — EXTRACT MENTION TEXT (only if verified):** Find EVERY occurrence referring to the target and copy the full surrounding sentence/line/bullet VERBATIM — preserve exact formatting, punctuation, markdown, and any URLs. Join separate occurrences with " || " (space-pipe-pipe-space). If not verified, return an empty string.
 
+**TASK 2 — SENTIMENT (only if verified):** Overall sentiment toward the target across all mentions: exactly one of "positive", "negative", "neutral". If not verified, return an empty string.
 
 **RESPONSE TO ANALYZE:**
 `+"`"+`
@@ -267,24 +240,17 @@ func (s *orgEvaluationService) ExtractOrgEvaluation(ctx context.Context, questio
 `+"`"+`
 
 **OUTPUT REQUIREMENTS (JSON Schema):**
-- is_mention_verified: boolean (true only if specific target org is mentioned)
-- mention_text: string (ALL extracted text if verified, null/empty otherwise)
-- sentiment: string ("positive", "negative", "neutral" if verified, null/empty otherwise)`,
-		"`"+orgName+"`", "`"+nameVariationsStr+"`", "`"+orgName+"`", orgName, orgName, responseText) // Added orgName multiple times for prompt clarity
+- is_mention_verified: boolean (true if the canonical target brand is referred to, qualifiers not required)
+- mention_text: string (all verbatim occurrences joined by " || ", empty if not verified)
+- sentiment: string ("positive", "negative", or "neutral" if verified, empty otherwise)`,
+		"`"+orgName+"`", "`"+nameVariationsStr+"`", responseText)
 	// --- END MODIFIED PROMPT ---
 
-	// Model Selection (using config value, tracking name)
-	var model openai.ChatModel
-	modelName := ""
-	if s.cfg.AzureOpenAIDeploymentName != "" {
-		model = openai.ChatModel(s.cfg.AzureOpenAIDeploymentName)
-		modelName = s.cfg.AzureOpenAIDeploymentName
-		fmt.Printf("[ExtractOrgEvaluation] 🎯 Using Azure OpenAI deployment: %s\n", modelName)
-	} else {
-		model = openai.ChatModelGPT4_1 // Fallback
-		modelName = string(openai.ChatModelGPT4_1)
-		fmt.Printf("[ExtractOrgEvaluation] ⚠️ Azure deployment not set, falling back to Standard OpenAI model: %s\n", modelName)
-	}
+	// Model Selection: force gpt-5.4-mini for verification + mention-text extraction
+	// (both the Azure and standard OpenAI paths) so extraction quality is consistent.
+	model := openai.ChatModel("gpt-5.4-mini")
+	modelName := "gpt-5.4-mini"
+	fmt.Printf("[ExtractOrgEvaluation] 🎯 Using model: gpt-5.4-mini\n")
 
 	// Schema uses the MODIFIED OrgEvaluationResponse struct
 	schemaParam := openai.ResponseFormatJSONSchemaJSONSchemaParam{
@@ -303,7 +269,8 @@ func (s *orgEvaluationService) ExtractOrgEvaluation(ctx context.Context, questio
 			openai.SystemMessage("You are an expert text analysis specialist. Verify if the specific target organization is mentioned (distinguishing from generic terms). If verified, extract mention text and sentiment accurately. If not verified, return false for verification and empty/null for other fields."),
 			openai.UserMessage(prompt),
 		},
-		Model: model,
+		Model:               model,
+		MaxCompletionTokens: openai.Int(16000), // Headroom for reasoning + long verbatim mention_text; avoids empty/truncated output
 		ResponseFormat: openai.ChatCompletionNewParamsResponseFormatUnion{
 			OfJSONSchema: &openai.ResponseFormatJSONSchemaParam{JSONSchema: schemaParam},
 		},

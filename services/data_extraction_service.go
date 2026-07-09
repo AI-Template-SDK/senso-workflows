@@ -1374,66 +1374,49 @@ func (s *dataExtractionService) generateNameVariations(ctx context.Context, orgN
 		websitesFormatted += fmt.Sprintf("- %s\n", website)
 	}
 
-	prompt := fmt.Sprintf(`You are an expert in brand name analysis and variation generation. Your task is to generate a comprehensive list of brand name variations that a company might realistically use across different platforms, documents, and contexts.
+	prompt := fmt.Sprintf(`You are an expert in brand name analysis and variation generation. Your task is to list the ways this brand is ACTUALLY written when it is referred to in the wild (news articles, AI answers, reviews, forum posts), so we can reliably detect mentions of it in free text.
 
-Generate REALISTIC variations of this brand name that would actually be used by the company or found in business contexts. Focus on:
+The provided brand name is an INTERNAL LABEL. It often contains extra qualifiers that are NOT part of how people actually write the brand, and these MUST be stripped to recover the real, canonical brand name:
+- **Location / region qualifiers**: "(AUS)", "(Australia)", "(US)", "(UK)", "(Houston, TX)", "ANZ", "EMEA", "North America", trailing country/state/city names.
+- **Relationship / status qualifiers**: "(formerly X)", "(a Y company)", "(A MOURI Tech Company)", "(Acquired by Z)", "(part of ...)", "| Some Group".
+- **Legal suffixes** when not normally spoken aloud: "Inc.", "LLC", "Ltd", "Pty Ltd", "SSB", "Corp".
 
-1. **Exact matches**: The brand name as provided
-2. **Case variations**: lowercase, UPPERCASE, Title Case, camelCase
-3. **Spacing variations**: CRITICAL for compound words - always include both spaced and unspaced versions:
-   - Compound words: "SunLife" → "Sun Life", "TotalExpert" → "Total Expert"
-   - With spaces, without spaces, with hyphens, with underscores
-   - For ANY compound-looking word, generate the spaced version
-4. **Legal/formal variations**: Including "Inc", "LLC", "Ltd", "Corp", etc. (only if realistic for this type of company)
-5. **Natural shortened versions**: Logical shortened forms (e.g., "Senso.ai" → "Senso", "Microsoft Corporation" → "Microsoft")
-6. **Realistic acronyms**: Only create acronyms from multi-word names where it makes sense:
-   - "Bellweather Community Credit Union" → "BCCU"
-   - "American Express" → "AmEx" or "AE"
-   - Single word brands typically don't have meaningful acronyms
-7. **Domain-based variations**: Simple domain formats without full URLs (e.g., "senso" from "senso.ai")
+**STEP 1 — RECOVER THE CANONICAL BRAND NAME (MOST IMPORTANT):**
+Remove every parenthetical, bracketed, piped, or trailing qualifier above to obtain the CANONICAL brand name — the short form a person or AI would naturally use — then generate that name and its natural forms. These canonical variations are the MOST IMPORTANT outputs and MUST be present.
+- "Mercedes-Benz (AUS)" → canonical "Mercedes-Benz" → MUST include "Mercedes-Benz", "Mercedes Benz", "MercedesBenz", and the common short form "Mercedes".
+- "Members Choice Credit Union (Houston, TX)" → canonical "Members Choice Credit Union" → plus "Members Choice", "MCCU".
+- "Vertisystem (A MOURI Tech Company)" → canonical "Vertisystem".
+- "Lime Connect (formerly Userlike)" → canonical "Lime Connect" (also include the former name "Userlike", which may still be referenced).
+NEVER output only qualifier-laden forms (e.g. "Mercedes-Benz AUS", "Mercedes Australia") while omitting the bare "Mercedes-Benz"/"Mercedes". Do NOT append the stripped qualifier to your variations.
 
-IMPORTANT CONSTRAINTS:
-- Do NOT include full email addresses (no @domain.com formats)
-- Do NOT include full website URLs (no http:// or www. formats)
-- Do NOT create arbitrary abbreviations or random letter combinations
-- Only create acronyms for multi-word brand names where each word contributes a letter
-- Only include variations that would realistically be used in professional business contexts
-- Focus on how the brand name would naturally be written, typed, or formatted
+**STEP 2 — GENERATE NATURAL VARIATIONS of the canonical name:**
+1. Exact + case variations: as provided, lowercase, UPPERCASE, Title Case.
+2. Spacing/hyphen variations for compound words: "SunLife" → "Sun Life"; "Mercedes-Benz" → "Mercedes Benz", "MercedesBenz". Always include spaced, unspaced, and hyphenated forms.
+3. Natural shortened forms: "Microsoft Corporation" → "Microsoft"; "Mercedes-Benz" → "Mercedes".
+4. Realistic acronyms for multi-word names only: "Bellweather Community Credit Union" → "BCCU".
+5. Domain roots (no full URLs): "senso" from "senso.ai".
+6. Well-known former names or aliases, if any.
 
-**CRITICAL: For compound words, ALWAYS generate spaced versions**
-
-Examples:
-- "Senso.ai" → Good: Senso.ai, senso.ai, SENSO.AI, Senso, senso, SENSO, SensoAI, sensoai
-- "Senso.ai" → Bad: S.AI, SAI, support@senso.ai, www.senso.ai
-- "SunLife" → MUST include: SunLife, Sun Life, sunlife, sun life, SUNLIFE, SUN LIFE, Sun-Life, sun-life
-- "TotalExpert" → MUST include: TotalExpert, Total Expert, totalexpert, total expert, TOTALEXPERT, TOTAL EXPERT, Total-Expert, total-expert
-- "Tech Corp Solutions" → Good: TCS, Tech Corp, TechCorp, Tech Corp Solutions
-- "Apple" → Good: Apple, apple, APPLE (no meaningful acronym for single word)
-
-Instructions:
-- Include the original name exactly as provided
-- Generate 15-25 realistic variations (quality over quantity)
-- Each variation should have a clear reason for existing
-- For multi-word names, consider logical acronyms using first letters
-- For compound names or names with extensions (.ai, .com), consider the root word
-- **MANDATORY**: If the brand name looks like a compound word (two or more words joined together), generate the spaced version
-- Avoid nonsensical permutations or made-up abbreviations
+CONSTRAINTS:
+- Do NOT include full email addresses or full URLs (no @, http://, www.).
+- Do NOT invent unrelated abbreviations or random letter combinations.
+- Prefer forms that would genuinely appear in prose. Quality over quantity: 15-25 variations.
+- ALWAYS include the canonical brand name AND its bare short form.
 
 Return only the list of name variations, no explanations.
 
-The brand name is %s
+The brand (internal label) is %s
 
 Associated websites:
 %s`, "`"+orgName+"`", websitesFormatted)
 
-	// Use gpt-4.1-mini for name variations (cost-effective)
-	var model openai.ChatModel
+	// Force gpt-5.4-mini for name variations in both the Azure and standard
+	// OpenAI paths so mention-detection quality is consistent everywhere.
+	model := openai.ChatModel("gpt-5.4-mini")
 	if s.cfg.AzureOpenAIDeploymentName != "" {
-		model = openai.ChatModel("gpt-5")
-		fmt.Printf("[generateNameVariations] 🎯 Using Azure SDK with model: gpt-4.1-mini\n")
+		fmt.Printf("[generateNameVariations] 🎯 Using Azure SDK with model: gpt-5.4-mini\n")
 	} else {
-		model = openai.ChatModel("gpt-5")
-		fmt.Printf("[generateNameVariations] 🎯 Using Standard OpenAI model: gpt-4.1-mini\n")
+		fmt.Printf("[generateNameVariations] 🎯 Using Standard OpenAI model: gpt-5.4-mini\n")
 	}
 
 	schemaParam := openai.ResponseFormatJSONSchemaJSONSchemaParam{
